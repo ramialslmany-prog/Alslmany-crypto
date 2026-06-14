@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Quantum — global atmosphere & token bindings
+   ============================================================ */
+
+/* Raw keyframes for effects driven from CSS (not via animate-* utilities,
+   which Tailwind would otherwise purge). */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+:root {
+  /* Latin glyphs resolve to the first face; Arabic glyphs fall through to
+     IBM Plex Sans Arabic automatically — so the stack is bilingual. */
+  --font-display: "Satoshi", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-sans: "Inter", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --bg: #060816;
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-strong: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(124, 77, 255, 0.35);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--bg);
+  color: #e8ecf6;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  /* base atmospheric gradient that sits under everything */
+  background-image:
+    radial-gradient(900px 600px at 15% -10%, rgba(124, 77, 255, 0.16), transparent 60%),
+    radial-gradient(800px 600px at 100% 0%, rgba(0, 212, 255, 0.12), transparent 55%),
+    radial-gradient(1200px 800px at 50% 120%, rgba(0, 230, 118, 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Subtle film-grain so flat fills never look plastic */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- Custom scrollbar ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(124, 77, 255, 0.5), rgba(0, 212, 255, 0.45));
+  border-radius: 999px;
+  border: 2px solid #060816;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(124, 77, 255, 0.8), rgba(0, 212, 255, 0.7));
+}
+
+::selection {
+  background: rgba(0, 212, 255, 0.28);
+  color: #fff;
+}
+
+/* ============================================================
+   Component utilities
+   ============================================================ */
+@layer components {
+  /* Glass panel — the workhorse surface */
+  .glass {
+    background: var(--surface);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 20px 60px -24px rgba(0, 0, 0, 0.75);
+  }
+
+  .glass-strong {
+    background: var(--surface-strong);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Hairline gradient border that glows on hover */
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      rgba(0, 212, 255, 0.5),
+      rgba(124, 77, 255, 0.4) 45%,
+      transparent 70%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.5;
+    transition: opacity 0.4s var(--ease, cubic-bezier(0.22, 1, 0.36, 1));
+    pointer-events: none;
+  }
+  .glow-border:hover::before {
+    opacity: 1;
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    background: linear-gradient(135deg, #ffffff 0%, #a98bff 55%, #5be7ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-accent {
+    background: linear-gradient(135deg, #00d4ff 0%, #7c4dff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Shimmer sweep for skeletons / cards */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08),
+      transparent
+    );
+    animation: shimmer 2.2s infinite;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+/* RTL: Arabic script must not be letter-spaced (it breaks cursive joining),
+   and tight/wide tracking from display utilities should be neutralized. */
+[dir="rtl"] * {
+  letter-spacing: normal !important;
+}
+
+/* Respect reduced motion everywhere */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
