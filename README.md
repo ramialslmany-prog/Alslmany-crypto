@@ -134,3 +134,5 @@ npm run lint    # lint
 This software is for **education and research only**. It is **not financial
 advice**, not a solicitation, and makes no guarantee of profit. Crypto trading
 carries substantial risk of loss. You are solely responsible for your decisions.
+
+<!-- deploy trigger -->
