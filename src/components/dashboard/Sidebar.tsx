@@ -29,7 +29,6 @@ const groups: { key: string; items: Item[] }[] = [
     items: [
       { icon: LayoutDashboard, key: "nav.overview", href: "/dashboard" },
       { icon: Compass, key: "nav.markets", href: "/dashboard/markets" },
-      { icon: Layers, key: "nav.manualSignals", href: "/dashboard/signals" },
       { icon: Radar, key: "nav.tracker", href: "/dashboard/tracker" },
       { icon: Wallet, key: "nav.portfolio", href: "/dashboard/portfolio" },
     ],
@@ -37,8 +36,14 @@ const groups: { key: string; items: Item[] }[] = [
   {
     key: "nav.intelligence",
     items: [
-      { icon: Brain, key: "nav.aiSignals", href: "/dashboard/ai" },
       { icon: Bot, key: "nav.aiTrader", href: "/dashboard/ai-trader" },
+      { icon: Brain, key: "nav.aiSignals", href: "/dashboard/ai" },
+      { icon: Layers, key: "nav.manualSignals", href: "/dashboard/signals" },
+    ],
+  },
+  {
+    key: "nav.analytics",
+    items: [
       { icon: Waves, key: "nav.smartMoney", href: "/dashboard/smart-money" },
       { icon: Fish, key: "nav.whaleFlow", href: "/dashboard/whales" },
       { icon: History, key: "nav.backtest", href: "/dashboard/backtest" },
