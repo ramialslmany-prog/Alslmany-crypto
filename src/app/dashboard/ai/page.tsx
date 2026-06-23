@@ -1,4 +1,3 @@
-import { AIOpportunities } from "@/components/dashboard/AIOpportunities";
 import { DeepAnalysis } from "@/components/dashboard/DeepAnalysis";
 import { AIBrief } from "@/components/dashboard/AIBrief";
 import { AICopilot } from "@/components/dashboard/AICopilot";
@@ -6,9 +5,6 @@ import { AICopilot } from "@/components/dashboard/AICopilot";
 export default function AISignalsPage() {
   return (
     <div className="space-y-4">
-      {/* auto-detected ideal trade opportunities — no manual action */}
-      <AIOpportunities />
-
       {/* deep per-coin AI analysis + recommendation */}
       <DeepAnalysis />
 

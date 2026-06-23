@@ -15,9 +15,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "TUSD", "FDUSD", "USDE", "USDS", "BUSD", "PYUSD"]);
-const MIN_CONF = 65;
+const MIN_CONF = 70; // quality bar — only confident setups
+const MIN_RR = 1.8; // and sound reward:risk
 const TOP_N = 3;
-const SCAN_UNIVERSE = 18; // most-liquid coins we deep-scan per run
+const SCAN_UNIVERSE = 24; // most-liquid coins we deep-scan per run
 
 function fmtPrice(n: number): string {
   if (!Number.isFinite(n)) return "—";
@@ -80,7 +81,8 @@ export async function GET(req: Request) {
   // Pick the most-liquid, non-stable coins to deep-scan.
   const markets = await fetchMarkets();
   const universe = markets
-    .filter((c) => !STABLES.has(c.symbol))
+    // liquid, non-stable, and not chasing a pump / catching a falling knife
+    .filter((c) => !STABLES.has(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
     .slice(0, SCAN_UNIVERSE);
 
@@ -98,7 +100,7 @@ export async function GET(req: Request) {
   );
 
   const picks = recs
-    .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF)
+    .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up")
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, TOP_N);
 

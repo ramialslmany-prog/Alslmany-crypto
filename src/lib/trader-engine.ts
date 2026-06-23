@@ -13,7 +13,7 @@
  * Telegram is notified on every entry, exit and self-review.
  */
 import { scanCoin } from "@/lib/scan-engine";
-import { qualityScore } from "@/lib/signal-engine";
+import { qualityScore, type Recommendation } from "@/lib/signal-engine";
 import { isStable, liqBonus } from "@/lib/coin-meta";
 import { issueTrades, journalStats, adaptiveMinConf, getLessons, setLessons, type JTrade } from "@/lib/ai-journal";
 import type { Coin } from "@/lib/mock-data";
@@ -88,15 +88,37 @@ export function marketRiskOff(coins: Coin[]): { off: boolean; redPct: number; bt
   return { off: btc < -4 || redPct > 70, redPct, btc };
 }
 
-/** The strategy filter: strict, liquid, trend-following dip entries. */
+/**
+ * Stage-1 fast filter (close-only scan over the whole market): liquid top-150,
+ * confirmed uptrend, confidence over the adaptive bar, and NOT chasing — skip
+ * coins already pumped >15% or dumping <-10% on the day. Returns ranked
+ * candidates; the rigorous candle engine confirms them before any trade.
+ */
 export function selectPicks(coins: Coin[], minConf: number) {
   return coins
-    .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 200)
+    .filter((c) => {
+      const ch = c.change24h ?? 0;
+      return !isStable(c.symbol) && (c.rank ?? 999) <= 150 && ch <= 15 && ch >= -10;
+    })
     .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
     .filter((x) => x.r.signal === "LONG" && x.r.confidence >= minConf && x.r.trend === "up")
     .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
     .sort((a, b) => b.score - a.score);
 }
+
+/** Stage-2 confirmation: the rigorous multi-timeframe candle engine (/api/signals). */
+async function confirmRigorous(symbol: string): Promise<Recommendation | null> {
+  try {
+    const r = await fetch(`/api/signals?symbol=${symbol}&style=day&market=spot`);
+    if (!r.ok) return null;
+    return (await r.json()) as Recommendation;
+  } catch {
+    return null;
+  }
+}
+
+const CONFIRM_CONF = 70; // rigorous engine must independently rate ≥70
+const CONFIRM_RR = 1.8; // and offer at least 1.8 reward:risk
 
 export type IssueResult = { issued: number; comment: string; provider: "ai" | "local" };
 
@@ -130,15 +152,40 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
       : none;
   }
 
-  const picks = selectPicks(coins, minConf).slice(0, Math.max(slots, force ? 1 : 0));
   try {
     localStorage.setItem(ISSUE_KEY, String(Date.now()));
   } catch {
     /* ignore */
   }
-  if (!picks.length) {
+
+  // Stage 1: fast scan → best candidates.
+  const candidates = selectPicks(coins, minConf).slice(0, 8);
+  if (!candidates.length) {
     return force
       ? { issued: 0, comment: lang === "ar" ? "لا توجد فرص مطابقة للاستراتيجية الآن — ننتظر إعداداً نظيفاً." : "No setups match the strategy right now — waiting for a clean entry.", provider: "local" }
+      : none;
+  }
+
+  // Stage 2: confirm each with the rigorous multi-timeframe candle engine, then
+  // take only trades BOTH engines agree on (LONG, conf≥70, R:R≥1.8) — fewer but
+  // materially higher-quality entries, with accurate OHLC-based stops/targets.
+  const confirmed = (
+    await Promise.all(
+      candidates.map(async (cand) => {
+        const rec = await confirmRigorous(cand.c.symbol);
+        if (rec && rec.signal === "LONG" && rec.confidence >= CONFIRM_CONF && rec.riskReward >= CONFIRM_RR) {
+          return { c: cand.c, r: rec };
+        }
+        return null;
+      })
+    )
+  ).filter((x): x is { c: Coin; r: Recommendation } => !!x);
+  confirmed.sort((a, b) => b.r.confidence - a.r.confidence);
+  const picks = confirmed.slice(0, Math.max(slots, force ? 1 : 0));
+
+  if (!picks.length) {
+    return force
+      ? { issued: 0, comment: lang === "ar" ? "وجدت مرشّحين لكن لم يؤكّدهم التحليل متعدّد الأطر الزمنية — لا أدخل إلا صفقة عالية الجودة." : "Found candidates but the multi-timeframe engine didn't confirm them — I only enter high-quality trades.", provider: "local" }
       : none;
   }
 
