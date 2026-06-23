@@ -6,6 +6,7 @@ import { Bell, Search, Command } from "lucide-react";
 import { useFearGreed } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { LangToggle } from "@/components/ui/LangToggle";
+import { MobileMenu } from "@/components/dashboard/MobileMenu";
 
 const TITLE_KEYS: Record<string, { title: string; sub: string }> = {
   "/dashboard": { title: "top.overview.title", sub: "top.overview.sub" },
@@ -39,10 +40,11 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-white/[0.06] bg-base-950/70 px-5 backdrop-blur-xl">
-      <div>
-        <h1 className="font-display text-lg font-bold tracking-tight">{t(meta.title)}</h1>
-        <p className="text-xs text-ink-faint">{t(meta.sub)}</p>
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-white/[0.06] bg-base-950/70 px-3 backdrop-blur-xl sm:gap-4 sm:px-5">
+      <MobileMenu />
+      <div className="min-w-0">
+        <h1 className="truncate font-display text-base font-bold tracking-tight sm:text-lg">{t(meta.title)}</h1>
+        <p className="truncate text-[11px] text-ink-faint sm:text-xs">{t(meta.sub)}</p>
       </div>
 
       {/* search */}

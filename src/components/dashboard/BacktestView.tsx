@@ -112,7 +112,7 @@ export function BacktestView() {
               </div>
               <span className="text-[11px] text-ink-faint" dir="ltr">{dateRange} · {data.bars} {t("bt.candles")}</span>
             </div>
-            <div className="w-full">
+            <div className="w-full [&_svg]:h-auto [&_svg]:w-full">
               <Sparkline
                 data={data.equityCurve}
                 width={760}

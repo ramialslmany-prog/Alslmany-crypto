@@ -19,6 +19,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "nav.backtest": "Backtest",
     "nav.soon": "soon",
     "nav.settings": "Settings",
+    "nav.menu": "Menu",
+    "nav.close": "Close",
     "nav.copilot": "AI Co-pilot",
     "nav.copilotStatus": "Monitoring 40 venues · 3 models online",
 
@@ -327,6 +329,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "nav.backtest": "الاختبار الخلفي",
     "nav.soon": "قريباً",
     "nav.settings": "الإعدادات",
+    "nav.menu": "القائمة",
+    "nav.close": "إغلاق",
     "nav.copilot": "المساعد الذكي",
     "nav.copilotStatus": "مراقبة ٤٠ منصة · ٣ نماذج تعمل",
 
