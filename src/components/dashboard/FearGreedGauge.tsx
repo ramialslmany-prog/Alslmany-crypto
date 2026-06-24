@@ -1,15 +1,34 @@
 "use client";
 
-import { aiInsights } from "@/lib/mock-data";
-import { useFearGreed } from "@/lib/hooks";
+import { useMemo } from "react";
+import { useFearGreed, useMarkets } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-/** Semicircular Fear & Greed gauge (SVG) — now backed by the real index. */
+/** Semicircular Fear & Greed gauge (SVG), backed by the real index, with live
+ *  market-breadth insights computed from the real markets snapshot. */
 export function FearGreedGauge() {
   const { t } = useI18n();
   const fg = useFearGreed();
+  const { coins } = useMarkets();
   const value = fg.value;
+
+  // Real breadth — no mock. Computed from the live markets snapshot.
+  const insights = useMemo(() => {
+    const list = coins.filter((c) => Number.isFinite(c.change24h));
+    if (list.length < 5) return [];
+    const greens = list.filter((c) => (c.change24h ?? 0) > 0).length;
+    const greenPct = Math.round((greens / list.length) * 100);
+    const sorted = [...list].sort((a, b) => (b.change24h ?? 0) - (a.change24h ?? 0));
+    const up = sorted[0];
+    const down = sorted[sorted.length - 1];
+    return [
+      { tag: t("fgi.breadthTag"), text: t("fgi.green").replace("{n}", String(greenPct)), tone: greenPct >= 50 ? "bull" : "bear" as const },
+      { tag: up.symbol, text: `${t("fgi.up")} +${(up.change24h ?? 0).toFixed(1)}%`, tone: "bull" as const },
+      { tag: down.symbol, text: `${t("fgi.down")} ${(down.change24h ?? 0).toFixed(1)}%`, tone: "bear" as const },
+    ];
+  }, [coins, t]);
+
   const label = t(`fg.${fg.classification}`);
   const isLive = fg.source === "alternative.me";
   const valColor = value >= 55 ? "#00E676" : value <= 45 ? "#FF4D6D" : "#FFD166";
@@ -55,22 +74,24 @@ export function FearGreedGauge() {
         <div className="text-sm font-medium" style={{ color: valColor }}>{label}</div>
       </div>
 
-      {/* AI insight chips */}
-      <div className="mt-5 space-y-2 border-t border-white/[0.06] pt-4">
-        {aiInsights.map((a) => (
-          <div key={a.tag} className="flex items-start gap-2.5">
-            <span
-              className={cn(
-                "mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                a.tone === "bull" ? "bg-bull/12 text-bull" : "bg-gold/12 text-gold"
-              )}
-            >
-              {a.tag}
-            </span>
-            <span className="text-xs leading-relaxed text-ink-muted">{a.text}</span>
-          </div>
-        ))}
-      </div>
+      {/* Live market-breadth insights */}
+      {insights.length > 0 && (
+        <div className="mt-5 space-y-2 border-t border-white/[0.06] pt-4">
+          {insights.map((a) => (
+            <div key={a.tag} className="flex items-start gap-2.5">
+              <span
+                className={cn(
+                  "mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                  a.tone === "bull" ? "bg-bull/12 text-bull" : "bg-bear/12 text-bear"
+                )}
+              >
+                {a.tag}
+              </span>
+              <span className="text-xs leading-relaxed text-ink-muted">{a.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -44,7 +44,7 @@ export function RecommendationStack() {
       coins
         .filter((c) => !isStable(c.symbol))
         .map((c) => ({ c, r: scan(c, "day", "spot") }))
-        .filter((x) => x.r.signal === "LONG")
+        .filter((x) => x.r.signal === "LONG" && x.r.confidence >= 55 && x.r.trend === "up")
         .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 4),
