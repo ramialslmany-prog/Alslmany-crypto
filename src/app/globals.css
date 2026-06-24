@@ -3,29 +3,37 @@
 @tailwind utilities;
 
 /* ============================================================
-   Quantum — global atmosphere & token bindings
+   Alslmany Crypto — global atmosphere & token bindings
+   Lane: dark-cinematic × technical-precise (institutional grade)
    ============================================================ */
 
-/* Raw keyframes for effects driven from CSS (not via animate-* utilities,
-   which Tailwind would otherwise purge). */
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
   }
 }
+@keyframes enter-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 :root {
-  /* Latin glyphs resolve to the first face; Arabic glyphs fall through to
-     IBM Plex Sans Arabic automatically — so the stack is bilingual. */
   --font-display: "Satoshi", "IBM Plex Sans Arabic", system-ui, sans-serif;
   --font-sans: "Inter", "IBM Plex Sans Arabic", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --bg: #060816;
+  --bg: #05060f;
   --surface: rgba(255, 255, 255, 0.045);
   --surface-strong: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.07);
   --border-glow: rgba(124, 77, 255, 0.35);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -43,68 +51,104 @@ body {
   color: #e8ecf6;
   font-family: var(--font-sans);
   overflow-x: hidden;
-  /* base atmospheric gradient that sits under everything */
+  /* Cohesive two-accent atmosphere + a faint technical grid baked behind
+     everything — premium depth without the rainbow-glow cliché. */
   background-image:
-    radial-gradient(900px 600px at 15% -10%, rgba(124, 77, 255, 0.16), transparent 60%),
-    radial-gradient(800px 600px at 100% 0%, rgba(0, 212, 255, 0.12), transparent 55%),
-    radial-gradient(1200px 800px at 50% 120%, rgba(0, 230, 118, 0.06), transparent 60%);
+    radial-gradient(1100px 720px at 12% -12%, rgba(124, 77, 255, 0.14), transparent 58%),
+    radial-gradient(900px 640px at 100% -6%, rgba(0, 212, 255, 0.1), transparent 55%),
+    radial-gradient(1200px 900px at 50% 116%, rgba(0, 212, 255, 0.04), transparent 60%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 64px 64px, 64px 64px;
   background-attachment: fixed;
 }
 
-/* Subtle film-grain so flat fills never look plastic */
+/* Fine film-grain so flat fills never look plastic */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: 0.03;
   mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* ---- Custom scrollbar ---- */
+/* ---- Refined thin scrollbar ---- */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(124, 77, 255, 0.5), rgba(0, 212, 255, 0.45));
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 999px;
-  border: 2px solid #060816;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(124, 77, 255, 0.8), rgba(0, 212, 255, 0.7));
+  background: linear-gradient(180deg, rgba(124, 77, 255, 0.7), rgba(0, 212, 255, 0.6));
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 }
 
 ::selection {
-  background: rgba(0, 212, 255, 0.28);
+  background: rgba(0, 212, 255, 0.26);
   color: #fff;
+}
+
+/* Polished, accessible focus ring on interactive elements only */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Display headings: tighter, balanced wrapping */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
 }
 
 /* ============================================================
    Component utilities
    ============================================================ */
 @layer components {
-  /* Glass panel — the workhorse surface */
+  /* Glass panel — premium layered surface (subtle vertical sheen + soft depth) */
   .glass {
-    background: var(--surface);
-    backdrop-filter: blur(20px) saturate(140%);
-    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.022));
+    backdrop-filter: blur(22px) saturate(135%);
+    -webkit-backdrop-filter: blur(22px) saturate(135%);
     border: 1px solid var(--border);
     box-shadow:
-      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
-      0 20px 60px -24px rgba(0, 0, 0, 0.75);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 18px 48px -28px rgba(0, 0, 0, 0.8);
   }
 
   .glass-strong {
-    background: var(--surface-strong);
-    backdrop-filter: blur(28px) saturate(150%);
-    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
     border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+      0 24px 60px -30px rgba(0, 0, 0, 0.85);
   }
 
   /* Hairline gradient border that glows on hover */
@@ -119,22 +163,39 @@ body::after {
     padding: 1px;
     background: linear-gradient(
       135deg,
-      rgba(0, 212, 255, 0.5),
-      rgba(124, 77, 255, 0.4) 45%,
-      transparent 70%
+      rgba(0, 212, 255, 0.45),
+      rgba(124, 77, 255, 0.38) 45%,
+      transparent 72%
     );
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
-    opacity: 0.5;
-    transition: opacity 0.4s var(--ease, cubic-bezier(0.22, 1, 0.36, 1));
+    opacity: 0.42;
+    transition: opacity 0.45s var(--ease);
     pointer-events: none;
   }
   .glow-border:hover::before {
     opacity: 1;
   }
+
+  /* Subtle lift on hover — for interactive cards/buttons */
+  .hover-lift {
+    transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease);
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Staggered entrance for page content — the one hero motion moment */
+  .page-enter > * {
+    animation: enter-rise 0.55s var(--ease) both;
+  }
+  .page-enter > *:nth-child(2) { animation-delay: 0.06s; }
+  .page-enter > *:nth-child(3) { animation-delay: 0.12s; }
+  .page-enter > *:nth-child(4) { animation-delay: 0.18s; }
+  .page-enter > *:nth-child(n + 5) { animation-delay: 0.24s; }
 
   /* Gradient text */
   .text-gradient {
@@ -175,8 +236,7 @@ body::after {
   }
 }
 
-/* RTL: Arabic script must not be letter-spaced (it breaks cursive joining),
-   and tight/wide tracking from display utilities should be neutralized. */
+/* RTL: Arabic script must not be letter-spaced (breaks cursive joining). */
 [dir="rtl"] * {
   letter-spacing: normal !important;
 }
