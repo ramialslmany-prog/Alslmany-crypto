@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Sparkles, PlayCircle, GraduationCap, Loader2, Trash2, ArrowUpRight, Gauge, Send } from "lucide-react";
-import { useJournal, clearJournal, journalStats, adaptiveMinConf, getLessons, type JTrade } from "@/lib/ai-journal";
-import { autoIssue, maybeSelfReview } from "@/lib/trader-engine";
+import { Bot, Sparkles, PlayCircle, GraduationCap, Radio, Trash2, ArrowUpRight, Gauge, Send } from "lucide-react";
+import { useJournal, clearJournal, journalStats, adaptiveMinConf, getLessons, getLastComment, getLastReview, type JTrade } from "@/lib/ai-journal";
+import { marketRiskOff } from "@/lib/trader-engine";
 import { useMarkets } from "@/lib/hooks";
 import { useI18n, timeAgo } from "@/lib/i18n";
 import { CoinIcon } from "@/components/ui/CoinIcon";
@@ -25,15 +25,23 @@ export function AITrader() {
   const { t, lang } = useI18n();
   const journal = useJournal();
 
-  const [issuing, setIssuing] = useState(false);
   const [comment, setComment] = useState("");
-  const [reviewing, setReviewing] = useState(false);
   const [review, setReview] = useState("");
-  const [provider, setProvider] = useState<"ai" | "local" | "">("");
   const [lessons, setLessonsState] = useState("");
   const [tgConfigured, setTgConfigured] = useState<boolean | null>(null);
 
-  useEffect(() => setLessonsState(getLessons()), []);
+  // The autonomous loop (global JournalWatcher) writes its reasoning to storage;
+  // mirror it here so the page stays a live read-out — no buttons, no action.
+  useEffect(() => {
+    const sync = () => {
+      setComment(getLastComment());
+      setReview(getLastReview());
+      setLessonsState(getLessons());
+    };
+    sync();
+    const id = setInterval(sync, 5000);
+    return () => clearInterval(id);
+  }, [journal]);
 
   // Telegram bridge status (token in .env.local → server-side only).
   useEffect(() => {
@@ -57,34 +65,11 @@ export function AITrader() {
   const minConf = adaptiveMinConf(stats);
   const open = journal.filter((x) => x.status === "open");
   const closed = journal.filter((x) => x.status !== "open");
+  const regime = useMemo(() => marketRiskOff(coins), [coins]);
+  const full = open.length >= 3;
 
   const statusLabel = (s: JTrade["status"]) =>
     s === "open" ? t("status.active") : s === "expired" ? t("at.expired") : s === "breakeven" ? t("at.breakeven") : t(`status.${s}`);
-
-  /** Manual "enter now" — same strict engine as the autonomous watcher. */
-  const issue = async () => {
-    if (issuing || !coins.length) return;
-    setIssuing(true);
-    setComment("");
-    const res = await autoIssue(coins, journal, lang, true);
-    setComment(res.comment);
-    setProvider(res.provider);
-    setIssuing(false);
-  };
-
-  /** Manual re-review — same engine the autonomous watcher uses on closures. */
-  const doReview = async () => {
-    if (reviewing || !closed.length) return;
-    setReviewing(true);
-    setReview("");
-    const res = await maybeSelfReview(journal, lang, true);
-    if (res) {
-      setReview(res.review);
-      setProvider(res.provider);
-      setLessonsState(getLessons());
-    }
-    setReviewing(false);
-  };
 
   return (
     <div className="space-y-4">
@@ -121,16 +106,23 @@ export function AITrader() {
         </div>
       </div>
 
-      {/* actions */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={issue} disabled={issuing} className="inline-flex items-center gap-2 rounded-xl bg-cyan-violet px-5 py-2.5 text-sm font-bold text-base-950 transition-transform hover:scale-[1.02] disabled:opacity-50">
-          {issuing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />} {issuing ? t("at.issuing") : t("at.issue")}
-        </button>
-        <button onClick={doReview} disabled={reviewing || !closed.length} title={!closed.length ? t("at.needClosed") : undefined} className="inline-flex items-center gap-2 rounded-xl border border-violet/40 bg-violet/10 px-5 py-2.5 text-sm font-bold text-violet transition-colors hover:bg-violet/20 disabled:opacity-40">
-          {reviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <GraduationCap className="h-4 w-4" />} {reviewing ? t("at.reviewing") : t("at.review")}
-        </button>
+      {/* autonomous status — runs on its own, no buttons */}
+      <div className="glass glow-border flex items-center gap-3 rounded-2xl border-bull/20 p-4">
+        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-bull/15 text-bull">
+          <Radio className="h-5 w-5" />
+          <span className="absolute -end-0.5 -top-0.5 flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-bull opacity-70" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-bull" />
+          </span>
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-bull">{t("at.autoTitle")}</div>
+          <p className="text-xs leading-relaxed text-ink-muted">{t("at.autoDesc")}</p>
+          <p className={cn("mt-1.5 text-xs font-semibold", regime.off ? "text-gold" : full ? "text-cyan" : "text-bull")}>
+            {regime.off ? t("at.holding") : full ? t("at.full") : t("at.hunting")}
+          </p>
+        </div>
       </div>
-      <p className="text-xs text-ink-faint">{t("at.autoReview")}</p>
 
       {/* stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -158,7 +150,6 @@ export function AITrader() {
           <div className="mb-1.5 flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-cyan" />
             <span className="text-xs font-bold uppercase tracking-wider text-cyan">{t("at.comment")}</span>
-            <Badge provider={provider} t={t} />
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-ink-muted">{comment}</p>
         </div>
@@ -170,7 +161,6 @@ export function AITrader() {
           <div className="mb-1.5 flex items-center gap-2">
             <Bot className="h-4 w-4 text-violet" />
             <span className="text-xs font-bold uppercase tracking-wider text-violet">{t("at.selfReview")}</span>
-            <Badge provider={provider} t={t} />
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-ink-muted">{review}</p>
         </div>
@@ -237,15 +227,6 @@ export function AITrader() {
 
       <p className="text-center text-[11px] text-ink-faint">{t("ms.disclaimer")}</p>
     </div>
-  );
-}
-
-function Badge({ provider, t }: { provider: "ai" | "local" | ""; t: (k: string) => string }) {
-  if (!provider) return null;
-  return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", provider === "ai" ? "border-bull/30 bg-bull/10 text-bull" : "border-white/10 bg-white/[0.04] text-ink-muted")}>
-      {provider === "ai" ? t("ai.viaAI") : t("ai.viaLocal")}
-    </span>
   );
 }
 

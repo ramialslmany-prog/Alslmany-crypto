@@ -15,13 +15,13 @@
 import { scanCoin } from "@/lib/scan-engine";
 import { qualityScore, type Recommendation } from "@/lib/signal-engine";
 import { isStable, liqBonus } from "@/lib/coin-meta";
-import { issueTrades, journalStats, adaptiveMinConf, getLessons, setLessons, type JTrade } from "@/lib/ai-journal";
+import { issueTrades, journalStats, adaptiveMinConf, getLessons, setLessons, setLastComment, setLastReview, type JTrade } from "@/lib/ai-journal";
 import type { Coin } from "@/lib/mock-data";
 import { formatUsd } from "@/lib/format";
 
 const ISSUE_KEY = "quantum.aitrader.lastIssue";
 const REVIEWED_KEY = "quantum.aitrader.reviewed";
-export const ISSUE_EVERY_MS = 4 * 3600e3; // a new entry round at most every ~4h
+export const ISSUE_EVERY_MS = 90_000; // re-scan for entries ~every 90s (bounded by MAX_OPEN + dual-engine quality, so it only enters when a genuinely good setup opens up)
 export const MAX_OPEN = 3; // risk management: never more than 3 open positions
 
 type Lang = "en" | "ar";
@@ -206,6 +206,7 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
     { role: "user", content: lang === "ar" ? "لماذا دخلت هذه الصفقات؟" : "Why did you enter these?" },
   ]);
   const comment = text || (lang === "ar" ? `دخلت ${n} صفقات وفق حدّ ثقة ${minConf}%.` : `Entered ${n} positions at a ${minConf}% confidence bar.`);
+  setLastComment(comment); // surfaced on the AI Trader page (autonomous output)
 
   // One clean signal card per entry (pro channel style), then the strategy note.
   for (const p of picks) {
@@ -248,8 +249,10 @@ export async function maybeSelfReview(journal: JTrade[], lang: Lang, force = fal
   if (text) {
     const lsn = (text.split(/الدروس:|Lessons:/i)[1] || text).trim();
     setLessons(lsn);
+    setLastReview(text);
     tgSend(`📊 Alslmany Crypto — تقييم ذاتي تلقائي\n${summary}\n\n📚 الدروس الجديدة:\n${lsn.slice(0, 600)}`);
     return { review: text, provider: "ai" };
   }
+  setLastReview(summary);
   return { review: summary, provider: "local" };
 }

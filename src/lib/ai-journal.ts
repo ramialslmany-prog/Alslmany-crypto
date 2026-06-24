@@ -202,6 +202,22 @@ export function setLessons(s: string) {
   listeners.forEach((l) => l());
 }
 
+/** Latest AI reasoning, persisted so the autonomous loop's output shows on the page. */
+const COMMENT_KEY = "quantum.aitrader.comment";
+const REVIEW_KEY = "quantum.aitrader.review";
+export function getLastComment(): string {
+  try { return localStorage.getItem(COMMENT_KEY) || ""; } catch { return ""; }
+}
+export function setLastComment(s: string) {
+  try { localStorage.setItem(COMMENT_KEY, s.slice(0, 1500)); } catch { /* ignore */ }
+}
+export function getLastReview(): string {
+  try { return localStorage.getItem(REVIEW_KEY) || ""; } catch { return ""; }
+}
+export function setLastReview(s: string) {
+  try { localStorage.setItem(REVIEW_KEY, s.slice(0, 2000)); } catch { /* ignore */ }
+}
+
 /**
  * Mechanical self-improvement: the minimum confidence the AI accepts for new
  * picks tightens after poor results and relaxes after strong ones.
