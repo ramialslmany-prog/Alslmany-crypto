@@ -26,7 +26,7 @@ export function useMarkets() {
     initialData: { source: "mock", updatedAt: 0, coins: mockCoins } as MarketsResponse,
     // Treat the seed as already stale → render it instantly, then refetch live now.
     initialDataUpdatedAt: 0,
-    refetchInterval: 45_000,
+    refetchInterval: 30_000, // matches the server cache TTL — freshest prices, no extra CoinGecko load
   });
   return {
     coins: query.data.coins,

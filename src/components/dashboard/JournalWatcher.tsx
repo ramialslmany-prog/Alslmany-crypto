@@ -69,13 +69,13 @@ export function JournalWatcher() {
       // 2) Auto self-review when positions just closed (lessons → Telegram).
       if (closed.length) await maybeSelfReview(getJournal(), lang);
 
-      // 3) Fully autonomous entries: strict strategy, ~4h throttle, max 3 open.
+      // 3) Fully autonomous entries — checked moment-by-moment for fast entry.
       await autoIssue(cs, getJournal(), lang);
     };
 
-    // First pass shortly after prices load, then every 30s.
-    const first = setTimeout(tick, 4000);
-    const id = setInterval(tick, 30_000);
+    // First pass right after prices load, then every 15s (near real-time).
+    const first = setTimeout(tick, 3000);
+    const id = setInterval(tick, 15_000);
     return () => {
       clearTimeout(first);
       clearInterval(id);

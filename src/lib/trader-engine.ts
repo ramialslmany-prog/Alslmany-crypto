@@ -21,7 +21,7 @@ import { formatUsd } from "@/lib/format";
 
 const ISSUE_KEY = "quantum.aitrader.lastIssue";
 const REVIEWED_KEY = "quantum.aitrader.reviewed";
-export const ISSUE_EVERY_MS = 90_000; // re-scan for entries ~every 90s (bounded by MAX_OPEN + dual-engine quality, so it only enters when a genuinely good setup opens up)
+export const ISSUE_EVERY_MS = 12_000; // re-scan for entries ~every tick (moment-by-moment) for fast entry; the slot cap + dual-engine quality + risk-off guard keep it from over-trading or hammering APIs
 export const MAX_OPEN = 3; // risk management: never more than 3 open positions
 
 type Lang = "en" | "ar";
