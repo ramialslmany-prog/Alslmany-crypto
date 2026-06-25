@@ -16,7 +16,7 @@ export const maxDuration = 60;
 
 const STABLES = new Set(["USDT", "USDC", "DAI", "TUSD", "FDUSD", "USDE", "USDS", "BUSD", "PYUSD"]);
 const MIN_CONF = 70; // quality bar — only confident setups
-const MIN_RR = 1.8; // and sound reward:risk
+const MIN_RR = 1.45; // first target is 1.5R (then 2.5R/4R via the ladder); gate must sit at/below it or nothing ever qualifies
 const TOP_N = 3;
 const SCAN_UNIVERSE = 24; // most-liquid coins we deep-scan per run
 
@@ -28,14 +28,16 @@ function fmtPrice(n: number): string {
 }
 
 function entryCard(symbol: string, entry: number, stop: number, targets: number[], conf: number): string {
+  const f = (p: number) => { const v = ((p - entry) / entry) * 100; return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; };
   return (
-    `#${symbol}/USDT - طويل🟢\n\n` +
-    `الثقة: ${conf}%\n` +
+    `#${symbol}/USDT - طويل🟢\n` +
+    `الثقة: ${conf}%\n\n` +
     `نقطة الدخول: ${fmtPrice(entry)}\n` +
-    `وقف الخسارة: ${fmtPrice(stop)}\n\n` +
-    `الهدف 1: ${fmtPrice(targets[0])}\n` +
-    `الهدف 2: ${fmtPrice(targets[1])}\n` +
-    `الهدف 3: ${fmtPrice(targets[2])}`
+    `وقف الخسارة: ${fmtPrice(stop)} (${f(stop)})\n\n` +
+    `الهدف 1: ${fmtPrice(targets[0])} (${f(targets[0])})\n` +
+    `الهدف 2: ${fmtPrice(targets[1])} (${f(targets[1])})\n` +
+    `الهدف 3: ${fmtPrice(targets[2])} (${f(targets[2])})\n\n` +
+    `🛡️ خاطر بـ١-٢٪ من محفظتك فقط لكل صفقة`
   );
 }
 

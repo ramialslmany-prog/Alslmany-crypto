@@ -47,15 +47,18 @@ export function durAr(ms: number): string {
   return parts.join(" ");
 }
 
-/** Professional signal-channel entry card. */
-export function entryCard(symbol: string, entry: number, stop: number, targets: number[]): string {
+/** Professional signal-channel entry card with %-distances + risk guidance. */
+export function entryCard(symbol: string, entry: number, stop: number, targets: number[], conf?: number): string {
+  const f = (p: number) => { const v = ((p - entry) / entry) * 100; return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; };
   return (
-    `#${symbol}/USDT - طويل🟢\n\n` +
-    `نقطة الدخول: ${fmtPrice(entry)}\n` +
-    `وقف الخسارة: ${fmtPrice(stop)}\n\n` +
-    `الهدف 1: ${fmtPrice(targets[0])}\n` +
-    `الهدف 2: ${fmtPrice(targets[1])}\n` +
-    `الهدف 3: ${fmtPrice(targets[2])}`
+    `#${symbol}/USDT - طويل🟢\n` +
+    (conf != null ? `الثقة: ${conf}%\n` : "") +
+    `\nنقطة الدخول: ${fmtPrice(entry)}\n` +
+    `وقف الخسارة: ${fmtPrice(stop)} (${f(stop)})\n\n` +
+    `الهدف 1: ${fmtPrice(targets[0])} (${f(targets[0])})\n` +
+    `الهدف 2: ${fmtPrice(targets[1])} (${f(targets[1])})\n` +
+    `الهدف 3: ${fmtPrice(targets[2])} (${f(targets[2])})\n\n` +
+    `🛡️ خاطر بـ١-٢٪ من محفظتك فقط لكل صفقة`
   );
 }
 
@@ -118,7 +121,10 @@ async function confirmRigorous(symbol: string): Promise<Recommendation | null> {
 }
 
 const CONFIRM_CONF = 70; // rigorous engine must independently rate ≥70
-const CONFIRM_RR = 1.8; // and offer at least 1.8 reward:risk
+// The engine's first target sits at 1.5R (then 2.5R, 4R via the staged ladder),
+// so the measured riskReward is ~1.5 — this gate must sit at/below it or NO trade
+// can ever confirm. 1.45 clears float drift while still demanding a sound ladder.
+const CONFIRM_RR = 1.45;
 
 export type IssueResult = { issued: number; comment: string; provider: "ai" | "local" };
 
@@ -210,7 +216,7 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
 
   // One clean signal card per entry (pro channel style), then the strategy note.
   for (const p of picks) {
-    await tgSend(entryCard(p.c.symbol, p.r.entry, p.r.stop, p.r.targets));
+    await tgSend(entryCard(p.c.symbol, p.r.entry, p.r.stop, p.r.targets, p.r.confidence));
   }
   tgSend(`🧠 الاستراتيجية:\n${comment.slice(0, 400)}\n\n⚠️ ليست نصيحة مالية`);
 
