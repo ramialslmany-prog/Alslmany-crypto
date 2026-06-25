@@ -87,8 +87,10 @@ The browser-driven trader runs only while the site is open. For **24/7** pushes
 
 ### Scheduling the scan
 
-`vercel.json` already declares a cron hitting `/api/cron/scan` every 4 hours.
-Vercel Cron sends the auth header automatically.
+`vercel.json` already declares a daily cron hitting `/api/cron/scan` (the most
+frequent Vercel Cron allows on the free Hobby plan). Vercel sends the auth
+header automatically. While the site is open in a browser the in-app trader also
+scans moment-by-moment (~every 15s) for much faster entries.
 
 > **Free (Hobby) plan note:** Vercel Cron on Hobby runs **once per day**. For
 > more frequent pushes for free, use an external scheduler instead — e.g.

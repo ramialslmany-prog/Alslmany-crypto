@@ -68,7 +68,7 @@ export function Topbar() {
 
       <LangToggle />
 
-      <button className="relative grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-ink-muted transition-colors hover:text-ink">
+      <button aria-label={t("a11y.notifications")} className="relative grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-ink-muted transition-colors hover:text-ink">
         <Bell className="h-[18px] w-[18px]" />
         <span className="absolute end-2.5 top-2.5 h-2 w-2 rounded-full bg-bear" />
       </button>

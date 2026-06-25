@@ -21,6 +21,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "nav.settings": "Settings",
     "nav.menu": "Menu",
     "nav.close": "Close",
+    "a11y.notifications": "Notifications",
+    "a11y.send": "Send",
+    "a11y.refresh": "Refresh",
     "nav.copilot": "AI Co-pilot",
     "nav.copilotStatus": "Monitoring 40 venues · 3 models online",
 
@@ -351,6 +354,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "nav.settings": "الإعدادات",
     "nav.menu": "القائمة",
     "nav.close": "إغلاق",
+    "a11y.notifications": "الإشعارات",
+    "a11y.send": "إرسال",
+    "a11y.refresh": "تحديث",
     "nav.copilot": "المساعد الذكي",
     "nav.copilotStatus": "مراقبة ٤٠ منصة · ٣ نماذج تعمل",
 

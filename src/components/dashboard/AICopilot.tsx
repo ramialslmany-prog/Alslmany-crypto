@@ -120,7 +120,7 @@ export function AICopilot() {
       <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
         <Sparkles className="h-4 w-4 shrink-0 text-violet" />
         <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("ov.ask")} className="w-full bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none" />
-        <button type="submit" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-violet text-base-950 transition-transform hover:scale-105">
+        <button type="submit" aria-label={t("a11y.send")} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-violet text-base-950 transition-transform hover:scale-105">
           <Send className="h-4 w-4" />
         </button>
       </form>

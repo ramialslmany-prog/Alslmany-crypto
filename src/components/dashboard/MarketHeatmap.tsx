@@ -32,7 +32,7 @@ export function MarketHeatmap() {
           </Link>
           <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
             <span className={cn("h-1.5 w-1.5 rounded-full", isLive ? "bg-bull animate-pulse-glow" : "bg-gold")} />
-            {isLive ? "live" : "demo"}
+            {isLive ? t("ov.live") : t("ov.demo")}
           </span>
         </div>
       </div>

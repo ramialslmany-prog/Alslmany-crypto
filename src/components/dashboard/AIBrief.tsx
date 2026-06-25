@@ -73,7 +73,7 @@ export function AIBrief() {
             {provider === "ai" ? t("ai.viaAI") : t("ai.viaLocal")}
           </span>
         )}
-        <button onClick={generate} disabled={loading} className="ms-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.03] text-ink-muted transition-colors hover:text-cyan disabled:opacity-50">
+        <button onClick={generate} disabled={loading} aria-label={t("a11y.refresh")} className="ms-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.03] text-ink-muted transition-colors hover:text-cyan disabled:opacity-50">
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </button>
       </div>

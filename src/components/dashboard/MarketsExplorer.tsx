@@ -61,8 +61,8 @@ export function MarketsExplorer() {
             <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-semibold text-ink-muted tnum">
               {coins.length} {t("ex.coins")}
             </span>
-            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-bull">
-              <span className={cn("h-1.5 w-1.5 rounded-full", isLive ? "bg-bull animate-pulse-glow" : "bg-gold")} /> {isLive ? "live" : "demo"}
+            <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest", isLive ? "text-bull" : "text-gold")}>
+              <span className={cn("h-1.5 w-1.5 rounded-full", isLive ? "bg-bull animate-pulse-glow" : "bg-gold")} /> {isLive ? t("ov.live") : t("ov.demo")}
             </span>
           </div>
           <p className="mt-1 text-sm text-ink-muted">{t("ex.subtitle")}</p>
