@@ -132,11 +132,13 @@ export async function GET(req: Request) {
   const priceOf = (s: string) => markets.find((c) => c.symbol === s)?.price ?? 0;
   const journal = await loadJournal();
 
-  // 1) Manage open positions → exits / advances / risk warnings.
+  // 1) Manage open positions → exits / advances / risk warnings (sent in parallel for speed).
   const { closed, advanced, warned } = evaluateOpen(journal, priceOf);
-  for (const a of advanced) await tg(token, chatId, advanceMsg(a.t, a.level, a.gain));
-  for (const t of closed) await tg(token, chatId, closeMsg(t));
-  for (const t of warned) await tg(token, chatId, `#${t.symbol}/USDT - طويل🟢\n\n⚠️ تحذير مخاطرة\nالسعر ${fmtPrice(priceOf(t.symbol))} يقترب من وقف الخسارة ${fmtPrice(t.stop)}\nنقطة الدخول: ${fmtPrice(t.entry)} — راقب الصفقة.`);
+  await Promise.all([
+    ...advanced.map((a) => tg(token, chatId, advanceMsg(a.t, a.level, a.gain))),
+    ...closed.map((t) => tg(token, chatId, closeMsg(t))),
+    ...warned.map((t) => tg(token, chatId, `#${t.symbol}/USDT - طويل🟢\n\n⚠️ تحذير مخاطرة\nالسعر ${fmtPrice(priceOf(t.symbol))} يقترب من وقف الخسارة ${fmtPrice(t.stop)}\nنقطة الدخول: ${fmtPrice(t.entry)} — راقب الصفقة.`)),
+  ]);
 
   // 2) Enter new high-quality setups when slots are free and market isn't risk-off.
   let entered = 0;
@@ -162,12 +164,11 @@ export async function GET(req: Request) {
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, slots);
     const now = Date.now();
-    for (const r of picks) {
-      const t: JTrade = { id: `${r.symbol}|${now}`, symbol: r.symbol, entry: r.entry, stop: r.stop, targets: r.targets, confidence: r.confidence, issuedAt: now, status: "open" };
-      journal.unshift(t);
-      await tg(token, chatId, entryCard(t));
-      entered++;
-    }
+    const newTrades = picks.map((r): JTrade => ({ id: `${r.symbol}|${now}`, symbol: r.symbol, entry: r.entry, stop: r.stop, targets: r.targets, confidence: r.confidence, issuedAt: now, status: "open" }));
+    for (const t of newTrades) journal.unshift(t);
+    // Fire all entry cards in parallel — the alert lands the instant a trade opens.
+    await Promise.all(newTrades.map((t) => tg(token, chatId, entryCard(t))));
+    entered = newTrades.length;
   }
 
   await saveJournal(journal);

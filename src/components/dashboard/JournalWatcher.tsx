@@ -82,9 +82,9 @@ export function JournalWatcher() {
       await autoIssue(cs, getJournal(), lang);
     };
 
-    // First pass right after prices load, then every 15s (near real-time).
-    const first = setTimeout(tick, 3000);
-    const id = setInterval(tick, 15_000);
+    // First pass right after prices load, then every 10s (near real-time).
+    const first = setTimeout(tick, 2500);
+    const id = setInterval(tick, 10_000);
     return () => {
       clearTimeout(first);
       clearInterval(id);

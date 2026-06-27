@@ -21,7 +21,7 @@ import { formatUsd } from "@/lib/format";
 
 const ISSUE_KEY = "quantum.aitrader.lastIssue";
 const REVIEWED_KEY = "quantum.aitrader.reviewed";
-export const ISSUE_EVERY_MS = 12_000; // re-scan for entries ~every tick (moment-by-moment) for fast entry; the slot cap + dual-engine quality + risk-off guard keep it from over-trading or hammering APIs
+export const ISSUE_EVERY_MS = 8_000; // re-scan for entries ~every tick (moment-by-moment) for fast entry; the slot cap + dual-engine quality + risk-off guard keep it from over-trading or hammering APIs
 export const MAX_OPEN = 3; // risk management: never more than 3 open positions
 
 type Lang = "en" | "ar";
@@ -198,6 +198,11 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
   const n = issueTrades(picks.map((p) => p.r));
   if (n === 0) return none;
 
+  // FASTEST PATH: fire the entry cards to Telegram IMMEDIATELY, in parallel —
+  // BEFORE the (slower) LLM commentary. The trade alert lands within ~1s.
+  await Promise.all(picks.map((p) => tgSend(entryCard(p.c.symbol, p.r.entry, p.r.stop, p.r.targets, p.r.confidence))));
+
+  // Then generate + send the strategy note (doesn't delay the trade alert).
   const facts = picks
     .map((p, i) => `${i + 1}. ${p.c.symbol} (${p.c.name}) conf ${p.r.confidence}% entry ${formatUsd(p.r.entry)} stop ${formatUsd(p.r.stop)} TPs ${p.r.targets.map((x) => formatUsd(x)).join("/")} RSI ${p.r.indicators.rsi.toFixed(0)}`)
     .join("\n");
@@ -213,11 +218,6 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
   ]);
   const comment = text || (lang === "ar" ? `دخلت ${n} صفقات وفق حدّ ثقة ${minConf}%.` : `Entered ${n} positions at a ${minConf}% confidence bar.`);
   setLastComment(comment); // surfaced on the AI Trader page (autonomous output)
-
-  // One clean signal card per entry (pro channel style), then the strategy note.
-  for (const p of picks) {
-    await tgSend(entryCard(p.c.symbol, p.r.entry, p.r.stop, p.r.targets, p.r.confidence));
-  }
   tgSend(`🧠 الاستراتيجية:\n${comment.slice(0, 400)}\n\n⚠️ ليست نصيحة مالية`);
 
   return { issued: n, comment, provider: text ? "ai" : "local" };
