@@ -51,7 +51,16 @@ export function JournalWatcher() {
         body: JSON.stringify({ text }),
       }).catch(() => {});
 
+    // When the 24/7 cloud loop is configured it becomes the single brain — the
+    // in-app watcher stays fully silent so trades & Telegram never duplicate.
+    let serverActive = false;
+    const checkServer = () =>
+      fetch("/api/journal").then((r) => r.json()).then((j) => { serverActive = !!j.serverActive; }).catch(() => {});
+    checkServer();
+    const serverPoll = setInterval(checkServer, 60_000);
+
     const tick = async () => {
+      if (serverActive) return; // cloud loop owns trading + alerts
       const cs = coinsRef.current;
       if (!cs.length) return;
       const lang = (typeof localStorage !== "undefined" && localStorage.getItem("lang")) === "en" ? "en" : "ar";
@@ -79,6 +88,7 @@ export function JournalWatcher() {
     return () => {
       clearTimeout(first);
       clearInterval(id);
+      clearInterval(serverPoll);
     };
   }, []);
 

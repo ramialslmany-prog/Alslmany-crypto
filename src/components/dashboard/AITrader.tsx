@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bot, Sparkles, PlayCircle, GraduationCap, Radio, Trash2, ArrowUpRight, Gauge, Send } from "lucide-react";
 import { useJournal, clearJournal, journalStats, adaptiveMinConf, getLessons, getLastComment, getLastReview, type JTrade } from "@/lib/ai-journal";
 import { marketRiskOff } from "@/lib/trader-engine";
-import { useMarkets } from "@/lib/hooks";
+import { useMarkets, useServerJournal } from "@/lib/hooks";
 import { useI18n, timeAgo } from "@/lib/i18n";
 import { CoinIcon } from "@/components/ui/CoinIcon";
 import { formatUsd, formatPercent } from "@/lib/format";
@@ -23,7 +23,10 @@ const STATUS_CLS: Record<JTrade["status"], string> = {
 export function AITrader() {
   const { coins } = useMarkets();
   const { t, lang } = useI18n();
-  const journal = useJournal();
+  const localJournal = useJournal();
+  const { serverActive, trades: serverTrades } = useServerJournal();
+  // When the 24/7 cloud loop is configured, the page mirrors IT (the real brain).
+  const journal = serverActive ? serverTrades : localJournal;
 
   const [comment, setComment] = useState("");
   const [review, setReview] = useState("");
@@ -116,8 +119,13 @@ export function AITrader() {
           </span>
         </span>
         <div className="min-w-0">
-          <div className="text-sm font-bold text-bull">{t("at.autoTitle")}</div>
-          <p className="text-xs leading-relaxed text-ink-muted">{t("at.autoDesc")}</p>
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-bold text-bull">{serverActive ? t("at.cloudTitle") : t("at.autoTitle")}</div>
+            {serverActive && (
+              <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2 py-0.5 text-[10px] font-bold text-cyan">☁️ 24/7</span>
+            )}
+          </div>
+          <p className="text-xs leading-relaxed text-ink-muted">{serverActive ? t("at.cloudDesc") : t("at.autoDesc")}</p>
           <p className={cn("mt-1.5 text-xs font-semibold", regime.off ? "text-gold" : full ? "text-cyan" : "text-bull")}>
             {regime.off ? t("at.holding") : full ? t("at.full") : t("at.hunting")}
           </p>

@@ -97,6 +97,23 @@ export function useNews() {
   return { items: query.data?.items ?? [], isLoading: query.isLoading };
 }
 
+import type { JTrade } from "@/lib/ai-journal";
+
+export type ServerJournalResp = { serverActive: boolean; trades: JTrade[] };
+
+/** The 24/7 server-side trade journal (Upstash). When `serverActive`, the cloud
+ *  loop is the brain — the page mirrors it and the in-app watcher stays silent. */
+export function useServerJournal() {
+  const query = useQuery({
+    queryKey: ["serverJournal"],
+    queryFn: () => getJson<ServerJournalResp>("/api/journal"),
+    initialData: { serverActive: false, trades: [] } as ServerJournalResp,
+    initialDataUpdatedAt: 0,
+    refetchInterval: 15_000,
+  });
+  return { serverActive: !!query.data.serverActive, trades: query.data.trades ?? [] };
+}
+
 export type WhaleTrade = { id: string; symbol: string; side: "accumulation" | "distribution"; price: number; amountUsd: number; ts: number };
 type WhalesResponse = { source: string; updatedAt: number; trades: WhaleTrade[]; netBuyUsd: number; netSellUsd: number };
 
