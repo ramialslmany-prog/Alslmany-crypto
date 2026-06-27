@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
 import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
-import { storageConfigured, loadJournal, saveJournal, type JTradeS as JTrade } from "@/lib/store";
+import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, type JTradeS as JTrade } from "@/lib/store";
 import type { Coin } from "@/lib/mock-data";
 
 /**
@@ -172,12 +172,37 @@ export async function GET(req: Request) {
   }
 
   await saveJournal(journal);
+
+  // Hourly heartbeat: if nothing happened (no entries/exits) and it's been ≥1h
+  // since the last Telegram message, ping "still watching — no setup" so the
+  // user knows the bot is alive. Any real trade resets the hourly timer.
+  const sentSomething = entered + closed.length + advanced.length + warned.length > 0;
+  const openNow = journal.filter((t) => t.status === "open").length;
+  let heartbeat = false;
+  const meta = await loadMeta();
+  const now = Date.now();
+  if (sentSomething) {
+    meta.lastMsg = now;
+    await saveMeta(meta);
+  } else if (now - (meta.lastMsg ?? 0) >= 3600_000) {
+    const ro = marketRiskOff(markets);
+    await tg(
+      token,
+      chatId,
+      `🔍 Alslmany Crypto — تقرير الساعة\n\n${ro ? "السوق هابط عام — أحجم عن الدخول لحماية رأس المال." : "لا توجد فرصة شراء عالية الجودة الآن — أنتظر إعداداً نظيفاً."}\n\n📊 صفقات مفتوحة: ${openNow}\n🛡️ البوت يعمل ويراقب 24/7.`
+    );
+    meta.lastMsg = now;
+    await saveMeta(meta);
+    heartbeat = true;
+  }
+
   return NextResponse.json({
     ok: true,
-    open: journal.filter((t) => t.status === "open").length,
+    open: openNow,
     entered,
     closed: closed.length,
     advanced: advanced.length,
+    heartbeat,
     riskOff: marketRiskOff(markets),
   });
 }

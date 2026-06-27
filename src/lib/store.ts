@@ -75,6 +75,45 @@ export async function loadJournal(): Promise<JTradeS[]> {
   return [];
 }
 
+/* ---- small meta store (e.g. last-message timestamp for the hourly heartbeat) ---- */
+const META_KV_KEY = "alslmany:meta";
+const META_GIST_FILE = "alslmany-meta.json";
+
+export async function loadMeta(): Promise<Record<string, number>> {
+  const kv = kvCreds();
+  if (kv) {
+    try {
+      const r = await fetch(kv.url, { method: "POST", headers: { Authorization: `Bearer ${kv.token}`, "content-type": "application/json" }, body: JSON.stringify(["GET", META_KV_KEY]), cache: "no-store" });
+      const j = (await r.json()) as { result?: unknown };
+      if (typeof j.result === "string") return JSON.parse(j.result) as Record<string, number>;
+    } catch { /* ignore */ }
+    return {};
+  }
+  const g = gistCreds();
+  if (g) {
+    try {
+      const r = await fetch(`https://api.github.com/gists/${g.id}`, { headers: { Authorization: `token ${g.token}`, "User-Agent": "alslmany", Accept: "application/vnd.github+json" }, cache: "no-store" });
+      const j = (await r.json()) as { files?: Record<string, { content?: string }> };
+      const content = j.files?.[META_GIST_FILE]?.content;
+      if (content) return JSON.parse(content) as Record<string, number>;
+    } catch { /* ignore */ }
+  }
+  return {};
+}
+
+export async function saveMeta(meta: Record<string, number>): Promise<void> {
+  const data = JSON.stringify(meta);
+  const kv = kvCreds();
+  if (kv) {
+    await fetch(kv.url, { method: "POST", headers: { Authorization: `Bearer ${kv.token}`, "content-type": "application/json" }, body: JSON.stringify(["SET", META_KV_KEY, data]), cache: "no-store" }).catch(() => {});
+    return;
+  }
+  const g = gistCreds();
+  if (g) {
+    await fetch(`https://api.github.com/gists/${g.id}`, { method: "PATCH", headers: { Authorization: `token ${g.token}`, "User-Agent": "alslmany", "content-type": "application/json", Accept: "application/vnd.github+json" }, body: JSON.stringify({ files: { [META_GIST_FILE]: { content: data } } }) }).catch(() => {});
+  }
+}
+
 export async function saveJournal(journal: JTradeS[]): Promise<void> {
   const data = JSON.stringify(journal.slice(0, 80));
   const kv = kvCreds();
