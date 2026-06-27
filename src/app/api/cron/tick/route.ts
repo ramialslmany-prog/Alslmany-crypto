@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
 import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
+import { storageConfigured, loadJournal, saveJournal, type JTradeS as JTrade } from "@/lib/store";
 import type { Coin } from "@/lib/mock-data";
 
 /**
@@ -17,56 +18,12 @@ import type { Coin } from "@/lib/mock-data";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const KEY = "alslmany:journal";
 const MAX_OPEN = 3;
 const MIN_CONF = 70;
 const MIN_RR = 1.45;
 const SCAN_UNIVERSE = 18;
 const EXPIRE_MS = 7 * 24 * 3600 * 1000;
 const STABLES = new Set(["USDT", "USDC", "DAI", "TUSD", "FDUSD", "USDE", "USDS", "BUSD", "PYUSD"]);
-
-interface JTrade {
-  id: string;
-  symbol: string;
-  entry: number;
-  stop: number;
-  targets: number[];
-  confidence: number;
-  issuedAt: number;
-  status: "open" | "tp1" | "tp2" | "tp3" | "breakeven" | "stopped" | "expired";
-  hit?: number;
-  closedAt?: number;
-  exitPrice?: number;
-  retPct?: number;
-  warned?: boolean;
-}
-
-/* ---------------- Upstash / Vercel KV (REST) ---------------- */
-function kvCreds() {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  return url && token ? { url, token } : null;
-}
-async function kv(cmd: unknown[]): Promise<unknown> {
-  const c = kvCreds();
-  if (!c) return undefined;
-  const r = await fetch(c.url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${c.token}`, "content-type": "application/json" },
-    body: JSON.stringify(cmd),
-    cache: "no-store",
-  });
-  const j = (await r.json()) as { result?: unknown };
-  return j.result;
-}
-async function loadJournal(): Promise<JTrade[]> {
-  const v = await kv(["GET", KEY]);
-  if (typeof v === "string") { try { return JSON.parse(v) as JTrade[]; } catch { return []; } }
-  return [];
-}
-async function saveJournal(j: JTrade[]) {
-  await kv(["SET", KEY, JSON.stringify(j.slice(0, 80))]);
-}
 
 /* ---------------- Telegram ---------------- */
 async function tg(token: string, chatId: string, text: string) {
@@ -169,7 +126,7 @@ export async function GET(req: Request) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return NextResponse.json({ ok: false, error: "telegram-not-configured (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)" });
-  if (!kvCreds()) return NextResponse.json({ ok: false, error: "storage-not-configured — add Upstash/KV in Vercel (Storage tab) so 24/7 state can persist" });
+  if (!storageConfigured()) return NextResponse.json({ ok: false, error: "storage-not-configured (set KV_* or GITHUB_STORAGE_TOKEN+GIST_ID)" });
 
   const markets = await fetchMarkets();
   const priceOf = (s: string) => markets.find((c) => c.symbol === s)?.price ?? 0;
