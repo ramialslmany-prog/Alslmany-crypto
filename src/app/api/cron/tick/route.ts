@@ -3,6 +3,7 @@ import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
 import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
 import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, type JTradeS as JTrade } from "@/lib/store";
+import { isStable } from "@/lib/coin-meta";
 import type { Coin } from "@/lib/mock-data";
 
 /**
@@ -23,7 +24,6 @@ const MIN_CONF = 70;
 const MIN_RR = 1.45;
 const SCAN_UNIVERSE = 18;
 const EXPIRE_MS = 7 * 24 * 3600 * 1000;
-const STABLES = new Set(["USDT", "USDC", "DAI", "TUSD", "FDUSD", "USDE", "USDS", "BUSD", "PYUSD"]);
 
 /* ---------------- Telegram ---------------- */
 async function tg(token: string, chatId: string, text: string) {
@@ -146,7 +146,7 @@ export async function GET(req: Request) {
   const slots = MAX_OPEN - openCount;
   if (slots > 0 && !marketRiskOff(markets)) {
     const universe = markets
-      .filter((c) => !STABLES.has(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
+      .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
       .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
       .slice(0, SCAN_UNIVERSE);
     const { ltf, htf } = STYLE_TF.day;

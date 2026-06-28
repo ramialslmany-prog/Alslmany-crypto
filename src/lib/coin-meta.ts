@@ -61,7 +61,18 @@ export const STABLE_SYMBOLS = new Set([
   "GUSD", "BUSD", "USDF", "USD1", "USDX", "CRVUSD", "FRAX", "LUSD", "USDB", "USDS",
   "EURT", "EURS", "USTC", "BUIDL", "USDG", "USDY",
 ]);
-export const isStable = (symbol: string) => STABLE_SYMBOLS.has(symbol);
+
+/**
+ * A coin is treated as a non-tradable peg if it's in the known set, OR its symbol
+ * encodes a fiat peg (contains USD/EUR — e.g. USDGO, BFUSD, AUSD), OR it's the
+ * misleadingly-named "STABLE" token. This auto-catches new stablecoins instead of
+ * chasing an ever-growing hardcoded list. Non-stable tokens almost never carry
+ * USD/EUR in their ticker (e.g. UNI, INJ, USUAL all pass through).
+ */
+export const isStable = (symbol: string) => {
+  const s = symbol.toUpperCase();
+  return STABLE_SYMBOLS.has(s) || s === "STABLE" || /USD|EUR/.test(s);
+};
 
 /** Ranking bonus that lightly favors liquid (higher market-cap) coins. */
 export const liqBonus = (rank?: number) => (!rank ? 0 : rank <= 30 ? 40 : rank <= 100 ? 25 : rank <= 200 ? 10 : 0);

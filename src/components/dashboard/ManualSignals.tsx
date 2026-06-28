@@ -17,9 +17,12 @@ import {
   HelpCircle,
   Radar,
   Search,
+  Brain,
+  Loader2,
 } from "lucide-react";
 import { useMarkets } from "@/lib/hooks";
 import { scanCoin } from "@/lib/scan-engine";
+import { deepAnalyze } from "@/lib/deep-analyze";
 import { trackSignal } from "@/lib/tracker";
 import { useI18n } from "@/lib/i18n";
 import { signalLabelKey, qualityScore } from "@/lib/signal-engine";
@@ -42,9 +45,11 @@ const DIR: Record<Direction, { cls: string; icon: React.ElementType }> = {
 };
 
 type Scanned = { coin: Coin; rec: Recommendation };
+/** Rigorous confirmation + live AI for a single coin, loaded on demand. */
+type Detail = { rec?: Recommendation; ai?: string; prov?: "ai" | "local"; loading: boolean };
 
 export function ManualSignals() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { coins } = useMarkets();
   const [market, setMarket] = useState<Market>("spot");
   const [style, setStyle] = useState<Style>("day");
@@ -57,12 +62,25 @@ export function ManualSignals() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [limit, setLimit] = useState(50);
+  // Per-coin rigorous confirmation (same engine as the deep analysis) + live AI,
+  // so the row a user inspects never contradicts the analysis below it.
+  const [detail, setDetail] = useState<Record<string, Detail>>({});
 
   // Scan every coin from the already-loaded market data (instant, no requests).
   const scanned: Scanned[] = useMemo(
     () => coins.map((coin) => ({ coin, rec: scanCoin(coin, style, market) })),
     [coins, style, market]
   );
+
+  // Re-confirm a coin through the rigorous /api/signals engine and fetch the
+  // live AI read — triggered when a row is expanded. Cached per symbol+style+market.
+  const loadDetail = async (coin: Coin) => {
+    const key = `${coin.symbol}-${style}-${market}`;
+    if (detail[key]?.ai !== undefined || detail[key]?.loading) return;
+    setDetail((d) => ({ ...d, [key]: { ...(d[key] ?? {}), loading: true } }));
+    const res = await deepAnalyze(coin, lang);
+    setDetail((d) => ({ ...d, [key]: { rec: res.rec ?? undefined, ai: res.text, prov: res.provider, loading: false } }));
+  };
 
   const stats = useMemo(() => {
     const longs = scanned.filter((s) => s.rec.signal === "LONG").length;
@@ -88,14 +106,45 @@ export function ManualSignals() {
   const liqBonus = (rank?: number) => (!rank ? 0 : rank <= 30 ? 40 : rank <= 100 ? 25 : rank <= 200 ? 10 : 0);
   const score = (s: Scanned) => qualityScore(s.rec) + liqBonus(s.coin.rank);
   const sorted = useMemo(() => [...filtered].sort((a, b) => score(b) - score(a)), [filtered]);
-  const bestSymbol = sorted.find((s) => s.rec.signal !== "NEUTRAL")?.coin.symbol;
+
+  // The authoritative rec for display: the rigorous confirmation if we have it,
+  // otherwise the instant screener estimate.
+  const recOf = (s: Scanned) => detail[`${s.coin.symbol}-${style}-${market}`]?.rec ?? s.rec;
 
   // Auto-track only the top few actionable setups (so the tracker doesn't flood).
   const topSig = sorted.filter((s) => s.rec.signal !== "NEUTRAL").slice(0, 6);
   const sig = topSig.map((s) => `${s.coin.symbol}${s.rec.signal}${s.rec.market}${s.rec.style}`).join("|");
+
+  // Proactively confirm the top actionable picks through the rigorous engine so
+  // the most prominent rows (and the ★ best) match the deep analysis from the start.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.all(
+        topSig.map(async (s) => {
+          const key = `${s.coin.symbol}-${style}-${market}`;
+          if (detail[key]?.rec) return;
+          try {
+            const rec = (await (await fetch(`/api/signals?symbol=${s.coin.symbol}&style=${style}&market=${market}`)).json()) as Recommendation;
+            if (!cancelled) setDetail((d) => ({ ...d, [key]: { ...(d[key] ?? { loading: false }), rec } }));
+          } catch {
+            /* keep the screener estimate */
+          }
+        })
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, style, market]);
+
+  // The best pick prefers the confirmed verdict where available.
+  const bestSymbol = sorted.find((s) => recOf(s).signal !== "NEUTRAL")?.coin.symbol;
+
   useEffect(() => {
     if (!autoTrack) return;
-    topSig.forEach((s) => trackSignal(s.rec));
+    topSig.forEach((s) => trackSignal(recOf(s)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoTrack, sig]);
 
@@ -215,11 +264,16 @@ export function ManualSignals() {
               rank={i + 1}
               best={s.coin.symbol === bestSymbol}
               coin={s.coin}
-              rec={s.rec}
+              rec={recOf(s)}
+              detail={detail[`${s.coin.symbol}-${style}-${market}`]}
               fav={favorites.has(s.coin.symbol)}
               onFav={() => toggleFav(s.coin.symbol)}
               open={expanded === s.coin.symbol}
-              onToggle={() => setExpanded(expanded === s.coin.symbol ? null : s.coin.symbol)}
+              onToggle={() => {
+                const opening = expanded !== s.coin.symbol;
+                setExpanded(opening ? s.coin.symbol : null);
+                if (opening) loadDetail(s.coin);
+              }}
               market={market}
               t={t}
             />
@@ -252,9 +306,9 @@ function StatCard({ label, value, tone, suffix = "" }: { label: string; value: n
 }
 
 function Row({
-  coin, rec, fav, onFav, open, onToggle, market, rank, best, t,
+  coin, rec, detail, fav, onFav, open, onToggle, market, rank, best, t,
 }: {
-  coin: Coin; rec: Recommendation; fav: boolean; onFav: () => void; open: boolean; onToggle: () => void; market: Market; rank: number; best: boolean; t: (k: string) => string;
+  coin: Coin; rec: Recommendation; detail?: Detail; fav: boolean; onFav: () => void; open: boolean; onToggle: () => void; market: Market; rank: number; best: boolean; t: (k: string) => string;
 }) {
   const d = DIR[rec.signal];
   const DIcon = d.icon;
@@ -297,7 +351,22 @@ function Row({
       </button>
 
       {open && (
-        <div className="grid gap-4 px-4 pb-4 lg:grid-cols-12">
+        <div className="px-4 pb-4">
+          {/* Live AI read — the authoritative, human-readable analysis (always live AI). */}
+          <div className="mb-4 rounded-xl border border-violet/20 bg-violet/[0.05] p-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-violet"><Brain className="h-3.5 w-3.5" /> {t("rec.deep")}</div>
+            {detail?.ai ? (
+              <>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-ink-muted">{detail.ai}</p>
+                <span className={cn("mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold", detail.prov === "ai" ? "border-bull/30 bg-bull/10 text-bull" : "border-white/10 bg-white/[0.04] text-ink-muted")}>
+                  {detail.prov === "ai" ? t("ai.viaAI") : t("ai.viaLocal")}
+                </span>
+              </>
+            ) : (
+              <span className="flex items-center gap-2 text-xs text-ink-faint"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("da.analyzing")}</span>
+            )}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-ink-muted"><ShieldCheck className="h-3.5 w-3.5 text-cyan" /> {t("ms.whySignal")}</div>
             <ul className="space-y-1.5">
@@ -324,6 +393,7 @@ function Row({
               <span className="flex items-center gap-1.5 text-ink-muted"><Gauge className="h-3.5 w-3.5" /> {t("ms.riskReward")}</span>
               <span dir="ltr" className="font-mono font-semibold text-ink tnum">{rec.riskReward.toFixed(2)} : 1</span>
             </div>
+          </div>
           </div>
         </div>
       )}

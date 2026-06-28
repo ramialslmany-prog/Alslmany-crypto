@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
 import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
+import { isStable } from "@/lib/coin-meta";
 
 /**
  * Server-side autonomous scan → Telegram. Runs WITHOUT a browser open, so the
@@ -14,7 +15,6 @@ import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-en
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const STABLES = new Set(["USDT", "USDC", "DAI", "TUSD", "FDUSD", "USDE", "USDS", "BUSD", "PYUSD"]);
 const MIN_CONF = 70; // quality bar — only confident setups
 const MIN_RR = 1.45; // first target is 1.5R (then 2.5R/4R via the ladder); gate must sit at/below it or nothing ever qualifies
 const TOP_N = 3;
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
   const markets = await fetchMarkets();
   const universe = markets
     // liquid, non-stable, and not chasing a pump / catching a falling knife
-    .filter((c) => !STABLES.has(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
+    .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
     .slice(0, SCAN_UNIVERSE);
 
