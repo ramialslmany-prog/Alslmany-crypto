@@ -39,17 +39,46 @@ export function RecommendationStack() {
     }
   };
 
-  const picks: Pick[] = useMemo(
+  // Stage 1 — fast scan narrows the whole market to liquid, non-stable,
+  // non-pumped uptrend candidates (close-only, instant).
+  const candidates = useMemo(
     () =>
       coins
-        .filter((c) => !isStable(c.symbol))
+        .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 120 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -12)
         .map((c) => ({ c, r: scan(c, "day", "spot") }))
-        .filter((x) => x.r.signal === "LONG" && x.r.confidence >= 55 && x.r.trend === "up")
+        .filter((x) => x.r.signal === "LONG" && x.r.confidence >= 60 && x.r.trend === "up")
         .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
         .sort((a, b) => b.score - a.score)
-        .slice(0, 4),
+        .slice(0, 8),
     [coins]
   );
+  const candSig = candidates.map((c) => c.c.symbol).join(",");
+
+  // Stage 2 — confirm each with the SAME rigorous multi-timeframe engine the
+  // deep analysis uses, so the card and the analysis never contradict.
+  const [picks, setPicks] = useState<Pick[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const confirmed: Pick[] = [];
+      await Promise.all(
+        candidates.map(async (cand) => {
+          try {
+            const rec = (await (await fetch(`/api/signals?symbol=${cand.c.symbol}&style=day&market=spot`)).json()) as Recommendation;
+            if (rec.signal === "LONG" && rec.confidence >= 60 && rec.trend === "up") confirmed.push({ c: cand.c, r: rec });
+          } catch {
+            /* skip */
+          }
+        })
+      );
+      confirmed.sort((a, b) => b.r.confidence - a.r.confidence);
+      if (!cancelled) setPicks(confirmed.slice(0, 4));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candSig]);
 
   const sig = picks.map((p) => p.c.symbol + p.r.confidence).join(",");
   useEffect(() => {
@@ -71,7 +100,7 @@ export function RecommendationStack() {
       try {
         const sys =
           lang === "ar"
-            ? "أنت مستثمر كريبتو مخضرم. علّق بجملتين أو ثلاث على هذه التوصيات: استخدم الأرقام المعطاة، وأضف رأيك من معرفتك بهذه المشاريع وأيها تفضّل أنت ولماذا. بالعربية. ليست نصيحة مالية."
+            ? "أنت مستثمر كريبتو مخضرم. علّق بجملتين أو ثلاث على هذه التوصيات: استخدم الأرقام المعطاة، وأضف رأيك من معرفتك بهذه المشاريع وأيها تفضّل أنت ولماذا. اكتب بالعربية الفصحى فقط دون خلط أي كلمات من لغات أخرى. ليست نصيحة مالية."
             : "You are a veteran crypto investor. Comment in 2-3 sentences on these picks: use the given numbers, add your own take from what you know about these projects and which YOU would prefer and why. Not financial advice.";
         const res = await fetch("/api/ai", {
           method: "POST",
