@@ -70,7 +70,7 @@ export function AICopilot() {
   };
 
   return (
-    <div className="glass glow-border flex h-full flex-col rounded-2xl p-5">
+    <div className="glass glow-border flex min-h-[480px] max-h-[640px] flex-col rounded-2xl p-5">
       <div className="flex items-center gap-2">
         <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet/15 text-violet">
           <Bot className="h-4 w-4" />
