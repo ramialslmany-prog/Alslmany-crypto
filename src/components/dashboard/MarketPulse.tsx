@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
-import { useMarkets, useFearGreed } from "@/lib/hooks";
+import { useMarkets, useFearGreed, useGlobal, useLiveTickers } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { LivePrice } from "@/components/ui/LivePrice";
-import { formatUsd } from "@/lib/format";
+import { formatUsd, formatCompact, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Signature command-center hero: a time-aware greeting, an honest market read
@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 export function MarketPulse() {
   const { coins } = useMarkets();
   const fg = useFearGreed();
+  const { data: global } = useGlobal();
+  const { prices: livePrices, connected } = useLiveTickers(["BTC", "ETH", "SOL"]);
   const { t, lang } = useI18n();
   const [hour, setHour] = useState(12);
   useEffect(() => setHour(new Date().getHours()), []);
@@ -43,10 +45,11 @@ export function MarketPulse() {
         <div className="lg:col-span-7">
           <div className="flex items-center gap-2 text-xs font-medium text-cyan">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-cyan opacity-70" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan" />
+              <span className={cn("absolute inline-flex h-2 w-2 animate-ping rounded-full opacity-70", connected ? "bg-bull" : "bg-cyan")} />
+              <span className={cn("relative inline-flex h-2 w-2 rounded-full", connected ? "bg-bull" : "bg-cyan")} />
             </span>
             {greet}
+            {connected && <span className="ms-1 rounded-full border border-bull/30 bg-bull/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-bull">{t("ov.live")} WS</span>}
           </div>
           <h1 className="mt-2 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl">
             <span className="text-gradient">{t("pulse.title")}</span>
@@ -65,6 +68,15 @@ export function MarketPulse() {
             <span dir="ltr" className="text-sm font-bold tnum" style={{ color: fgColor }}>{fg.value}</span>
             <span className="text-xs text-ink-muted">{t(`fg.${fg.classification}`)}</span>
           </div>
+
+          {/* global market stats */}
+          {global && global.totalMcap > 0 && (
+            <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2">
+              <GlobalStat label={t("pulse.totalCap")} value={`$${formatCompact(global.totalMcap)}`} sub={formatPercent(global.mcapChange24h)} subTone={global.mcapChange24h >= 0 ? "bull" : "bear"} />
+              <GlobalStat label={t("pulse.btcDom")} value={`${global.btcDominance.toFixed(1)}%`} />
+              <GlobalStat label={t("pulse.vol24")} value={`$${formatCompact(global.totalVol)}`} />
+            </div>
+          )}
         </div>
 
         {/* live pulse tiles — secondary, asymmetric */}
@@ -81,7 +93,7 @@ export function MarketPulse() {
                   </span>
                 </div>
                 <div dir="ltr" className="mt-1 font-mono text-sm font-bold tnum">
-                  <LivePrice value={c.price} format={formatUsd} />
+                  <LivePrice value={livePrices[c.symbol] ?? c.price} format={formatUsd} />
                 </div>
                 {c.spark?.length > 1 && (
                   <div className="mt-1.5 [&_svg]:h-auto [&_svg]:w-full">
@@ -94,5 +106,17 @@ export function MarketPulse() {
         </div>
       </div>
     </section>
+  );
+}
+
+function GlobalStat({ label, value, sub, subTone }: { label: string; value: string; sub?: string; subTone?: "bull" | "bear" }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1.5">
+        <span dir="ltr" className="font-mono text-sm font-bold tnum text-ink">{value}</span>
+        {sub && <span dir="ltr" className={cn("font-mono text-[10px] font-semibold tnum", subTone === "bull" ? "text-bull" : "text-bear")}>{sub}</span>}
+      </div>
+    </div>
   );
 }

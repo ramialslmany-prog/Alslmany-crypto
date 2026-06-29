@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import type { Coin } from "@/lib/mock-data";
 import { coins as mockCoins } from "@/lib/mock-data";
@@ -170,6 +171,82 @@ export function useBacktest(symbol: string, style: string, enabled: boolean) {
     staleTime: 300_000,
   });
   return { data: query.data, isLoading: query.isFetching };
+}
+
+export type GlobalStats = { source: string; totalMcap: number; totalVol: number; btcDominance: number; ethDominance: number; mcapChange24h: number };
+
+/** Global market stats (total cap, 24h vol, BTC/ETH dominance) via /api/global. */
+export function useGlobal() {
+  const query = useQuery({
+    queryKey: ["global"],
+    queryFn: () => getJson<GlobalStats>("/api/global"),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  return { data: query.data, isLoading: query.isLoading };
+}
+
+/**
+ * Real-time prices over Binance's public WebSocket (combined miniTicker stream),
+ * for a small set of focal symbols. Auto-reconnects with exponential backoff and
+ * exposes `connected` so the UI can show a true live indicator. Returns a map of
+ * SYMBOL → last price; merge it over the polled snapshot for sub-second ticks.
+ */
+export function useLiveTickers(symbols: string[]) {
+  const [prices, setPrices] = useState<Record<string, number>>({});
+  const [connected, setConnected] = useState(false);
+  const key = symbols.join(",");
+  const symsRef = useRef(symbols);
+  symsRef.current = symbols;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !symbols.length) return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      const streams = symsRef.current.map((s) => `${s.toLowerCase()}usdt@miniTicker`).join("/");
+      try {
+        ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
+      } catch {
+        return;
+      }
+      ws.onopen = () => { retry = 0; setConnected(true); };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data as string) as { data?: { s?: string; c?: string } };
+          const d = msg.data;
+          if (d?.s && d.c) {
+            const sym = d.s.replace(/USDT$/, "");
+            const price = parseFloat(d.c);
+            if (Number.isFinite(price)) setPrices((p) => (p[sym] === price ? p : { ...p, [sym]: price }));
+          }
+        } catch {
+          /* ignore malformed frame */
+        }
+      };
+      ws.onclose = () => {
+        setConnected(false);
+        if (!closed) {
+          retry++;
+          timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 15000));
+        }
+      };
+      ws.onerror = () => ws?.close();
+    };
+    connect();
+
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      ws?.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return { prices, connected };
 }
 
 type CandlesResponse = { symbol: string; interval: Interval; source: string; candles: Candle[] };
