@@ -171,6 +171,26 @@ export function useBacktest(symbol: string, style: string, enabled: boolean) {
   return { data: query.data, isLoading: query.isFetching };
 }
 
+/** One rigorous multi-timeframe recommendation, cached & deduped via React Query. */
+export function useSignal(symbol: string, style: Style, market: Market) {
+  const query = useQuery({
+    queryKey: ["signal", symbol, style, market],
+    queryFn: () => getJson<Recommendation>(`/api/signals?symbol=${symbol}&style=${style}&market=${market}`),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  return { rec: query.data, isLoading: query.isLoading, isError: query.isError };
+}
+
+/**
+ * Market-leader regime read (BTC on 4h/1d). Shared & cached so every surface
+ * that gates on "is the market falling?" hits one deduped query, not N fetches.
+ */
+export function useBtcRegime() {
+  const { rec, isLoading } = useSignal("BTC", "swing", "spot");
+  return { bearish: rec ? rec.trend === "down" : null, trend: rec?.trend, isLoading };
+}
+
 export type SignalRow = { symbol: string; rec: Recommendation | undefined; isLoading: boolean };
 
 /** Rule-based (non-AI) recommendations for a watchlist + trading style + market. */

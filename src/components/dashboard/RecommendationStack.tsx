@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Sparkles, ChevronRight, ArrowUpRight, ChevronDown, Brain, Loader2, ShieldAlert } from "lucide-react";
-import { useMarkets } from "@/lib/hooks";
+import { useMarkets, useBtcRegime } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { qualityScore, type Recommendation } from "@/lib/signal-engine";
 import { scanCoin as scan } from "@/lib/scan-engine";
@@ -24,22 +24,10 @@ export function RecommendationStack() {
   const [provider, setProvider] = useState<"ai" | "local" | "">("");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, { text: string; provider: "ai" | "local"; loading: boolean }>>({});
-  // Market-leader regime: when BTC is in a higher-timeframe downtrend the trader
-  // holds cash, so the overview must not flash BUY cards (that would contradict
-  // the bot and the strategy — you don't buy alts into a falling market).
-  const [regimeBearish, setRegimeBearish] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rec = (await (await fetch(`/api/signals?symbol=BTC&style=swing&market=spot`)).json()) as Recommendation;
-        if (!cancelled) setRegimeBearish(rec.trend === "down");
-      } catch {
-        if (!cancelled) setRegimeBearish(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  // Market-leader regime (BTC 4h/1d), shared & cached via React Query — when BTC
+  // is in a downtrend the trader holds cash, so the overview must not flash BUY
+  // cards (that would contradict the bot — you don't buy alts into a falling market).
+  const { bearish: regimeBearish } = useBtcRegime();
 
   const toggle = async (pick: Pick) => {
     const sym = pick.c.symbol;

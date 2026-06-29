@@ -12,7 +12,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
           queries: {
             staleTime: 30_000,
             refetchOnWindowFocus: false,
-            retry: 1,
+            // Graceful degradation: retry transient API failures with exponential
+            // backoff (1s → 2s → 4s, capped 8s) instead of failing on first miss.
+            retry: 2,
+            retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
           },
         },
       })

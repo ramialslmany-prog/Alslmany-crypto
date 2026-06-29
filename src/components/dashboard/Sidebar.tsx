@@ -21,7 +21,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type Item = { icon: React.ElementType; key: string; href?: string };
+type Item = { icon: React.ElementType; key: string; href: string };
 
 const groups: { key: string; items: Item[] }[] = [
   {
@@ -74,27 +74,17 @@ export function Sidebar() {
             <div className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{t(g.key)}</div>
             <div className="mt-2 space-y-1">
               {g.items.map((it) => {
-                const active = it.href ? pathname === it.href : false;
+                const active = pathname === it.href;
                 const cls = cn(
                   "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                   active ? "bg-white/[0.06] text-ink" : "text-ink-muted hover:bg-white/[0.03] hover:text-ink"
                 );
-                const inner = (
-                  <>
+                return (
+                  <Link key={it.key} href={it.href} className={cls}>
                     {active && <span className="absolute start-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-e-full bg-cyan-violet shadow-glow-cyan" />}
                     <it.icon className={cn("h-[18px] w-[18px] shrink-0", active && "text-cyan")} strokeWidth={1.85} />
                     {t(it.key)}
-                    {!it.href && <span className="ms-auto rounded bg-white/[0.05] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-faint">{t("nav.soon")}</span>}
-                  </>
-                );
-                return it.href ? (
-                  <Link key={it.key} href={it.href} className={cls}>
-                    {inner}
                   </Link>
-                ) : (
-                  <button key={it.key} className={cls}>
-                    {inner}
-                  </button>
                 );
               })}
             </div>
