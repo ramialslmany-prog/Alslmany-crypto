@@ -1,26 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { AreaChart } from "@/components/ui/AreaChart";
+import { useMemo, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, Loader2 } from "lucide-react";
+import { CandleChart } from "@/components/ui/CandleChart";
 import { LivePrice } from "@/components/ui/LivePrice";
-import { useChart, useCoin } from "@/lib/hooks";
+import { useCandles, useCoin } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
+import type { Interval } from "@/lib/candles";
 import { formatUsd, formatPercent, formatCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const timeframes = ["1H", "4H", "1D", "1W", "1M"] as const;
-const DAYS: Record<string, number> = { "1H": 1, "4H": 1, "1D": 1, "1W": 7, "1M": 30 };
+const intervals: { id: Interval; label: string }[] = [
+  { id: "15m", label: "15m" },
+  { id: "1h", label: "1H" },
+  { id: "4h", label: "4H" },
+  { id: "1d", label: "1D" },
+];
 
 export function ChartPanel() {
   const { t } = useI18n();
-  const [tf, setTf] = useState<string>("1D");
+  const [iv, setIv] = useState<Interval>("1h");
   const btc = useCoin("BTC");
-  const { prices, isLive } = useChart("BTC", DAYS[tf]);
+  const { candles, source, isLoading } = useCandles("BTC", iv, 180);
 
+  const isLive = !!source && source !== "synthetic";
   const up = btc.change24h >= 0;
-  const high = prices.length ? Math.max(...prices) : btc.price;
-  const low = prices.length ? Math.min(...prices) : btc.price;
+  const { high, low } = useMemo(() => {
+    if (!candles.length) return { high: btc.price, low: btc.price };
+    return { high: Math.max(...candles.map((c) => c.h)), low: Math.min(...candles.map((c) => c.l)) };
+  }, [candles, btc.price]);
 
   return (
     <div className="glass glow-border rounded-2xl p-5">
@@ -49,29 +57,35 @@ export function ChartPanel() {
         </div>
 
         <div className="flex items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.02] p-1">
-          {timeframes.map((t) => (
+          {intervals.map((it) => (
             <button
-              key={t}
-              onClick={() => setTf(t)}
+              key={it.id}
+              onClick={() => setIv(it.id)}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200",
-                tf === t ? "bg-cyan-violet text-base-950" : "text-ink-muted hover:text-ink"
+                iv === it.id ? "bg-cyan-violet text-base-950" : "text-ink-muted hover:text-ink"
               )}
             >
-              {t}
+              {it.label}
             </button>
           ))}
         </div>
       </div>
 
       <div className="mt-4">
-        <AreaChart key={tf} data={prices} height={300} color={btc.color} color2="#7C4DFF" />
+        {isLoading && !candles.length ? (
+          <div className="grid h-[320px] place-items-center">
+            <Loader2 className="h-6 w-6 animate-spin text-ink-faint" />
+          </div>
+        ) : (
+          <CandleChart candles={candles} height={320} />
+        )}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { l: `${tf} ${t("ov.high")}`, v: formatUsd(high) },
-          { l: `${tf} ${t("ov.low")}`, v: formatUsd(low) },
+          { l: `${iv.toUpperCase()} ${t("ov.high")}`, v: formatUsd(high) },
+          { l: `${iv.toUpperCase()} ${t("ov.low")}`, v: formatUsd(low) },
           { l: t("ov.volume24h"), v: `$${formatCompact(btc.volume24h)}` },
           { l: t("ov.marketCap"), v: `$${formatCompact(btc.marketCap)}` },
         ].map((s) => (

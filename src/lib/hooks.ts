@@ -5,6 +5,7 @@ import type { Coin } from "@/lib/mock-data";
 import { coins as mockCoins } from "@/lib/mock-data";
 import type { ValidationResult } from "@/lib/validation";
 import type { Recommendation, Style, Market } from "@/lib/signal-engine";
+import type { Candle, Interval } from "@/lib/candles";
 
 type MarketsResponse = { source: "coingecko" | "mock"; updatedAt: number; coins: Coin[] };
 type ChartResponse = { source: "coingecko" | "coingecko-spark" | "mock"; symbol: string; days: number; prices: number[] };
@@ -169,6 +170,24 @@ export function useBacktest(symbol: string, style: string, enabled: boolean) {
     staleTime: 300_000,
   });
   return { data: query.data, isLoading: query.isFetching };
+}
+
+type CandlesResponse = { symbol: string; interval: Interval; source: string; candles: Candle[] };
+
+/** Real OHLCV candles for the candlestick chart (/api/candles), refreshed live. */
+export function useCandles(symbol: string, interval: Interval, limit = 180) {
+  const query = useQuery({
+    queryKey: ["candles", symbol, interval, limit],
+    queryFn: () => getJson<CandlesResponse>(`/api/candles?symbol=${symbol}&interval=${interval}&limit=${limit}`),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+  return {
+    candles: query.data?.candles ?? [],
+    source: query.data?.source,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  };
 }
 
 /** One rigorous multi-timeframe recommendation, cached & deduped via React Query. */
