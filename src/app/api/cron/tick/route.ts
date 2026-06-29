@@ -87,6 +87,25 @@ function marketRiskOff(coins: Coin[]): boolean {
   return btc < -4 || redPct > 70;
 }
 
+/**
+ * Market-leader regime gate. A long-only spot strategy can only make money in a
+ * constructive market — buying "uptrends" while BTC is rolling over just buys
+ * bull traps (validated by walk-forward backtest: trading a downtrend bleeds
+ * 15–60%). So if BTC, the market leader, is in a confirmed downtrend on the 4h
+ * OR daily, the bot stands aside and holds cash. Best-effort: if klines are
+ * unavailable we don't block (the snapshot-based risk-off guard still applies).
+ */
+async function marketLeaderBearish(): Promise<boolean> {
+  try {
+    const [h4, d1] = await Promise.all([fetchCandles("BTC", "4h", 220), fetchCandles("BTC", "1d", 220)]);
+    const a4 = analyzeTimeframe("4h", h4.candles);
+    const a1 = analyzeTimeframe("1d", d1.candles);
+    return a1.trend === "down" || a4.trend === "down";
+  } catch {
+    return false;
+  }
+}
+
 /** Staged take-profit evaluation (mirrors the in-app evaluateOpen). Mutates journal. */
 function evaluateOpen(journal: JTrade[], priceOf: (s: string) => number) {
   const closed: JTrade[] = [];
@@ -140,11 +159,14 @@ export async function GET(req: Request) {
     ...warned.map((t) => tg(token, chatId, `#${t.symbol}/USDT - طويل🟢\n\n⚠️ تحذير مخاطرة\nالسعر ${fmtPrice(priceOf(t.symbol))} يقترب من وقف الخسارة ${fmtPrice(t.stop)}\nنقطة الدخول: ${fmtPrice(t.entry)} — راقب الصفقة.`)),
   ]);
 
-  // 2) Enter new high-quality setups when slots are free and market isn't risk-off.
+  // 2) Enter new high-quality setups when slots are free, the market isn't
+  //    risk-off, AND the market leader (BTC) isn't in a downtrend. In an
+  //    unfavorable regime the bot holds cash — capital preservation is the edge.
   let entered = 0;
   const openCount = journal.filter((t) => t.status === "open").length;
   const slots = MAX_OPEN - openCount;
-  if (slots > 0 && !marketRiskOff(markets)) {
+  const regimeBlocked = marketRiskOff(markets) || (await marketLeaderBearish());
+  if (slots > 0 && !regimeBlocked) {
     const universe = markets
       .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
       .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
@@ -160,7 +182,7 @@ export async function GET(req: Request) {
     );
     const openSyms = new Set(journal.filter((t) => t.status === "open").map((t) => t.symbol));
     const picks = recs
-      .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up" && !openSyms.has(r.symbol))
+      .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, slots);
     const now = Date.now();
@@ -185,11 +207,10 @@ export async function GET(req: Request) {
     meta.lastMsg = now;
     await saveMeta(meta);
   } else if (now - (meta.lastMsg ?? 0) >= 3600_000) {
-    const ro = marketRiskOff(markets);
     await tg(
       token,
       chatId,
-      `🔍 Alslmany Crypto — تقرير الساعة\n\n${ro ? "السوق هابط عام — أحجم عن الدخول لحماية رأس المال." : "لا توجد فرصة شراء عالية الجودة الآن — أنتظر إعداداً نظيفاً."}\n\n📊 صفقات مفتوحة: ${openNow}\n🛡️ البوت يعمل ويراقب 24/7.`
+      `🔍 Alslmany Crypto — تقرير الساعة\n\n${regimeBlocked ? "السوق غير مؤاتٍ (القائد BTC هابط) — أبقى نقداً لحماية رأس المال؛ لا أشتري في سوق هابط." : "لا توجد فرصة شراء عالية الجودة الآن — أنتظر إعداداً نظيفاً."}\n\n📊 صفقات مفتوحة: ${openNow}\n🛡️ البوت يعمل ويراقب 24/7.`
     );
     meta.lastMsg = now;
     await saveMeta(meta);
@@ -204,5 +225,6 @@ export async function GET(req: Request) {
     advanced: advanced.length,
     heartbeat,
     riskOff: marketRiskOff(markets),
+    regimeBlocked,
   });
 }

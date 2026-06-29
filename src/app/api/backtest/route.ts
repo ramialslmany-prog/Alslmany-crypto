@@ -23,7 +23,17 @@ interface BTrade {
   outcome: "tp3" | "trail" | "breakeven" | "stop" | "timeout";
 }
 
-function runBacktest(c: Candle[]) {
+/** Tunable strategy knobs — defaults reproduce the original live behavior exactly. */
+interface BTOpts {
+  minBias: number; // minimum confluence bias to enter
+  requireUp: boolean; // require a confirmed uptrend (not just "not down")
+  requireVol: boolean; // require volume-confirmed entry bar
+  tp1Frac: number; // fraction scaled out at TP1 (rest runs)
+  tp2Frac: number; // fraction scaled out at TP2 (rest runs to TP3/stop)
+}
+const DEFAULTS: BTOpts = { minBias: 1.0, requireUp: false, requireVol: false, tp1Frac: 0, tp2Frac: 0 };
+
+function runBacktest(c: Candle[], opt: BTOpts = DEFAULTS) {
   const WARMUP = 60; // enough for EMA50/MACD/RSI/BB/ATR; EMA200 fills in later
   const MAX_HOLD = 120; // bars
   const trades: BTrade[] = [];
@@ -34,7 +44,9 @@ function runBacktest(c: Candle[]) {
     // Buy a pullback inside net-bullish confluence: positive bias, RSI in the
     // dip zone (not overbought), price not pinned to the upper band.
     const dipZone = a.rsi >= 40 && a.rsi <= 62 && a.bbPctB <= 0.7;
-    const enter = a.bias >= 1.0 && a.trend !== "down" && dipZone;
+    const trendOk = opt.requireUp ? a.trend === "up" : a.trend !== "down";
+    const volOk = opt.requireVol ? a.volConfirmed : true;
+    const enter = a.bias >= opt.minBias && trendOk && dipZone && volOk;
     if (!enter) {
       i++;
       continue;
@@ -49,39 +61,50 @@ function runBacktest(c: Candle[]) {
     let stop = entry - risk;
     let hit = 0;
 
-    // Simulate forward bars with the staged exit logic.
+    // Simulate forward bars with the staged exit logic. Position starts at full
+    // size; optional partial scale-outs at TP1/TP2 lock in gains, rest trails.
     let j = i + 1;
-    let exit = entry;
+    let remaining = 1;
+    let realized = 0; // size-weighted return fraction already booked
     let outcome: BTrade["outcome"] = "timeout";
     for (; j < c.length && j - i <= MAX_HOLD; j++) {
       const { h, l } = c[j];
       if (l <= stop) {
-        exit = stop;
+        realized += remaining * ((stop - entry) / entry);
+        remaining = 0;
         outcome = hit >= 2 ? "trail" : hit >= 1 ? "breakeven" : "stop";
         break;
       }
       if (h >= targets[2]) {
-        exit = targets[2];
+        realized += remaining * ((targets[2] - entry) / entry);
+        remaining = 0;
         outcome = "tp3";
         break;
       }
       if (h >= targets[1] && hit < 2) {
+        const take = Math.min(remaining, opt.tp2Frac);
+        realized += take * ((targets[1] - entry) / entry);
+        remaining -= take;
         hit = 2;
-        stop = targets[0];
+        stop = targets[0]; // trail to TP1
       }
       if (h >= targets[0] && hit < 1) {
+        const take = Math.min(remaining, opt.tp1Frac);
+        realized += take * ((targets[0] - entry) / entry);
+        remaining -= take;
         hit = 1;
-        stop = entry;
+        stop = entry; // breakeven
       }
     }
-    if (outcome === "timeout") exit = c[Math.min(j, c.length - 1)].c;
+    const exitIdx = Math.min(j, c.length - 1);
+    if (remaining > 0) realized += remaining * ((c[exitIdx].c - entry) / entry); // timeout / leftover
 
     trades.push({
       entryIdx: i,
       entry,
-      exit,
-      retPct: ((exit - entry) / entry) * 100,
-      bars: Math.min(j, c.length - 1) - i,
+      exit: entry * (1 + realized),
+      retPct: realized * 100,
+      bars: exitIdx - i,
       outcome,
     });
     i = j + 1; // no overlapping positions
@@ -125,7 +148,16 @@ export async function GET(req: Request) {
   if (candles.length < 90) {
     return NextResponse.json({ symbol, interval, source, error: "not-enough-data" }, { status: 200 });
   }
-  const result = runBacktest(candles);
+  // Optional tuning knobs (research/validation). Absent → original live behavior.
+  const num = (k: string, d: number) => { const v = parseFloat(searchParams.get(k) ?? ""); return Number.isFinite(v) ? v : d; };
+  const opt: BTOpts = {
+    minBias: num("minBias", DEFAULTS.minBias),
+    requireUp: searchParams.get("requireUp") === "1",
+    requireVol: searchParams.get("requireVol") === "1",
+    tp1Frac: num("tp1Frac", DEFAULTS.tp1Frac),
+    tp2Frac: num("tp2Frac", DEFAULTS.tp2Frac),
+  };
+  const result = runBacktest(candles, opt);
   const fromTs = candles[60].t;
   const toTs = candles[candles.length - 1].t;
   return NextResponse.json(

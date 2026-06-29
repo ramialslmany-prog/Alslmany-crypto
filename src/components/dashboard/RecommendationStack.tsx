@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Sparkles, ChevronRight, ArrowUpRight, ChevronDown, Brain, Loader2 } from "lucide-react";
+import { Sparkles, ChevronRight, ArrowUpRight, ChevronDown, Brain, Loader2, ShieldAlert } from "lucide-react";
 import { useMarkets } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { qualityScore, type Recommendation } from "@/lib/signal-engine";
@@ -24,6 +24,22 @@ export function RecommendationStack() {
   const [provider, setProvider] = useState<"ai" | "local" | "">("");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, { text: string; provider: "ai" | "local"; loading: boolean }>>({});
+  // Market-leader regime: when BTC is in a higher-timeframe downtrend the trader
+  // holds cash, so the overview must not flash BUY cards (that would contradict
+  // the bot and the strategy — you don't buy alts into a falling market).
+  const [regimeBearish, setRegimeBearish] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rec = (await (await fetch(`/api/signals?symbol=BTC&style=swing&market=spot`)).json()) as Recommendation;
+        if (!cancelled) setRegimeBearish(rec.trend === "down");
+      } catch {
+        if (!cancelled) setRegimeBearish(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const toggle = async (pick: Pick) => {
     const sym = pick.c.symbol;
@@ -139,6 +155,20 @@ export function RecommendationStack() {
         </Link>
       </div>
 
+      {regimeBearish === true ? (
+        /* Regime gate: BTC higher-timeframe downtrend → hold cash, show no buys. */
+        <div className="mt-3 rounded-xl border border-bear/30 bg-bear/[0.08] p-4">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-bear">
+            <ShieldAlert className="h-4 w-4" /> {lang === "ar" ? "السوق غير مؤاتٍ — نقداً" : "Unfavorable market — in cash"}
+          </div>
+          <p className="whitespace-pre-line text-xs leading-relaxed text-ink-muted">
+            {lang === "ar"
+              ? "بيتكوين (قائد السوق) في اتجاه هابط على الإطار الأعلى. لا أعرض توصيات شراء الآن — لا تُشترى الألتكوينات في سوق هابط. حماية رأس المال أولاً، وننتظر تعافي القائد."
+              : "Bitcoin (the market leader) is in a higher-timeframe downtrend. No buy setups right now — you don't buy alts into a falling market. Capital first; waiting for the leader to recover."}
+          </p>
+        </div>
+      ) : (
+        <>
       {/* AI verdict */}
       <div className="mt-3 rounded-xl border border-violet/20 bg-violet/[0.06] p-3">
         <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-violet">{t("rec.verdict")}</div>
@@ -202,6 +232,8 @@ export function RecommendationStack() {
           })
         )}
       </div>
+        </>
+      )}
       <p className="mt-3 text-center text-[10px] text-ink-faint">{t("ms.disclaimer")}</p>
     </div>
   );

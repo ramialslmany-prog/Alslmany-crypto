@@ -20,6 +20,17 @@ const MIN_RR = 1.45; // first target is 1.5R (then 2.5R/4R via the ladder); gate
 const TOP_N = 3;
 const SCAN_UNIVERSE = 24; // most-liquid coins we deep-scan per run
 
+/** Stand aside when the market leader (BTC) is in a confirmed downtrend — a
+ *  long-only scan should not hand out buys in a falling market. */
+async function marketLeaderBearish(): Promise<boolean> {
+  try {
+    const [h4, d1] = await Promise.all([fetchCandles("BTC", "4h", 220), fetchCandles("BTC", "1d", 220)]);
+    return analyzeTimeframe("1d", d1.candles).trend === "down" || analyzeTimeframe("4h", h4.candles).trend === "down";
+  } catch {
+    return false;
+  }
+}
+
 function fmtPrice(n: number): string {
   if (!Number.isFinite(n)) return "—";
   if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -80,6 +91,12 @@ export async function GET(req: Request) {
   const chatId = process.env.TELEGRAM_CHAT_ID || (await detectChatId(token));
   if (!chatId) return NextResponse.json({ ok: false, error: "no-chat" });
 
+  // Regime gate: in a downtrend led by BTC, hold cash instead of issuing buys.
+  if (await marketLeaderBearish()) {
+    await sendTelegram(token, chatId, "🔍 Alslmany Crypto — مسح آلي\nالسوق غير مؤاتٍ (القائد BTC هابط) — لا أصدر توصيات شراء في سوق هابط؛ حماية رأس المال أولاً.");
+    return NextResponse.json({ ok: true, sent: 0, regimeBlocked: true });
+  }
+
   // Pick the most-liquid, non-stable coins to deep-scan.
   const markets = await fetchMarkets();
   const universe = markets
@@ -102,7 +119,7 @@ export async function GET(req: Request) {
   );
 
   const picks = recs
-    .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up")
+    .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1)
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, TOP_N);
 

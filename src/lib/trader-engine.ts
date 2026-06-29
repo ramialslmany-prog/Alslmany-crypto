@@ -120,6 +120,22 @@ async function confirmRigorous(symbol: string): Promise<Recommendation | null> {
   }
 }
 
+/**
+ * Market-leader regime gate: read BTC on the higher timeframe (4h/1d via the
+ * swing engine). A long-only book shouldn't open new risk while the market
+ * leader is rolling over — backtests show trading a BTC downtrend bleeds capital.
+ */
+async function marketLeaderBearish(): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/signals?symbol=BTC&style=swing&market=spot`);
+    if (!r.ok) return false;
+    const rec = (await r.json()) as Recommendation;
+    return rec.trend === "down";
+  } catch {
+    return false;
+  }
+}
+
 const CONFIRM_CONF = 70; // rigorous engine must independently rate ≥70
 // The engine's first target sits at 1.5R (then 2.5R, 4R via the staged ladder),
 // so the measured riskReward is ~1.5 — this gate must sit at/below it or NO trade
@@ -158,6 +174,21 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
       : none;
   }
 
+  // Capital protection #2: stand aside when the market leader (BTC) is in a
+  // higher-timeframe downtrend — don't buy alts into a falling market.
+  if (await marketLeaderBearish()) {
+    return force
+      ? {
+          issued: 0,
+          comment:
+            lang === "ar"
+              ? "السوق غير مؤاتٍ — بيتكوين (القائد) في اتجاه هابط على الإطار الأعلى. أبقى نقداً؛ لا أشتري الألتكوينات في سوق هابط — حماية رأس المال أولاً."
+              : "Unfavorable regime — BTC (the leader) is in a higher-timeframe downtrend. Holding cash; I don't buy alts into a falling market — capital first.",
+          provider: "local",
+        }
+      : none;
+  }
+
   try {
     localStorage.setItem(ISSUE_KEY, String(Date.now()));
   } catch {
@@ -173,13 +204,13 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
   }
 
   // Stage 2: confirm each with the rigorous multi-timeframe candle engine, then
-  // take only trades BOTH engines agree on (LONG, conf≥70, R:R≥1.8) — fewer but
-  // materially higher-quality entries, with accurate OHLC-based stops/targets.
+  // take only trades BOTH engines agree on (LONG, conf≥70, R:R≥1.45, confirmed
+  // uptrend, volume participation) — fewer but materially higher-quality entries.
   const confirmed = (
     await Promise.all(
       candidates.map(async (cand) => {
         const rec = await confirmRigorous(cand.c.symbol);
-        if (rec && rec.signal === "LONG" && rec.confidence >= CONFIRM_CONF && rec.riskReward >= CONFIRM_RR) {
+        if (rec && rec.signal === "LONG" && rec.confidence >= CONFIRM_CONF && rec.riskReward >= CONFIRM_RR && rec.trend === "up" && rec.indicators.volRatio >= 1.1) {
           return { c: cand.c, r: rec };
         }
         return null;
