@@ -28,6 +28,8 @@ export function Topbar() {
   const pathname = usePathname();
   const { t } = useI18n();
   const fg = useFearGreed();
+  const isCoin = pathname.startsWith("/dashboard/coin/");
+  const coinSym = isCoin ? decodeURIComponent(pathname.split("/").pop() ?? "").toUpperCase() : "";
   const meta = TITLE_KEYS[pathname] ?? TITLE_KEYS["/dashboard"];
   const [time, setTime] = useState<string>("");
 
@@ -43,8 +45,8 @@ export function Topbar() {
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-white/[0.06] bg-base-950/70 px-3 backdrop-blur-xl sm:gap-4 sm:px-5">
       <MobileMenu />
       <div className="min-w-0">
-        <h1 className="truncate font-display text-base font-bold tracking-tight sm:text-lg">{t(meta.title)}</h1>
-        <p className="truncate text-[11px] text-ink-faint sm:text-xs">{t(meta.sub)}</p>
+        <h1 className="truncate font-display text-base font-bold tracking-tight sm:text-lg">{isCoin ? `${coinSym}/USD` : t(meta.title)}</h1>
+        <p className="truncate text-[11px] text-ink-faint sm:text-xs">{isCoin ? t("top.coin.sub") : t(meta.sub)}</p>
       </div>
 
       {/* search */}

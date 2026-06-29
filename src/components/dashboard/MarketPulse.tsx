@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import { useMarkets, useFearGreed } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
@@ -71,7 +72,7 @@ export function MarketPulse() {
           {tiles.map((c) => {
             const up = (c.change24h ?? 0) >= 0;
             return (
-              <div key={c.symbol} className="glass rounded-2xl p-3">
+              <Link key={c.symbol} href={`/dashboard/coin/${c.symbol}`} className="glass rounded-2xl p-3 transition-colors hover:border-cyan/20">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold">{c.symbol}</span>
                   <span dir="ltr" className={cn("flex items-center gap-0.5 text-[10px] font-bold tnum", up ? "text-bull" : "text-bear")}>
@@ -87,7 +88,7 @@ export function MarketPulse() {
                     <Sparkline data={c.spark} width={120} height={28} color={up ? "#00E676" : "#FF4D6D"} strokeWidth={1.5} fill={false} />
                   </div>
                 )}
-              </div>
+              </Link>
             );
           })}
         </div>

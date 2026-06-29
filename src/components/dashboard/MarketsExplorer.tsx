@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Search, Star, ArrowUp, ArrowDown, TrendingUp, Compass } from "lucide-react";
 import { useMarkets } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
@@ -136,10 +137,10 @@ function CoinRow({ c, fav, onFav }: { c: Coin; fav: boolean; onFav: () => void }
   const up24 = c.change24h >= 0;
   const up7 = c.change7d >= 0;
   return (
-    <div className="grid grid-cols-12 items-center gap-2 px-4 py-3 transition-colors hover:bg-white/[0.02]">
+    <Link href={`/dashboard/coin/${c.symbol}`} className="grid grid-cols-12 items-center gap-2 px-4 py-3 transition-colors hover:bg-white/[0.03]">
       {/* rank + fav */}
       <div className="col-span-2 flex items-center gap-2 md:col-span-1">
-        <button onClick={onFav} className={cn(fav ? "text-gold" : "text-ink-faint hover:text-ink-muted")}>
+        <button onClick={(e) => { e.preventDefault(); onFav(); }} aria-label="favorite" className={cn(fav ? "text-gold" : "text-ink-faint hover:text-ink-muted")}>
           <Star className="h-3.5 w-3.5" fill={fav ? "currentColor" : "none"} />
         </button>
         <span className="font-mono text-xs text-ink-faint tnum">{c.rank ?? "—"}</span>
@@ -170,7 +171,7 @@ function CoinRow({ c, fav, onFav }: { c: Coin; fav: boolean; onFav: () => void }
       <div className="col-span-2 hidden items-center justify-end md:flex">
         {c.spark.length > 1 && <Sparkline data={c.spark} width={110} height={32} color={up7 ? "#00E676" : "#FF4D6D"} strokeWidth={1.6} />}
       </div>
-    </div>
+    </Link>
   );
 }
 
