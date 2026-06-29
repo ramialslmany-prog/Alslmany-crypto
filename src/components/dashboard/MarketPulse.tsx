@@ -5,6 +5,8 @@ import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import { useMarkets, useFearGreed } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { LivePrice } from "@/components/ui/LivePrice";
+import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Signature command-center hero: a time-aware greeting, an honest market read
@@ -78,7 +80,7 @@ export function MarketPulse() {
                   </span>
                 </div>
                 <div dir="ltr" className="mt-1 font-mono text-sm font-bold tnum">
-                  ${c.price >= 1000 ? c.price.toLocaleString("en-US", { maximumFractionDigits: 0 }) : c.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                  <LivePrice value={c.price} format={formatUsd} />
                 </div>
                 {c.spark?.length > 1 && (
                   <div className="mt-1.5 [&_svg]:h-auto [&_svg]:w-full">

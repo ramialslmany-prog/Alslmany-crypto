@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Coin } from "@/lib/mock-data";
 import { CoinIcon } from "@/components/ui/CoinIcon";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { LivePrice } from "@/components/ui/LivePrice";
 import { formatUsd, formatPercent, formatCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -152,7 +153,9 @@ function CoinRow({ c, fav, onFav }: { c: Coin; fav: boolean; onFav: () => void }
         </div>
       </div>
       {/* price */}
-      <div dir="ltr" className="col-span-4 text-end font-mono text-sm tnum md:col-span-2">{formatUsd(c.price)}</div>
+      <div dir="ltr" className="col-span-4 text-end font-mono text-sm tnum md:col-span-2">
+        <LivePrice value={c.price} format={formatUsd} />
+      </div>
       {/* 24h */}
       <div dir="ltr" className={cn("col-span-1 hidden text-end font-mono text-xs font-semibold tnum md:block", up24 ? "text-bull" : "text-bear")}>
         {formatPercent(c.change24h)}

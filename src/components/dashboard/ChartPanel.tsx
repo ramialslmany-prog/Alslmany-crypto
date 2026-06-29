@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { AreaChart } from "@/components/ui/AreaChart";
+import { LivePrice } from "@/components/ui/LivePrice";
 import { useChart, useCoin } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { formatUsd, formatPercent, formatCompact } from "@/lib/format";
@@ -16,18 +17,6 @@ export function ChartPanel() {
   const [tf, setTf] = useState<string>("1D");
   const btc = useCoin("BTC");
   const { prices, isLive } = useChart("BTC", DAYS[tf]);
-
-  // Flash the price on a real update (markets refetch every 45s).
-  const [pulse, setPulse] = useState(false);
-  const prev = useRef(btc.price);
-  useEffect(() => {
-    if (prev.current !== btc.price) {
-      setPulse(true);
-      prev.current = btc.price;
-      const t = setTimeout(() => setPulse(false), 600);
-      return () => clearTimeout(t);
-    }
-  }, [btc.price]);
 
   const up = btc.change24h >= 0;
   const high = prices.length ? Math.max(...prices) : btc.price;
@@ -50,9 +39,7 @@ export function ChartPanel() {
               </span>
             </div>
             <div dir="ltr" className="flex items-center gap-2">
-              <span className={cn("font-mono text-2xl font-bold tnum transition-colors duration-500", pulse ? "text-cyan" : "text-ink")}>
-                {formatUsd(btc.price)}
-              </span>
+              <LivePrice value={btc.price} format={formatUsd} className="font-mono text-2xl font-bold text-ink" />
               <span className={cn("flex items-center gap-0.5 text-xs font-semibold tnum", up ? "text-bull" : "text-bear")}>
                 {up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
                 {formatPercent(btc.change24h)}
