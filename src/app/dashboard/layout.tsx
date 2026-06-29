@@ -3,12 +3,15 @@ import { Topbar } from "@/components/dashboard/Topbar";
 import { MobileNav } from "@/components/dashboard/MobileNav";
 import { JournalWatcher } from "@/components/dashboard/JournalWatcher";
 import { PageShell } from "@/components/dashboard/PageShell";
+import { CommandPalette } from "@/components/dashboard/CommandPalette";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       {/* live pick monitoring + Telegram alerts, active on every dashboard page */}
       <JournalWatcher />
+      {/* global ⌘K command palette (coin search + quick nav) */}
+      <CommandPalette />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />

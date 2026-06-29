@@ -2,11 +2,14 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Candle } from "@/lib/candles";
+import { ema } from "@/lib/indicators";
 import { formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const UP = "#00E676";
 const DOWN = "#FF4D6D";
+const EMA20 = "#22D3EE";
+const EMA50 = "#A78BFA";
 
 /**
  * Self-contained, dependency-free candlestick chart (SVG). Renders real OHLC
@@ -86,6 +89,16 @@ export function CandleChart({
   const lastUp = last.c >= last.o;
   const hc = hover != null ? candles[hover] : null;
 
+  // EMA overlays (20 & 50) drawn over the candles.
+  const closes = candles.map((c) => c.c);
+  const showEma50 = n >= 55;
+  const ema20 = ema(closes, 20);
+  const ema50 = showEma50 ? ema(closes, 50) : [];
+  const linePoints = (arr: number[]) =>
+    arr.map((v, i) => (Number.isFinite(v) ? `${x(i).toFixed(1)},${yPrice(v).toFixed(1)}` : "")).filter(Boolean).join(" ");
+  const ema20Pts = linePoints(ema20);
+  const ema50Pts = showEma50 ? linePoints(ema50) : "";
+
   // ~5 time labels.
   const tickIdx = Array.from({ length: 5 }, (_, k) => Math.round((k * (n - 1)) / 4));
   const fmtTime = (t: number) => {
@@ -158,6 +171,10 @@ export function CandleChart({
           );
         })}
 
+        {/* EMA overlays */}
+        {ema20Pts && <polyline points={ema20Pts} fill="none" stroke={EMA20} strokeWidth={1.4} opacity={0.9} />}
+        {ema50Pts && <polyline points={ema50Pts} fill="none" stroke={EMA50} strokeWidth={1.4} opacity={0.9} />}
+
         {/* last price line */}
         <line x1={0} y1={yPrice(last.c)} x2={plotW} y2={yPrice(last.c)} stroke={lastUp ? UP : DOWN} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
         <rect x={w - padR} y={yPrice(last.c) - 8} width={padR} height={16} fill={lastUp ? UP : DOWN} opacity={0.9} rx={2} />
@@ -174,6 +191,12 @@ export function CandleChart({
           </g>
         )}
       </svg>
+
+      {/* EMA legend */}
+      <div className="pointer-events-none absolute start-2 top-2 flex items-center gap-3 text-[10px] font-medium" dir="ltr">
+        <span className="flex items-center gap-1" style={{ color: EMA20 }}><span className="inline-block h-0.5 w-3 rounded" style={{ background: EMA20 }} /> EMA 20</span>
+        {showEma50 && <span className="flex items-center gap-1" style={{ color: EMA50 }}><span className="inline-block h-0.5 w-3 rounded" style={{ background: EMA50 }} /> EMA 50</span>}
+      </div>
 
       {/* OHLC tooltip overlay (crisp HTML) */}
       {hc && (

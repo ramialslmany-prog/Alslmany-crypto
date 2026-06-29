@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, Search, Command } from "lucide-react";
+import { Search, Command } from "lucide-react";
 import { useFearGreed } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { LangToggle } from "@/components/ui/LangToggle";
 import { MobileMenu } from "@/components/dashboard/MobileMenu";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 const TITLE_KEYS: Record<string, { title: string; sub: string }> = {
   "/dashboard": { title: "top.overview.title", sub: "top.overview.sub" },
@@ -32,6 +33,7 @@ export function Topbar() {
   const coinSym = isCoin ? decodeURIComponent(pathname.split("/").pop() ?? "").toUpperCase() : "";
   const meta = TITLE_KEYS[pathname] ?? TITLE_KEYS["/dashboard"];
   const [time, setTime] = useState<string>("");
+  const openSearch = () => window.dispatchEvent(new Event("cmdk:open"));
 
   useEffect(() => {
     const fmt = () =>
@@ -49,17 +51,21 @@ export function Topbar() {
         <p className="truncate text-[11px] text-ink-faint sm:text-xs">{isCoin ? t("top.coin.sub") : t(meta.sub)}</p>
       </div>
 
-      {/* search */}
-      <div className="ms-auto hidden items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-ink-muted md:flex md:w-72">
+      {/* search — opens the global ⌘K command palette */}
+      <button
+        onClick={openSearch}
+        className="ms-auto hidden items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-ink-faint transition-colors hover:border-white/15 hover:text-ink-muted md:flex md:w-72"
+      >
         <Search className="h-4 w-4 shrink-0" />
-        <input
-          placeholder={t("top.search")}
-          className="w-full bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none"
-        />
-        <span className="flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-ink-faint">
+        <span className="flex-1 text-start">{t("top.search")}</span>
+        <span className="flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px]">
           <Command className="h-3 w-3" />K
         </span>
-      </div>
+      </button>
+      {/* mobile search trigger */}
+      <button onClick={openSearch} aria-label={t("top.search")} className="ms-auto grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-ink-muted transition-colors hover:text-ink md:hidden">
+        <Search className="h-[18px] w-[18px]" />
+      </button>
 
       <div className="hidden items-center gap-2 rounded-xl border border-gold/25 bg-gold/[0.08] px-3 py-2 sm:flex">
         <span className="h-2 w-2 rounded-full bg-gold animate-pulse-glow" />
@@ -70,10 +76,7 @@ export function Topbar() {
 
       <LangToggle />
 
-      <button aria-label={t("a11y.notifications")} className="relative grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-ink-muted transition-colors hover:text-ink">
-        <Bell className="h-[18px] w-[18px]" />
-        <span className="absolute end-2.5 top-2.5 h-2 w-2 rounded-full bg-bear" />
-      </button>
+      <NotificationBell />
 
       <div className="flex items-center gap-2.5">
         <div className="hidden text-end sm:block">

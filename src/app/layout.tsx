@@ -3,7 +3,10 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Alslmany Crypto — AI Trading Intelligence",
+  title: {
+    default: "Alslmany Crypto — AI Trading Intelligence",
+    template: "%s · Alslmany Crypto",
+  },
   description:
     "AI-powered crypto trading intelligence: live recommendations, deep coin analysis, multi-exchange price validation and Telegram alerts.",
   keywords: ["crypto", "AI trading", "smart money", "trading signals", "Alslmany"],
