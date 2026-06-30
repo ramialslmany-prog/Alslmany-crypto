@@ -114,6 +114,64 @@ export async function saveMeta(meta: Record<string, number>): Promise<void> {
   }
 }
 
+/* ---- user-configurable trader settings (respected by the 24/7 cron) ---- */
+export interface TraderSettings {
+  maxOpen: number; // 1..5 concurrent positions
+  minConfidence: number; // 60..85 confidence bar for new entries
+  entriesEnabled: boolean; // master switch for opening new trades (exits always run)
+}
+export const DEFAULT_SETTINGS: TraderSettings = { maxOpen: 3, minConfidence: 70, entriesEnabled: true };
+const SETTINGS_KV_KEY = "alslmany:settings";
+const SETTINGS_GIST_FILE = "alslmany-settings.json";
+const clampInt = (n: unknown, lo: number, hi: number, d: number) => {
+  const v = Math.round(Number(n));
+  return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d;
+};
+
+/** Normalize any partial/untrusted input into safe, bounded settings. */
+export function sanitizeSettings(raw: Partial<TraderSettings> | undefined | null): TraderSettings {
+  return {
+    maxOpen: clampInt(raw?.maxOpen, 1, 5, DEFAULT_SETTINGS.maxOpen),
+    minConfidence: clampInt(raw?.minConfidence, 60, 85, DEFAULT_SETTINGS.minConfidence),
+    entriesEnabled: raw?.entriesEnabled === undefined ? DEFAULT_SETTINGS.entriesEnabled : !!raw.entriesEnabled,
+  };
+}
+
+export async function loadSettings(): Promise<TraderSettings> {
+  const kv = kvCreds();
+  if (kv) {
+    try {
+      const r = await fetch(kv.url, { method: "POST", headers: { Authorization: `Bearer ${kv.token}`, "content-type": "application/json" }, body: JSON.stringify(["GET", SETTINGS_KV_KEY]), cache: "no-store" });
+      const j = (await r.json()) as { result?: unknown };
+      if (typeof j.result === "string") return sanitizeSettings(JSON.parse(j.result));
+    } catch { /* ignore */ }
+    return { ...DEFAULT_SETTINGS };
+  }
+  const g = gistCreds();
+  if (g) {
+    try {
+      const r = await fetch(`https://api.github.com/gists/${g.id}`, { headers: { Authorization: `token ${g.token}`, "User-Agent": "alslmany", Accept: "application/vnd.github+json" }, cache: "no-store" });
+      const j = (await r.json()) as { files?: Record<string, { content?: string }> };
+      const content = j.files?.[SETTINGS_GIST_FILE]?.content;
+      if (content) return sanitizeSettings(JSON.parse(content));
+    } catch { /* ignore */ }
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+export async function saveSettings(settings: TraderSettings): Promise<void> {
+  const data = JSON.stringify(sanitizeSettings(settings));
+  const kv = kvCreds();
+  if (kv) {
+    await fetch(kv.url, { method: "POST", headers: { Authorization: `Bearer ${kv.token}`, "content-type": "application/json" }, body: JSON.stringify(["SET", SETTINGS_KV_KEY, data]), cache: "no-store" }).catch(() => {});
+    return;
+  }
+  const g = gistCreds();
+  if (g) {
+    await fetch(`https://api.github.com/gists/${g.id}`, { method: "PATCH", headers: { Authorization: `token ${g.token}`, "User-Agent": "alslmany", "content-type": "application/json", Accept: "application/vnd.github+json" }, body: JSON.stringify({ files: { [SETTINGS_GIST_FILE]: { content: data } } }) }).catch(() => {});
+  }
+}
+
 export async function saveJournal(journal: JTradeS[]): Promise<void> {
   const data = JSON.stringify(journal.slice(0, 80));
   const kv = kvCreds();

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
 import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
-import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, type JTradeS as JTrade } from "@/lib/store";
+import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, loadSettings, type JTradeS as JTrade } from "@/lib/store";
 import { isStable } from "@/lib/coin-meta";
 import type { Coin } from "@/lib/mock-data";
 
@@ -19,8 +19,6 @@ import type { Coin } from "@/lib/mock-data";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_OPEN = 3;
-const MIN_CONF = 70;
 const MIN_RR = 1.45;
 const SCAN_UNIVERSE = 18;
 const EXPIRE_MS = 7 * 24 * 3600 * 1000;
@@ -150,6 +148,7 @@ export async function GET(req: Request) {
   const markets = await fetchMarkets();
   const priceOf = (s: string) => markets.find((c) => c.symbol === s)?.price ?? 0;
   const journal = await loadJournal();
+  const settings = await loadSettings(); // user-configurable: maxOpen / minConfidence / entriesEnabled
 
   // 1) Manage open positions → exits / advances / risk warnings (sent in parallel for speed).
   const { closed, advanced, warned } = evaluateOpen(journal, priceOf);
@@ -164,9 +163,9 @@ export async function GET(req: Request) {
   //    unfavorable regime the bot holds cash — capital preservation is the edge.
   let entered = 0;
   const openCount = journal.filter((t) => t.status === "open").length;
-  const slots = MAX_OPEN - openCount;
+  const slots = settings.maxOpen - openCount;
   const regimeBlocked = marketRiskOff(markets) || (await marketLeaderBearish());
-  if (slots > 0 && !regimeBlocked) {
+  if (slots > 0 && !regimeBlocked && settings.entriesEnabled) {
     const universe = markets
       .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
       .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
@@ -182,7 +181,7 @@ export async function GET(req: Request) {
     );
     const openSyms = new Set(journal.filter((t) => t.status === "open").map((t) => t.symbol));
     const picks = recs
-      .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= MIN_CONF && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
+      .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= settings.minConfidence && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, slots);
     const now = Date.now();
@@ -210,7 +209,7 @@ export async function GET(req: Request) {
     await tg(
       token,
       chatId,
-      `🔍 Alslmany Crypto — تقرير الساعة\n\n${regimeBlocked ? "السوق غير مؤاتٍ (القائد BTC هابط) — أبقى نقداً لحماية رأس المال؛ لا أشتري في سوق هابط." : "لا توجد فرصة شراء عالية الجودة الآن — أنتظر إعداداً نظيفاً."}\n\n📊 صفقات مفتوحة: ${openNow}\n🛡️ البوت يعمل ويراقب 24/7.`
+      `🔍 Alslmany Crypto — تقرير الساعة\n\n${!settings.entriesEnabled ? "الدخول متوقّف بإعدادك — أُدير الصفقات المفتوحة وأراقب فقط." : regimeBlocked ? "السوق غير مؤاتٍ (القائد BTC هابط) — أبقى نقداً لحماية رأس المال؛ لا أشتري في سوق هابط." : "لا توجد فرصة شراء عالية الجودة الآن — أنتظر إعداداً نظيفاً."}\n\n📊 صفقات مفتوحة: ${openNow} / ${settings.maxOpen}\n🛡️ البوت يعمل ويراقب 24/7.`
     );
     meta.lastMsg = now;
     await saveMeta(meta);
@@ -226,5 +225,6 @@ export async function GET(req: Request) {
     heartbeat,
     riskOff: marketRiskOff(markets),
     regimeBlocked,
+    settings,
   });
 }
