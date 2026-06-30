@@ -61,7 +61,16 @@ export function RecommendationStack() {
   const candidates = useMemo(
     () =>
       coins
-        .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 130 && (c.change24h ?? 0) <= 18 && (c.change24h ?? 0) >= -12)
+        .filter(
+          (c) =>
+            !isStable(c.symbol) &&
+            (c.rank ?? 999) <= 100 && // liquid, recognizable names only
+            (c.change24h ?? 0) <= 18 &&
+            (c.change24h ?? 0) >= -12 &&
+            // drop flat pegs that slip past the name list (e.g. GHO): a real
+            // opportunity has actually moved; a peg sits dead-flat.
+            !(Math.abs(c.change24h ?? 0) < 0.8 && Math.abs(c.change7d ?? 0) < 1.5)
+        )
         .map((c) => ({ c, r: scan(c, style, "spot") }))
         .filter((x) => x.r.signal !== "SHORT" && x.r.trend !== "down")
         .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) + Math.max(0, (x.c.change24h ?? 0) - btcCh) * 2 }))
