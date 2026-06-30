@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Sparkles, ChevronRight, ArrowUpRight, ChevronDown, Brain, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
+import { Sparkles, ChevronRight, ChevronDown, Brain, Loader2, ShieldAlert, TrendingUp, Activity } from "lucide-react";
 import { useMarkets, useBtcRegime } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { qualityScore, type Recommendation, type Style } from "@/lib/signal-engine";
@@ -16,11 +16,22 @@ import { LivePrice } from "@/components/ui/LivePrice";
 import { formatUsd, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Pick = { c: Coin; r: Recommendation };
+/** A graded opportunity: BUY (high-conviction long), SETUP (long, lower conf),
+ *  WATCH (constructive but unconfirmed — wait for the trigger). */
+type OppType = "buy" | "setup" | "watch";
+type Pick = { c: Coin; r: Recommendation; type: OppType };
+
 const STYLES: Style[] = ["scalp", "day", "swing"];
 const confColor = (v: number) => (v >= 70 ? "#00E676" : v >= 55 ? "#FFD166" : "#8A94B0");
+const TYPE_META: Record<OppType, { key: string; cls: string; rank: number }> = {
+  buy: { key: "dir.BUY", cls: "border-bull/30 bg-bull/10 text-bull", rank: 0 },
+  setup: { key: "opp.setup", cls: "border-cyan/30 bg-cyan/10 text-cyan", rank: 1 },
+  watch: { key: "opp.watch", cls: "border-gold/30 bg-gold/10 text-gold", rank: 2 },
+};
 
-/** Real AI recommendations: top buy setups from the analysis engine + an LLM verdict. */
+/** AI Opportunity Radar: always surfaces the best available buy-side setups,
+ *  graded by conviction, ranked & explained by the live AI. Never empty unless
+ *  the whole market is in a confirmed downtrend. */
 export function RecommendationStack() {
   const { coins } = useMarkets();
   const { t, lang } = useI18n();
@@ -29,9 +40,9 @@ export function RecommendationStack() {
   const [provider, setProvider] = useState<"ai" | "local" | "">("");
   const [openSym, setOpenSym] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, { text: string; provider: "ai" | "local"; loading: boolean }>>({});
-  // Market-leader regime (BTC 4h/1d), shared & cached — when BTC is in a downtrend
-  // the trader holds cash, so the overview must not flash BUY cards.
-  const { bearish: regimeBearish, trend: btcTrend } = useBtcRegime();
+  const { bearish: regimeBearish } = useBtcRegime();
+  const cautious = regimeBearish === true;
+  const btcCh = coins.find((c) => c.symbol === "BTC")?.change24h ?? 0;
 
   const toggle = async (pick: Pick) => {
     const sym = pick.c.symbol;
@@ -44,23 +55,25 @@ export function RecommendationStack() {
     }
   };
 
-  // Stage 1 — fast scan narrows the whole market to liquid, non-stable,
-  // non-pumped uptrend candidates (close-only, instant).
+  // Stage 1 — broad, instant scan: liquid, non-stable, buy-side (not a downtrend,
+  // not breaking down), ranked by setup quality + liquidity + relative strength
+  // vs BTC. This keeps the radar populated even when momentum is thin.
   const candidates = useMemo(
     () =>
       coins
-        .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 120 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -12)
+        .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 130 && (c.change24h ?? 0) <= 18 && (c.change24h ?? 0) >= -12)
         .map((c) => ({ c, r: scan(c, style, "spot") }))
-        .filter((x) => x.r.signal === "LONG" && x.r.confidence >= 60 && x.r.trend === "up")
-        .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
+        .filter((x) => x.r.signal !== "SHORT" && x.r.trend !== "down")
+        .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) + Math.max(0, (x.c.change24h ?? 0) - btcCh) * 2 }))
         .sort((a, b) => b.score - a.score)
-        .slice(0, 8),
-    [coins, style]
+        .slice(0, 10),
+    [coins, style, btcCh]
   );
   const candSig = candidates.map((c) => c.c.symbol).join(",") + style;
 
-  // Stage 2 — confirm each with the SAME rigorous multi-timeframe engine the
-  // deep analysis uses, so the card and the analysis never contradict.
+  // Stage 2 — rigorous multi-timeframe confirmation (same engine as the deep
+  // analysis), then grade each into BUY / SETUP / WATCH. Drop anything the
+  // engine reads as a short or a breakdown — those are not buy opportunities.
   const [picks, setPicks] = useState<Pick[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -73,15 +86,17 @@ export function RecommendationStack() {
         candidates.map(async (cand) => {
           try {
             const rec = (await (await fetch(`/api/signals?symbol=${cand.c.symbol}&style=${style}&market=spot`)).json()) as Recommendation;
-            if (rec.signal === "LONG" && rec.confidence >= 60 && rec.trend === "up") confirmed.push({ c: cand.c, r: rec });
+            if (rec.signal === "SHORT" || rec.trend === "down") return;
+            const type: OppType = rec.signal === "LONG" && rec.confidence >= 60 ? "buy" : rec.signal === "LONG" ? "setup" : "watch";
+            confirmed.push({ c: cand.c, r: rec, type });
           } catch {
             /* skip */
           }
         })
       );
-      confirmed.sort((a, b) => b.r.confidence - a.r.confidence);
+      confirmed.sort((a, b) => TYPE_META[a.type].rank - TYPE_META[b.type].rank || b.r.confidence - a.r.confidence);
       if (!cancelled) {
-        setPicks(confirmed.slice(0, 4));
+        setPicks(confirmed.slice(0, 5));
         setLoading(false);
       }
     })();
@@ -89,15 +104,17 @@ export function RecommendationStack() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candSig]);
 
-  // LLM verdict over the confirmed picks.
-  const sig = picks.map((p) => p.c.symbol + p.r.confidence).join(",");
+  const buyCount = picks.filter((p) => p.type === "buy").length;
+
+  // LLM verdict — regime-aware ranking of the live opportunities.
+  const sig = picks.map((p) => p.c.symbol + p.r.confidence + p.type).join(",");
   useEffect(() => {
     if (!picks.length) { setVerdict(""); setProvider(""); return; }
-    const facts = picks.map((x, i) => `${i + 1}. ${x.c.symbol} conf ${x.r.confidence}% entry ${formatUsd(x.r.entry)} TP1 ${formatUsd(x.r.targets[0])} R:R ${x.r.riskReward.toFixed(2)}`).join("\n");
+    const facts = picks.map((x, i) => `${i + 1}. ${x.c.symbol} [${x.type}] conf ${x.r.confidence}% trend ${x.r.trend} entry ${formatUsd(x.r.entry)} TP1 ${formatUsd(x.r.targets[0])} R:R ${x.r.riskReward.toFixed(2)}`).join("\n");
     setVerdict(
       lang === "ar"
-        ? `${picks.length} فرص شراء قوية، يتصدّرها ${picks[0].c.symbol}${picks[1] ? ` و${picks[1].c.symbol}` : ""} بثقة عالية.`
-        : `${picks.length} strong buy setups, led by ${picks[0].c.symbol}${picks[1] ? ` and ${picks[1].c.symbol}` : ""}.`
+        ? `${picks.length} فرص على الرادار، يتصدّرها ${picks[0].c.symbol}.`
+        : `${picks.length} opportunities on the radar, led by ${picks[0].c.symbol}.`
     );
     setProvider("local");
     let cancelled = false;
@@ -105,12 +122,12 @@ export function RecommendationStack() {
       try {
         const sys =
           lang === "ar"
-            ? "أنت مستثمر كريبتو مخضرم. علّق بجملتين أو ثلاث على هذه التوصيات: استخدم الأرقام المعطاة، وأضف رأيك من معرفتك بهذه المشاريع وأيها تفضّل أنت ولماذا. اكتب بالعربية الفصحى فقط دون خلط أي كلمات من لغات أخرى. ليست نصيحة مالية."
-            : "You are a veteran crypto investor. Comment in 2-3 sentences on these picks: use the given numbers, add your own take from what you know about these projects and which YOU would prefer and why. Not financial advice.";
+            ? `أنت مستثمر كريبتو مخضرم. أمامك قائمة فرص مصنّفة (buy=شراء قوي، setup=إعداد، watch=مراقبة) في سوق ${cautious ? "حذر (بيتكوين ضعيف على الإطار الأعلى)" : "مؤاتٍ"}. رتّبها بصدق في جملتين أو ثلاث: ما أفضل فرصة الآن ولماذا، وأيّها الأعلى مخاطرة، وما شرط الدخول. ${cautious ? "وضّح أن الفرص في سوق حذر انتقائية وقصيرة المدى وتتطلّب وقفاً ضيّقاً وحجماً أصغر." : ""} لا تذكر سعراً محدّداً. بالعربية الفصحى فقط. ليست نصيحة مالية.`
+            : `You are a veteran crypto investor. Here is a graded opportunity list (buy/setup/watch) in a ${cautious ? "cautious market (BTC weak on the higher timeframe)" : "favorable market"}. Rank them candidly in 2-3 sentences: the best opportunity now and why, the riskiest, and the entry condition. ${cautious ? "Make clear that in a cautious market these are selective, short-term, and need tight stops and smaller size." : ""} Don't state a specific price. Not financial advice.`;
         const res = await fetch("/api/ai", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [{ role: "system", content: sys }, { role: "system", content: facts }, { role: "user", content: lang === "ar" ? "لخّص التوصيات." : "Summarize the picks." }] }),
+          body: JSON.stringify({ messages: [{ role: "system", content: sys }, { role: "system", content: facts }, { role: "user", content: lang === "ar" ? "رتّب الفرص." : "Rank the opportunities." }] }),
         });
         const j = (await res.json()) as { text?: string | null };
         if (!cancelled && j?.text) { setVerdict(j.text); setProvider("ai"); }
@@ -139,70 +156,52 @@ export function RecommendationStack() {
       {/* horizon toggle */}
       <div className="mt-3 flex items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.02] p-1">
         {STYLES.map((s) => (
-          <button
-            key={s}
-            onClick={() => setStyle(s)}
-            className={cn("flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all", style === s ? "bg-cyan-violet text-base-950" : "text-ink-muted hover:text-ink")}
-          >
+          <button key={s} onClick={() => setStyle(s)} className={cn("flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all", style === s ? "bg-cyan-violet text-base-950" : "text-ink-muted hover:text-ink")}>
             {t(`ms.${s}`)}
           </button>
         ))}
       </div>
 
-      {regimeBearish === true ? (
-        /* Regime gate: BTC higher-timeframe downtrend → hold cash, show no buys. */
-        <div className="mt-3 rounded-xl border border-bear/30 bg-bear/[0.08] p-4">
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-bear">
-            <ShieldAlert className="h-4 w-4" /> {lang === "ar" ? "السوق غير مؤاتٍ — نقداً" : "Unfavorable market — in cash"}
-          </div>
-          <p className="whitespace-pre-line text-xs leading-relaxed text-ink-muted">
-            {lang === "ar"
-              ? "بيتكوين (قائد السوق) في اتجاه هابط على الإطار الأعلى. لا أعرض توصيات شراء الآن — لا تُشترى الألتكوينات في سوق هابط. حماية رأس المال أولاً، وننتظر تعافي القائد."
-              : "Bitcoin (the market leader) is in a higher-timeframe downtrend. No buy setups right now — you don't buy alts into a falling market. Capital first; waiting for the leader to recover."}
-          </p>
-          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[11px]">
-            <span className="text-ink-faint">{lang === "ar" ? "اتجاه BTC" : "BTC trend"}</span>
-            <span className="font-bold text-bear">{btcTrend === "down" ? (lang === "ar" ? "هابط ↓" : "down ↓") : (btcTrend ?? "—")}</span>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* AI verdict */}
-          <div className="mt-3 rounded-xl border border-violet/20 bg-violet/[0.06] p-3">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-violet">{t("rec.verdict")}</span>
-              {provider && (
-                <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", provider === "ai" ? "border-bull/30 bg-bull/10 text-bull" : "border-white/10 bg-white/[0.04] text-ink-muted")}>
-                  {provider === "ai" ? t("ai.viaAI") : t("ai.viaLocal")}
-                </span>
-              )}
-            </div>
-            <p className="whitespace-pre-line text-xs leading-relaxed text-ink-muted">{verdict || (loading ? "…" : t("rec.noBuys"))}</p>
-          </div>
+      {/* regime banner — context, not a wall */}
+      <div className={cn("mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium", cautious ? "border-gold/25 bg-gold/[0.07] text-gold" : "border-bull/25 bg-bull/[0.07] text-bull")}>
+        {cautious ? <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> : <Activity className="h-3.5 w-3.5 shrink-0" />}
+        <span className="text-ink-muted">
+          {cautious
+            ? (lang === "ar" ? "سوق حذر (بيتكوين ضعيف) — الفرص أدناه انتقائية وأعلى مخاطرة: وقف ضيّق وحجم أصغر." : "Cautious market (BTC weak) — the setups below are selective and higher-risk: tight stops, smaller size.")
+            : (lang === "ar" ? "السوق مؤاتٍ للشراء — أفضل الفرص المؤكَّدة أدناه." : "Market favors buying — the best confirmed setups are below.")}
+        </span>
+      </div>
 
-          {/* picks */}
-          <div className="mt-3 space-y-2.5">
-            {loading && picks.length === 0 ? (
-              [0, 1, 2].map((i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/[0.03]" />)
-            ) : picks.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/[0.1] px-4 py-8 text-center text-sm text-ink-faint">{t("rec.noBuys")}</div>
-            ) : (
-              picks.map((pick, idx) => (
-                <PickCard
-                  key={pick.c.symbol}
-                  pick={pick}
-                  rank={idx + 1}
-                  open={openSym === pick.c.symbol}
-                  onToggle={() => toggle(pick)}
-                  analysis={analyses[pick.c.symbol]}
-                  t={t}
-                />
-              ))
-            )}
-          </div>
-        </>
-      )}
-      <p className="mt-3 text-center text-[10px] text-ink-faint">{t("ms.disclaimer")}</p>
+      {/* AI verdict */}
+      <div className="mt-3 rounded-xl border border-violet/20 bg-violet/[0.06] p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-violet">{t("rec.verdict")}</span>
+          {provider && (
+            <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", provider === "ai" ? "border-bull/30 bg-bull/10 text-bull" : "border-white/10 bg-white/[0.04] text-ink-muted")}>
+              {provider === "ai" ? t("ai.viaAI") : t("ai.viaLocal")}
+            </span>
+          )}
+        </div>
+        <p className="whitespace-pre-line text-xs leading-relaxed text-ink-muted">{verdict || (loading ? "…" : t("rec.noBuys"))}</p>
+      </div>
+
+      {/* opportunities */}
+      <div className="mt-3 space-y-2.5">
+        {loading && picks.length === 0 ? (
+          [0, 1, 2].map((i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/[0.03]" />)
+        ) : picks.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/[0.1] px-4 py-8 text-center text-sm text-ink-faint">{t("rec.noBuys")}</div>
+        ) : (
+          picks.map((pick, idx) => (
+            <PickCard key={pick.c.symbol} pick={pick} rank={idx + 1} open={openSym === pick.c.symbol} onToggle={() => toggle(pick)} analysis={analyses[pick.c.symbol]} t={t} />
+          ))
+        )}
+      </div>
+
+      <p className="mt-3 text-center text-[10px] text-ink-faint">
+        {buyCount === 0 && picks.length > 0 ? (lang === "ar" ? "لا توجد إشارة شراء عالية الثقة الآن — ما تراه فرص مراقبة. " : "No high-conviction buy right now — these are watch ideas. ") : ""}
+        {t("ms.disclaimer")}
+      </p>
     </div>
   );
 }
@@ -213,9 +212,13 @@ function PickCard({
   pick: Pick; rank: number; open: boolean; onToggle: () => void;
   analysis?: { text: string; provider: "ai" | "local"; loading: boolean }; t: (k: string) => string;
 }) {
-  const { c, r } = pick;
+  const { c, r, type } = pick;
   const up = (c.change24h ?? 0) >= 0;
   const dist = (p: number) => ((p - r.entry) / r.entry) * 100;
+  const meta = TYPE_META[type];
+  const trendChip = r.trend === "up"
+    ? { label: t("ms.up"), cls: "bg-bull/10 text-bull" }
+    : { label: t("opp.range"), cls: "bg-gold/10 text-gold" };
   const chips = [
     `RSI ${r.indicators.rsi.toFixed(0)}`,
     r.indicators.macdHist >= 0 ? "MACD ↑" : "MACD ↓",
@@ -223,7 +226,7 @@ function PickCard({
   ].filter(Boolean) as string[];
 
   return (
-    <div className={cn("rounded-2xl border bg-white/[0.02] p-3 transition-colors", rank === 1 ? "border-bull/25" : "border-white/[0.06]")}>
+    <div className={cn("rounded-2xl border bg-white/[0.02] p-3 transition-colors", rank === 1 && type === "buy" ? "border-bull/25" : "border-white/[0.06]")}>
       {/* top row */}
       <div className="flex items-center gap-2.5">
         <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-white/[0.06] text-[10px] font-bold text-ink-muted tnum">{rank}</span>
@@ -245,20 +248,18 @@ function PickCard({
         <ConfidenceRing value={r.confidence} />
       </div>
 
-      {/* price + signal */}
+      {/* price + type badge */}
       <div className="mt-2 flex items-center justify-between">
         <div dir="ltr" className="flex items-baseline gap-2">
           <LivePrice value={c.price} format={formatUsd} className="font-mono text-sm font-bold text-ink" />
           <span className={cn("font-mono text-[11px] font-semibold tnum", up ? "text-bull" : "text-bear")}>{formatPercent(c.change24h)}</span>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full border border-bull/30 bg-bull/10 px-2 py-0.5 text-[11px] font-bold text-bull">
-          <ArrowUpRight className="h-3 w-3" /> {t("dir.BUY")}
-        </span>
+        <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold", meta.cls)}>{t(meta.key)}</span>
       </div>
 
-      {/* reason chips */}
+      {/* chips */}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <span className="inline-flex items-center gap-1 rounded-md bg-bull/10 px-1.5 py-0.5 text-[10px] font-semibold text-bull"><TrendingUp className="h-2.5 w-2.5" /> {t("ms.up")}</span>
+        <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold", trendChip.cls)}><TrendingUp className={cn("h-2.5 w-2.5", r.trend !== "up" && "rotate-90")} /> {trendChip.label}</span>
         {chips.map((ch) => (
           <span key={ch} dir="ltr" className="rounded-md bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-ink-muted">{ch}</span>
         ))}
@@ -282,7 +283,7 @@ function PickCard({
         ))}
       </div>
 
-      {/* deep AI analysis on demand */}
+      {/* deep AI analysis */}
       <button onClick={onToggle} className="mt-2.5 flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[11px] font-semibold text-ink-muted transition-colors hover:text-violet">
         <span className="flex items-center gap-1.5"><Brain className="h-3.5 w-3.5 text-violet" /> {t("rec.deep")}</span>
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
