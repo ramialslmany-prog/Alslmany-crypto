@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchCandles, type Interval, type Candle } from "@/lib/candles";
-import { analyzeTimeframe } from "@/lib/signal-engine";
+import { analyzeTimeframe, tradePlan } from "@/lib/signal-engine";
 
 /**
  * Walk-forward backtest of the live spot strategy (buy-the-dip in an uptrend
@@ -12,7 +12,6 @@ import { analyzeTimeframe } from "@/lib/signal-engine";
 export const dynamic = "force-dynamic";
 
 const TF: Record<string, Interval> = { scalp: "15m", day: "1h", swing: "4h" };
-const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 interface BTrade {
   entryIdx: number;
@@ -53,12 +52,10 @@ function runBacktest(c: Candle[], opt: BTOpts = DEFAULTS) {
     }
 
     const entry = c[i].c;
-    const atrPct = (a.atr / entry) * 100;
-    const volPct = clamp(atrPct, 0.5, 5);
-    const stopPct = clamp(volPct * 1.5, 2, 6);
-    const risk = (stopPct / 100) * entry;
-    const targets = [entry + 1.5 * risk, entry + 2.5 * risk, entry + 4 * risk];
-    let stop = entry - risk;
+    // Same structure-aware plan as the live engine — so the backtest stays honest.
+    const plan = tradePlan("long", entry, a.atr, a.swingHighs, a.swingLows, "spot");
+    const targets = plan.targets;
+    let stop = plan.stop;
     let hit = 0;
 
     // Simulate forward bars with the staged exit logic. Position starts at full

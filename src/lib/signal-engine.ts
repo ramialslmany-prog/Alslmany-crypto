@@ -42,6 +42,8 @@ export interface TFAnalysis {
   bias: number;
   bull: string[];
   bear: string[];
+  swingHighs: number[]; // recent fractal resistance levels (price)
+  swingLows: number[]; // recent fractal support levels (price)
 }
 
 export interface Recommendation {
@@ -125,6 +127,9 @@ export function analyzeTimeframe(interval: Interval, c: Candle[]): TFAnalysis {
   const sw = swings(c, 2);
   const lastHigh = sw.highs.length ? last(sw.highs).price : Math.max(...c.slice(-20).map((x) => x.h));
   const lastLow = sw.lows.length ? last(sw.lows).price : Math.min(...c.slice(-20).map((x) => x.l));
+  // Recent fractal levels → real support/resistance for the trade plan.
+  const swingHighs = sw.highs.slice(-10).map((h) => h.price);
+  const swingLows = sw.lows.slice(-10).map((l) => l.price);
   const emaTrend: "up" | "down" | "range" =
     Number.isFinite(e200v) && e20 > e50 && e50 > e200v && close > e50
       ? "up"
@@ -223,7 +228,7 @@ export function analyzeTimeframe(interval: Interval, c: Candle[]): TFAnalysis {
   return {
     interval, close, trend: emaTrend, rsi: r, macdHist: mHist, macdCross,
     bbPctB, atr: a, atrPct, vwap: vw, volRatio, volConfirmed,
-    structure, fvg, bias, bull, bear,
+    structure, fvg, bias, bull, bear, swingHighs, swingLows,
   };
 }
 
@@ -247,6 +252,69 @@ function spotDecision(ltf: TFAnalysis, htf: TFAnalysis, combined: number): Direc
   if (!uptrend && ltf.structure === "CHoCH bull" && combined > 1.5) return "LONG"; // early reversal
   if (ltf.trend === "down" && combined <= -2.2) return "SHORT"; // breakdown — exit / avoid
   return "NEUTRAL";
+}
+
+/**
+ * Structure-aware trade plan. The stop sits just beyond the nearest real swing
+ * (support for longs / resistance for shorts), bounded by ATR and a hard risk
+ * cap. Targets are anchored to ACTUAL swing levels in the trade's direction
+ * (each must clear 1R and be spaced so they aren't clustered) — so the distances
+ * VARY per coin instead of a fixed R-multiple ladder. Only when price is in clear
+ * air ahead does it fall back to measured extensions. A stable 3-level ladder is
+ * kept (TP1→breakeven, TP2→trail, TP3→exit), but each level is whatever the chart
+ * actually offers — which is the whole point. R:R is computed from the real TP1.
+ */
+export function tradePlan(
+  dir: "long" | "short",
+  entry: number,
+  atr: number,
+  swingHighs: number[],
+  swingLows: number[],
+  market: Market
+): { stop: number; targets: number[] } {
+  const atrAbs = Math.max(atr, entry * 0.003);
+  const minStop = Math.max(atrAbs * 0.9, entry * (market === "spot" ? 0.013 : 0.008));
+  const maxStop = entry * (market === "spot" ? 0.075 : 0.05);
+  const buf = atrAbs * 0.3;
+  const clampR = (r: number) => Math.min(Math.max(r, minStop), maxStop);
+
+  if (dir === "long") {
+    const supports = swingLows.filter((p) => p < entry).sort((a, b) => b - a); // nearest below first
+    const R = clampR(supports.length ? entry - (supports[0] - buf) : atrAbs * 1.4);
+    const stop = entry - R;
+    const targets: number[] = [];
+    for (const r of swingHighs.filter((p) => p > entry).sort((a, b) => a - b)) {
+      if (targets.length >= 3) break;
+      if ((r - entry) / R < 1) continue; // worthwhile target ≥ 1R
+      if (targets.length && r < targets[targets.length - 1] + R * 0.6) continue; // not clustered
+      targets.push(r);
+    }
+    // Keep a 3-level ladder: extend beyond the furthest structural target with a
+    // measured move when the chart doesn't offer 3 clean resistances ahead.
+    while (targets.length < 3) {
+      if (!targets.length) { targets.push(entry + R * 1.6); continue; }
+      const m = (targets[targets.length - 1] - entry) / R;
+      targets.push(entry + R * (m + 1.4));
+    }
+    return { stop, targets };
+  }
+
+  const resist = swingHighs.filter((p) => p > entry).sort((a, b) => a - b); // nearest above first
+  const R = clampR(resist.length ? resist[0] + buf - entry : atrAbs * 1.4);
+  const stop = entry + R;
+  const targets: number[] = [];
+  for (const s of swingLows.filter((p) => p < entry).sort((a, b) => b - a)) {
+    if (targets.length >= 3) break;
+    if ((entry - s) / R < 1) continue;
+    if (targets.length && s > targets[targets.length - 1] - R * 0.6) continue;
+    targets.push(s);
+  }
+  while (targets.length < 3) {
+    if (!targets.length) { targets.push(entry - R * 1.6); continue; }
+    const m = (entry - targets[targets.length - 1]) / R;
+    targets.push(entry - R * (m + 1.4));
+  }
+  return { stop, targets };
 }
 
 /** Combine a lower- and higher-timeframe analysis into a gated recommendation. */
@@ -286,29 +354,19 @@ export function buildRecommendation(
   confidence = Math.round(clamp(confidence));
 
   const entry = ltf.close;
-  // Bounded, logical risk: cap volatility → sensible stop % → clean R-multiples.
-  const atrPctLtf = (ltf.atr / entry) * 100;
-  const volPct = Math.min(Math.max(atrPctLtf, 0.5), 5);
-  const stopPct = market === "spot" ? Math.min(Math.max(volPct * 1.5, 2), 6) : Math.min(Math.max(volPct * 1.2, 1), 4);
-  const riskUnit = (stopPct / 100) * entry;
-  const tp = [1.5, 2.5, 4]; // reward:risk multiples
+  // Structure-aware plan: stop beyond real swings; targets at actual swing levels
+  // (a variable 1–3, not a fixed R-multiple ladder). Combine LTF + HTF swings so
+  // bigger higher-timeframe levels count too. NEUTRAL ("watch") is planned as a
+  // long — these are the levels to watch for a dip entry.
+  const sHighs = [...ltf.swingHighs, ...htf.swingHighs];
+  const sLows = [...ltf.swingLows, ...htf.swingLows];
+  const plan = tradePlan(signal === "SHORT" ? "short" : "long", entry, ltf.atr, sHighs, sLows, market);
+  const stop = plan.stop;
+  const targets = plan.targets;
   const reasons: string[] = [];
-  let stop: number;
-  let targets: number[];
-
-  if (signal === "LONG") {
-    stop = entry - riskUnit;
-    targets = [entry + riskUnit * tp[0], entry + riskUnit * tp[1], entry + riskUnit * tp[2]];
-    reasons.push(...ltf.bull);
-  } else if (signal === "SHORT") {
-    stop = entry + riskUnit;
-    targets = [entry - riskUnit * tp[0], entry - riskUnit * tp[1], entry - riskUnit * tp[2]];
-    reasons.push(...ltf.bear);
-  } else {
-    stop = entry - riskUnit;
-    targets = [entry + riskUnit, entry + riskUnit * 2, entry + riskUnit * 3];
-    reasons.push("No high-confluence setup — confirmations are mixed");
-  }
+  if (signal === "LONG") reasons.push(...ltf.bull);
+  else if (signal === "SHORT") reasons.push(...ltf.bear);
+  else reasons.push("No high-confluence setup — confirmations are mixed");
 
   reasons.push(
     aligned

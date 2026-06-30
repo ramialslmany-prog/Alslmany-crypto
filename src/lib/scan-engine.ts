@@ -10,6 +10,7 @@
 import type { Coin } from "@/lib/mock-data";
 import { ema, rsi, macd, bollinger, last } from "@/lib/indicators";
 import { isStable } from "@/lib/coin-meta";
+import { tradePlan } from "@/lib/signal-engine";
 import type { Recommendation, Style, Market, Direction, RiskLevel } from "@/lib/signal-engine";
 
 const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
@@ -103,29 +104,26 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
   if (Math.sign(coin.change24h ?? 0) === Math.sign(change7d) && Math.abs(change7d) > 2) confidence += 4; // momentum consistency
   confidence = Math.round(clamp(confidence));
 
-  // Logical, bounded risk: cap per-bar volatility, derive a sensible stop %,
-  // then place targets at clean R-multiples (no more ±30% day-trade targets).
-  const volPct = Math.min(Math.max(atrPct, 0.5), 5);
-  const stopPct = market === "spot" ? Math.min(Math.max(volPct * 1.5, 2), 6) : Math.min(Math.max(volPct * 1.2, 1), 4);
-  const riskUnit = (stopPct / 100) * price;
-  const tp = [1.5, 2.5, 4]; // reward:risk multiples
-
-  let stop: number;
-  let targets: number[];
-  let reasons: string[];
-  if (signal === "LONG") {
-    stop = price - riskUnit;
-    targets = [price + riskUnit * tp[0], price + riskUnit * tp[1], price + riskUnit * tp[2]];
-    reasons = [...bull];
-  } else if (signal === "SHORT") {
-    stop = price + riskUnit;
-    targets = [price - riskUnit * tp[0], price - riskUnit * tp[1], price - riskUnit * tp[2]];
-    reasons = [...bear];
-  } else {
-    stop = price - riskUnit;
-    targets = [price + riskUnit, price + riskUnit * 2, price + riskUnit * 3];
-    reasons = ["No clean setup — mixed confirmations"];
+  // Structure-aware plan: detect swing highs/lows on the close series and place
+  // the stop beyond real structure with targets at actual levels (same tradePlan
+  // engine as the deep analysis) — no more identical R-multiple ladders.
+  const swH: number[] = [];
+  const swL: number[] = [];
+  for (let i = 2; i < closes.length - 2; i++) {
+    let isHi = true;
+    let isLo = true;
+    for (let j = i - 2; j <= i + 2; j++) {
+      if (j === i) continue;
+      if (closes[j] >= closes[i]) isHi = false;
+      if (closes[j] <= closes[i]) isLo = false;
+    }
+    if (isHi) swH.push(closes[i]);
+    if (isLo) swL.push(closes[i]);
   }
+  const plan = tradePlan(signal === "SHORT" ? "short" : "long", price, (atrPct / 100) * price, swH.slice(-10), swL.slice(-10), market);
+  const stop = plan.stop;
+  const targets = plan.targets;
+  const reasons: string[] = signal === "LONG" ? [...bull] : signal === "SHORT" ? [...bear] : ["No clean setup — mixed confirmations"];
   if (market === "spot") {
     reasons.push(
       signal === "LONG" ? "Spot: buy-the-dip within an uptrend"

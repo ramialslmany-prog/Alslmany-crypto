@@ -119,10 +119,22 @@ function evaluateOpen(journal: JTrade[], priceOf: (s: string) => number) {
       t.status = status; t.closedAt = now; t.exitPrice = exit; t.retPct = ((exit - t.entry) / t.entry) * 100;
       closed.push(t);
     };
-    if (p >= t.targets[2]) { close("tp3", t.targets[2]); continue; }
+    // Staged exit over a VARIABLE-length target ladder (1–3 structure levels).
+    const tps = t.targets;
+    const lastIdx = tps.length - 1;
+    if (p >= tps[lastIdx]) { close("tp3", tps[lastIdx]); continue; } // final target → full exit
     if (p <= t.stop) { close(hit >= 2 ? "tp1" : hit >= 1 ? "breakeven" : "stopped", t.stop); continue; }
-    if (p >= t.targets[1] && hit < 2) { t.hit = 2; t.stop = t.targets[0]; advanced.push({ t, level: 2, gain: ((t.targets[1] - t.entry) / t.entry) * 100 }); continue; }
-    if (p >= t.targets[0] && hit < 1) { t.hit = 1; t.stop = t.entry; advanced.push({ t, level: 1, gain: ((t.targets[0] - t.entry) / t.entry) * 100 }); continue; }
+    let advancedThis = false;
+    for (let i = lastIdx - 1; i >= 0; i--) {
+      if (p >= tps[i] && hit <= i) {
+        t.hit = i + 1;
+        t.stop = i === 0 ? t.entry : tps[i - 1]; // TP1 → breakeven; later → trail to the prior target
+        advanced.push({ t, level: i + 1, gain: ((tps[i] - t.entry) / t.entry) * 100 });
+        advancedThis = true;
+        break;
+      }
+    }
+    if (advancedThis) continue;
     if (now - t.issuedAt > EXPIRE_MS) { close("expired", p); continue; }
     if (!t.warned && hit < 1) {
       const dist = t.entry - t.stop;
