@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
-import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
+import { analyzeTimeframe, buildRecommendation, qualityScore, STYLE_TF } from "@/lib/signal-engine";
+import { scanCoin } from "@/lib/scan-engine";
 import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, loadSettings, type JTradeS as JTrade } from "@/lib/store";
-import { isStable } from "@/lib/coin-meta";
+import { isStable, liqBonus } from "@/lib/coin-meta";
 import type { Coin } from "@/lib/mock-data";
 
 /**
@@ -174,14 +175,25 @@ export async function GET(req: Request) {
   //    risk-off, AND the market leader (BTC) isn't in a downtrend. In an
   //    unfavorable regime the bot holds cash — capital preservation is the edge.
   let entered = 0;
+  let shortlisted = 0;
   const openCount = journal.filter((t) => t.status === "open").length;
   const slots = settings.maxOpen - openCount;
   const regimeBlocked = marketRiskOff(markets) || (await marketLeaderBearish());
   if (slots > 0 && !regimeBlocked && settings.entriesEnabled) {
+    // Stage 1 — fast-scan the ENTIRE market snapshot (top 300, zero extra
+    // requests: the close-only scanner runs on the sparklines we already have).
+    // The best-looking LONG candidates move on — so an opportunity in rank #90
+    // is seen too, not just the biggest caps.
     const universe = markets
-      .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
-      .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
-      .slice(0, SCAN_UNIVERSE);
+      .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 150 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
+      .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
+      .filter((x) => x.r.signal === "LONG" && x.r.trend === "up" && x.r.confidence >= 55)
+      .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SCAN_UNIVERSE)
+      .map((x) => x.c);
+    shortlisted = universe.length;
+    // Stage 2 — rigorous multi-timeframe confirmation on the shortlist only.
     const { ltf, htf } = STYLE_TF.day;
     const recs = await Promise.all(
       universe.map(async (c) => {
@@ -238,5 +250,7 @@ export async function GET(req: Request) {
     riskOff: marketRiskOff(markets),
     regimeBlocked,
     settings,
+    universeScanned: markets.length,
+    shortlisted,
   });
 }

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
-import { analyzeTimeframe, buildRecommendation, STYLE_TF } from "@/lib/signal-engine";
-import { isStable } from "@/lib/coin-meta";
+import { analyzeTimeframe, buildRecommendation, qualityScore, STYLE_TF } from "@/lib/signal-engine";
+import { scanCoin } from "@/lib/scan-engine";
+import { isStable, liqBonus } from "@/lib/coin-meta";
 
 /**
  * Server-side autonomous scan → Telegram. Runs WITHOUT a browser open, so the
@@ -97,13 +98,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, sent: 0, regimeBlocked: true });
   }
 
-  // Pick the most-liquid, non-stable coins to deep-scan.
+  // Stage 1 — fast-scan the ENTIRE market snapshot (top 300, zero extra
+  // requests) and shortlist the best LONG candidates; stage 2 deep-confirms.
   const markets = await fetchMarkets();
   const universe = markets
     // liquid, non-stable, and not chasing a pump / catching a falling knife
-    .filter((c) => !isStable(c.symbol) && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
-    .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
-    .slice(0, SCAN_UNIVERSE);
+    .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 150 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
+    .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
+    .filter((x) => x.r.signal === "LONG" && x.r.trend === "up" && x.r.confidence >= 55)
+    .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, SCAN_UNIVERSE)
+    .map((x) => x.c);
 
   const { ltf, htf } = STYLE_TF.day;
   const recs = await Promise.all(
