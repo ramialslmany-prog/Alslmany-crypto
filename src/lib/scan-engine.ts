@@ -83,14 +83,21 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
   const bbL = last(bb.lower);
   const bbPctB = bbU > bbL ? (price - bbL) / (bbU - bbL) : 0.5;
 
-  // ATR% proxy from close-to-close moves.
-  let vSum = 0;
-  let vN = 0;
-  for (let i = Math.max(1, closes.length - 14); i < closes.length; i++) {
-    vSum += Math.abs(closes[i] - closes[i - 1]) / closes[i - 1];
-    vN++;
+  // ATR% proxy from close-to-close moves, plus the current volatility's
+  // percentile within THIS coin's own rolling history (per-asset regime).
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) rets.push(Math.abs(closes[i] - closes[i - 1]) / closes[i - 1]);
+  const W = 14;
+  const vols: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < rets.length; i++) {
+    acc += rets[i];
+    if (i >= W) acc -= rets[i - W];
+    if (i >= W - 1) vols.push(acc / W);
   }
-  const atrPct = vN ? (vSum / vN) * 100 : 1;
+  const curVol = vols.length ? vols[vols.length - 1] : 0.01;
+  const atrPct = curVol * 100;
+  const volPctile = vols.length > 10 ? vols.filter((v) => v <= curVol).length / vols.length : 0.5;
 
   const change7d = coin.change7d ?? 0;
   const trend: "up" | "down" | "range" =
@@ -124,7 +131,9 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
     const overbought = r >= 70;
     const extended = bbPctB >= 0.82;
     const fading = mHist < 0;
-    const healthyDip = r >= 40 && r <= 64 && bbPctB <= 0.7;
+    // Per-asset dip zone — breathes with THIS coin's volatility (see signal-engine).
+    const dipLo = atrPct >= 2.5 ? 35 : atrPct <= 0.8 ? 42 : 40;
+    const healthyDip = r >= dipLo && r <= 64 && bbPctB <= 0.7;
     if (uptrend && overbought && fading) signal = "SHORT";
     else if (uptrend && extended) signal = "NEUTRAL";
     else if (uptrend && healthyDip && bias > 0.5) signal = "LONG";
@@ -141,6 +150,9 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
   let confidence = clamp(38 + Math.abs(bias) * 10 + trendStrength * 10);
   if ((signal === "LONG" && htfUp) || (signal === "SHORT" && !htfUp)) confidence += 6;
   if (Math.sign(coin.change24h ?? 0) === Math.sign(change7d) && Math.abs(change7d) > 2) confidence += 4; // momentum consistency
+  // Volatility regime vs the coin's own norm (mirrors the deep engine).
+  if (volPctile >= 0.85) confidence -= 6;
+  else if (volPctile <= 0.35) confidence += 3;
   confidence = Math.round(clamp(confidence));
 
   // Structure-aware plan: detect swing highs/lows on the close series and place
@@ -161,7 +173,8 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
   reasons.push("Scanned from 7-day data · open the coin for deeper analysis");
 
   const riskReward = Math.abs(targets[0] - price) / Math.abs(price - stop);
-  const riskLevel: RiskLevel = atrPct > 3 || confidence < 55 ? "High" : atrPct > 1.4 || confidence < 72 ? "Medium" : "Low";
+  // Risk graded relative to the coin's OWN volatility norm + absolute sanity bound.
+  const riskLevel: RiskLevel = volPctile >= 0.8 || atrPct > 4 || confidence < 55 ? "High" : atrPct > 1.6 || confidence < 72 ? "Medium" : "Low";
   const lev = Math.max(1, Math.min(10, Math.round(6 / Math.max(0.5, atrPct))));
   const leverage = market === "spot" || signal === "NEUTRAL" ? "—" : `${lev}x max`;
 

@@ -34,6 +34,7 @@ export interface TFAnalysis {
   bbPctB: number;
   atr: number;
   atrPct: number;
+  volPctile: number; // current ATR's percentile within THIS coin's own history (0..1)
   vwap: number;
   volRatio: number;
   volConfirmed: boolean;
@@ -115,8 +116,12 @@ export function analyzeTimeframe(interval: Interval, c: Candle[]): TFAnalysis {
   const bbLower = last(bb.lower);
   const bbPctB = bbUpper > bbLower ? (close - bbLower) / (bbUpper - bbLower) : 0.5;
 
-  const a = last(atr(c, 14));
-  const atrPct = (a / close) * 100;
+  // Volatility measured against the coin's OWN history (percentile), not a
+  // universal cutoff — a 4% day is calm for a high-beta alt, chaos for BTC.
+  const atrSeries = atr(c, 14).filter((v) => Number.isFinite(v) && v > 0);
+  const a = atrSeries.length ? atrSeries[atrSeries.length - 1] : 0;
+  const atrPct = close > 0 ? (a / close) * 100 : 1;
+  const volPctile = atrSeries.length > 20 ? atrSeries.filter((v) => v <= a).length / atrSeries.length : 0.5;
   const vw = last(vwap(c));
 
   const volAvg = last(sma(vols, 20)) || vols[vols.length - 1];
@@ -227,7 +232,7 @@ export function analyzeTimeframe(interval: Interval, c: Candle[]): TFAnalysis {
 
   return {
     interval, close, trend: emaTrend, rsi: r, macdHist: mHist, macdCross,
-    bbPctB, atr: a, atrPct, vwap: vw, volRatio, volConfirmed,
+    bbPctB, atr: a, atrPct, volPctile, vwap: vw, volRatio, volConfirmed,
     structure, fvg, bias, bull, bear, swingHighs, swingLows,
   };
 }
@@ -244,7 +249,10 @@ function spotDecision(ltf: TFAnalysis, htf: TFAnalysis, combined: number): Direc
   const overbought = ltf.rsi >= 70;
   const extended = ltf.bbPctB >= 0.8;
   const fading = ltf.macdHist < 0;
-  const healthyDip = ltf.rsi >= 40 && ltf.rsi <= 64 && ltf.bbPctB <= 0.7;
+  // Per-asset dip zone: high-beta coins routinely dip deeper inside healthy
+  // uptrends; calm majors don't — the buy zone breathes with THIS coin's ATR.
+  const dipLo = ltf.atrPct >= 2.5 ? 35 : ltf.atrPct <= 0.8 ? 42 : 40;
+  const healthyDip = ltf.rsi >= dipLo && ltf.rsi <= 64 && ltf.bbPctB <= 0.7;
 
   if (uptrend && overbought && fading) return "SHORT"; // take profit at the top
   if (uptrend && extended) return "NEUTRAL"; // don't chase — hold / wait for a dip
@@ -273,8 +281,12 @@ export function tradePlan(
   market: Market
 ): { stop: number; targets: number[] } {
   const atrAbs = Math.max(atr, entry * 0.003);
-  const minStop = Math.max(atrAbs * 0.9, entry * (market === "spot" ? 0.013 : 0.008));
-  const maxStop = entry * (market === "spot" ? 0.075 : 0.05);
+  // Per-asset calibration: the stop bounds breathe with THIS coin's own
+  // volatility instead of one fixed % for every coin. A calm major gets tight
+  // discipline; a high-beta alt gets the room its normal swings demand.
+  const atrPct = atrAbs / entry;
+  const minStop = entry * Math.min(Math.max(atrPct * 1.0, market === "spot" ? 0.01 : 0.006), market === "spot" ? 0.05 : 0.035);
+  const maxStop = entry * Math.min(Math.max(atrPct * 5.0, market === "spot" ? 0.05 : 0.035), market === "spot" ? 0.13 : 0.09);
   const buf = atrAbs * 0.3;
   const clampR = (r: number) => Math.min(Math.max(r, minStop), maxStop);
 
@@ -351,6 +363,10 @@ export function buildRecommendation(
   if (aligned) confidence += 8;
   if (conflict) confidence -= 14;
   if (ltf.volConfirmed) confidence += 5;
+  // Volatility regime vs the coin's OWN norm: chaotic conditions cut edge;
+  // unusually quiet, orderly conditions add a touch.
+  if (ltf.volPctile >= 0.85) confidence -= 6;
+  else if (ltf.volPctile <= 0.35) confidence += 3;
   confidence = Math.round(clamp(confidence));
 
   const entry = ltf.close;
@@ -388,8 +404,11 @@ export function buildRecommendation(
 
   const riskReward = Math.abs(targets[0] - entry) / Math.abs(entry - stop);
 
+  // Risk graded RELATIVE to the coin's own volatility norm (percentile), plus an
+  // absolute sanity bound — a 4% day is calm for a high-beta alt, chaos for BTC.
   const riskLevel: RiskLevel =
-    ltf.atrPct > 3 || confidence < 55 ? "High" : ltf.atrPct > 1.4 || confidence < 72 ? "Medium" : "Low";
+    ltf.volPctile >= 0.8 || ltf.atrPct > 4 || confidence < 55 ? "High" : ltf.atrPct > 1.6 || confidence < 72 ? "Medium" : "Low";
+  if (ltf.volPctile >= 0.85) reasons.push("Volatility elevated vs this coin's own norm — wider stop, smaller size");
 
   // Leverage only applies to futures; spot is unleveraged buy/sell.
   const lev = Math.max(1, Math.min(10, Math.round(6 / Math.max(0.5, ltf.atrPct))));
