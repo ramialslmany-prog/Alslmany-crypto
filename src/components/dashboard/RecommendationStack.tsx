@@ -6,7 +6,7 @@ import { Sparkles, ChevronRight, ChevronDown, Brain, Loader2, ShieldAlert, Trend
 import { useMarkets, useBtcRegime } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n";
 import { qualityScore, type Recommendation, type Style } from "@/lib/signal-engine";
-import { scanCoin as scan } from "@/lib/scan-engine";
+import { scanCoin as scan, longPlanFromSpark } from "@/lib/scan-engine";
 import { deepAnalyze } from "@/lib/deep-analyze";
 import { isStable, liqBonus } from "@/lib/coin-meta";
 import type { Coin } from "@/lib/mock-data";
@@ -17,8 +17,9 @@ import { formatUsd, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** A graded opportunity: BUY (high-conviction long), SETUP (long, lower conf),
+ *  BOUNCE (oversold counter-trend play at real support — high risk, labeled),
  *  WATCH (constructive but unconfirmed — wait for the trigger). */
-type OppType = "buy" | "setup" | "watch";
+type OppType = "buy" | "setup" | "bounce" | "watch";
 type Pick = { c: Coin; r: Recommendation; type: OppType };
 
 const STYLES: Style[] = ["scalp", "day", "swing"];
@@ -26,7 +27,8 @@ const confColor = (v: number) => (v >= 70 ? "#00E676" : v >= 55 ? "#FFD166" : "#
 const TYPE_META: Record<OppType, { key: string; cls: string; rank: number }> = {
   buy: { key: "dir.BUY", cls: "border-bull/30 bg-bull/10 text-bull", rank: 0 },
   setup: { key: "opp.setup", cls: "border-cyan/30 bg-cyan/10 text-cyan", rank: 1 },
-  watch: { key: "opp.watch", cls: "border-gold/30 bg-gold/10 text-gold", rank: 2 },
+  bounce: { key: "opp.bounce", cls: "border-violet/30 bg-violet/10 text-violet", rank: 2 },
+  watch: { key: "opp.watch", cls: "border-gold/30 bg-gold/10 text-gold", rank: 3 },
 };
 
 /** AI Opportunity Radar: always surfaces the best available buy-side setups,
@@ -78,7 +80,20 @@ export function RecommendationStack() {
         .slice(0, 10),
     [coins, style, btcCh]
   );
-  const candSig = candidates.map((c) => c.c.symbol).join(",") + style;
+  // Counter-trend playbook (what pros trade in bear/range markets): deeply
+  // oversold LIQUID MAJORS sitting at the lower band / near real support.
+  // Surfaced as "bounce" ideas — clearly labeled higher-risk, never auto-traded.
+  const bounceCandidates = useMemo(
+    () =>
+      coins
+        .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 80 && (c.change24h ?? 0) >= -10 && (c.change24h ?? 0) <= 5)
+        .map((c) => ({ c, r: scan(c, style, "spot") }))
+        .filter((x) => x.r.indicators.rsi <= 33 && x.r.indicators.bbPctB <= 0.15)
+        .sort((a, b) => a.r.indicators.rsi - b.r.indicators.rsi || (a.c.rank ?? 999) - (b.c.rank ?? 999))
+        .slice(0, 4),
+    [coins, style]
+  );
+  const candSig = candidates.map((c) => c.c.symbol).join(",") + "|" + bounceCandidates.map((c) => c.c.symbol).join(",") + style;
 
   // Stage 2 — rigorous multi-timeframe confirmation (same engine as the deep
   // analysis), then grade each into BUY / SETUP / WATCH. Drop anything the
@@ -103,9 +118,37 @@ export function RecommendationStack() {
           }
         })
       );
+      // Bounce tier: deep-verify the oversold read on real klines, then build a
+      // LONG-framed structure plan (stop under the swing low, targets at real
+      // resistance). Confidence is intentionally capped — counter-trend plays
+      // never get to claim trend-grade conviction.
+      const already = new Set(confirmed.map((p) => p.c.symbol));
+      await Promise.all(
+        bounceCandidates
+          .filter((b) => !already.has(b.c.symbol))
+          .map(async (cand) => {
+            try {
+              const rec = (await (await fetch(`/api/signals?symbol=${cand.c.symbol}&style=${style}&market=spot`)).json()) as Recommendation;
+              if (rec.indicators.rsi > 38 || rec.trend === "up") return; // must be genuinely oversold + counter-trend
+              const plan = longPlanFromSpark(cand.c);
+              if (!plan) return;
+              const entry = cand.c.price;
+              const rr = (plan.targets[0] - entry) / Math.max(entry - plan.stop, entry * 1e-6);
+              if (rr < 1) return; // the bounce must be worth its risk
+              const conf = Math.round(Math.min(72, Math.max(35, 40 + (38 - rec.indicators.rsi) * 2.5 + (rec.indicators.volRatio >= 1.2 ? 6 : 0))));
+              confirmed.push({
+                c: cand.c,
+                type: "bounce",
+                r: { ...rec, signal: "LONG", entry, stop: plan.stop, targets: plan.targets, riskReward: rr, riskLevel: "High", confidence: conf },
+              });
+            } catch {
+              /* skip */
+            }
+          })
+      );
       confirmed.sort((a, b) => TYPE_META[a.type].rank - TYPE_META[b.type].rank || b.r.confidence - a.r.confidence);
       if (!cancelled) {
-        setPicks(confirmed.slice(0, 5));
+        setPicks(confirmed.slice(0, 6));
         setLoading(false);
       }
     })();
@@ -131,8 +174,8 @@ export function RecommendationStack() {
       try {
         const sys =
           lang === "ar"
-            ? `أنت مستثمر كريبتو مخضرم. أمامك قائمة فرص مصنّفة (buy=شراء قوي، setup=إعداد، watch=مراقبة) في سوق ${cautious ? "حذر (بيتكوين ضعيف على الإطار الأعلى)" : "مؤاتٍ"}. رتّبها بصدق في جملتين أو ثلاث: ما أفضل فرصة الآن ولماذا، وأيّها الأعلى مخاطرة، وما شرط الدخول. ${cautious ? "وضّح أن الفرص في سوق حذر انتقائية وقصيرة المدى وتتطلّب وقفاً ضيّقاً وحجماً أصغر." : ""} لا تذكر سعراً محدّداً. بالعربية الفصحى فقط. ليست نصيحة مالية.`
-            : `You are a veteran crypto investor. Here is a graded opportunity list (buy/setup/watch) in a ${cautious ? "cautious market (BTC weak on the higher timeframe)" : "favorable market"}. Rank them candidly in 2-3 sentences: the best opportunity now and why, the riskiest, and the entry condition. ${cautious ? "Make clear that in a cautious market these are selective, short-term, and need tight stops and smaller size." : ""} Don't state a specific price. Not financial advice.`;
+            ? `أنت مستثمر كريبتو مخضرم. أمامك قائمة فرص مصنّفة (buy=شراء قوي، setup=إعداد، bounce=ارتداد ذروة بيع عكس الاتجاه عند دعم — مخاطرة أعلى ومدة أقصر، watch=مراقبة) في سوق ${cautious ? "حذر (بيتكوين ضعيف على الإطار الأعلى)" : "مؤاتٍ"}. رتّبها بصدق في جملتين أو ثلاث: ما أفضل فرصة الآن ولماذا، وأيّها الأعلى مخاطرة، وما شرط الدخول. ${cautious ? "وضّح أن فرص الارتداد قصيرة وتتطلّب وقفاً ضيّقاً وحجماً أصغر." : ""} لا تذكر سعراً محدّداً. بالعربية الفصحى فقط. ليست نصيحة مالية.`
+            : `You are a veteran crypto investor. Here is a graded opportunity list (buy/setup/bounce=oversold counter-trend play at support — higher risk & shorter duration/watch) in a ${cautious ? "cautious market (BTC weak on the higher timeframe)" : "favorable market"}. Rank them candidly in 2-3 sentences: the best opportunity now and why, the riskiest, and the entry condition. ${cautious ? "Make clear that bounce plays are short-term and need tight stops and smaller size." : ""} Don't state a specific price. Not financial advice.`;
         const res = await fetch("/api/ai", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -225,9 +268,12 @@ function PickCard({
   const up = (c.change24h ?? 0) >= 0;
   const dist = (p: number) => ((p - r.entry) / r.entry) * 100;
   const meta = TYPE_META[type];
-  const trendChip = r.trend === "up"
-    ? { label: t("ms.up"), cls: "bg-bull/10 text-bull" }
-    : { label: t("opp.range"), cls: "bg-gold/10 text-gold" };
+  const trendChip =
+    type === "bounce"
+      ? { label: t("opp.oversold"), cls: "bg-violet/10 text-violet" }
+      : r.trend === "up"
+        ? { label: t("ms.up"), cls: "bg-bull/10 text-bull" }
+        : { label: t("opp.range"), cls: "bg-gold/10 text-gold" };
   const chips = [
     `RSI ${r.indicators.rsi.toFixed(0)}`,
     r.indicators.macdHist >= 0 ? "MACD ↑" : "MACD ↓",
@@ -291,6 +337,11 @@ function PickCard({
           </div>
         ))}
       </div>
+
+      {/* counter-trend warning — a bounce is never a trend trade */}
+      {type === "bounce" && (
+        <p className="mt-2 rounded-lg border border-violet/15 bg-violet/[0.06] px-2.5 py-1.5 text-[10px] leading-relaxed text-ink-muted">{t("opp.bounceNote")}</p>
+      )}
 
       {/* deep AI analysis */}
       <button onClick={onToggle} className="mt-2.5 flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[11px] font-semibold text-ink-muted transition-colors hover:text-violet">

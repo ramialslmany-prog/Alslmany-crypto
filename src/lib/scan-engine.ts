@@ -28,6 +28,45 @@ function neutral(coin: Coin, style: Style, market: Market): Recommendation {
   };
 }
 
+/** Fractal swing levels from a close-only series — real structure for plans. */
+export function closeSwings(closes: number[]): { highs: number[]; lows: number[] } {
+  const highs: number[] = [];
+  const lows: number[] = [];
+  for (let i = 2; i < closes.length - 2; i++) {
+    let isHi = true;
+    let isLo = true;
+    for (let j = i - 2; j <= i + 2; j++) {
+      if (j === i) continue;
+      if (closes[j] >= closes[i]) isHi = false;
+      if (closes[j] <= closes[i]) isLo = false;
+    }
+    if (isHi) highs.push(closes[i]);
+    if (isLo) lows.push(closes[i]);
+  }
+  return { highs, lows };
+}
+
+/**
+ * Long-framed structure plan straight from the 7-day sparkline. Used by the
+ * counter-trend BOUNCE cards, where the trend engine's own plan may be
+ * short-framed: stop under the nearest real swing low, targets at actual
+ * resistance levels above.
+ */
+export function longPlanFromSpark(coin: Coin): { stop: number; targets: number[] } | null {
+  const closes = coin.spark ?? [];
+  const price = coin.price;
+  if (closes.length < 30 || !(price > 0)) return null;
+  let vSum = 0;
+  let vN = 0;
+  for (let i = Math.max(1, closes.length - 14); i < closes.length; i++) {
+    vSum += Math.abs(closes[i] - closes[i - 1]) / closes[i - 1];
+    vN++;
+  }
+  const atrAbs = (vN ? vSum / vN : 0.01) * price;
+  const sw = closeSwings(closes);
+  return tradePlan("long", price, atrAbs, sw.highs.slice(-10), sw.lows.slice(-10), "spot");
+}
+
 export function scanCoin(coin: Coin, style: Style, market: Market): Recommendation {
   const closes = coin.spark ?? [];
   const price = coin.price;
@@ -107,20 +146,8 @@ export function scanCoin(coin: Coin, style: Style, market: Market): Recommendati
   // Structure-aware plan: detect swing highs/lows on the close series and place
   // the stop beyond real structure with targets at actual levels (same tradePlan
   // engine as the deep analysis) — no more identical R-multiple ladders.
-  const swH: number[] = [];
-  const swL: number[] = [];
-  for (let i = 2; i < closes.length - 2; i++) {
-    let isHi = true;
-    let isLo = true;
-    for (let j = i - 2; j <= i + 2; j++) {
-      if (j === i) continue;
-      if (closes[j] >= closes[i]) isHi = false;
-      if (closes[j] <= closes[i]) isLo = false;
-    }
-    if (isHi) swH.push(closes[i]);
-    if (isLo) swL.push(closes[i]);
-  }
-  const plan = tradePlan(signal === "SHORT" ? "short" : "long", price, (atrPct / 100) * price, swH.slice(-10), swL.slice(-10), market);
+  const sw = closeSwings(closes);
+  const plan = tradePlan(signal === "SHORT" ? "short" : "long", price, (atrPct / 100) * price, sw.highs.slice(-10), sw.lows.slice(-10), market);
   const stop = plan.stop;
   const targets = plan.targets;
   const reasons: string[] = signal === "LONG" ? [...bull] : signal === "SHORT" ? [...bear] : ["No clean setup — mixed confirmations"];
