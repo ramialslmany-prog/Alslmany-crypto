@@ -240,7 +240,7 @@ export async function autoIssue(coins: Coin[], journal: JTrade[], lang: Lang, fo
   const lsn = getLessons();
   const sys =
     lang === "ar"
-      ? "أنت متداول كريبتو آلي يطبّق استراتيجية صارمة: شراء التصحيحات في الاتجاهات الصاعدة، عملات سائلة فقط، بحدّ أقصى ٣ صفقات. اشرح في ٣–٥ جمل لماذا دخلت هذه الصفقات الآن وكيف ستديرها (الوقف والأهداف)، دامجاً معرفتك عن المشاريع. إن وُجدت دروس سابقة فطبّقها. ليست نصيحة مالية."
+      ? "أنت متداول كريبتو آلي يطبّق استراتيجية صارمة: شراء التصحيحات في الاتجاهات الصاعدة، عملات سائلة فقط، وعدد صفقات محدود. اشرح في ٣–٥ جمل لماذا دخلت هذه الصفقات الآن وكيف ستديرها (الوقف والأهداف)، دامجاً معرفتك عن المشاريع، ودون ذكر أي رقم غير وارد في البيانات. إن وُجدت دروس سابقة فطبّقها. اكتب بالعربية الفصحى حصراً — يُسمح برموز العملات فقط، وممنوع أي كلمات من لغات أخرى. ليست نصيحة مالية."
       : "You are an autonomous crypto trader running a strict strategy: buy dips in uptrends, liquid coins only, max 3 positions. Explain in 3–5 sentences why you entered these now and how you'll manage them (stop/targets), blending your project knowledge. Apply past lessons if any. Not financial advice.";
   const text = await aiText([
     { role: "system", content: sys },

@@ -30,8 +30,10 @@ export function DownsideWatch() {
         .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
         // Under pressure = the engine reads a breakdown (spot SHORT = exit/avoid
         // in a downtrend) AND price is actually falling today, OR a heavy day
-        // (−5%+) — liquid names only. A flat coin is not a warning.
-        .filter((x) => (x.r.signal === "SHORT" && x.r.trend === "down" && (x.c.change24h ?? 0) <= -2) || (x.c.change24h ?? 0) <= -5)
+        // (−5%+) — liquid names only. A flat coin is not a warning, and a coin
+        // the engine reads as a LONG setup must never be listed as one (that
+        // would contradict the opportunity radar).
+        .filter((x) => x.r.signal !== "LONG" && ((x.r.signal === "SHORT" && x.r.trend === "down" && (x.c.change24h ?? 0) <= -2) || (x.c.change24h ?? 0) <= -5))
         .map((x) => ({
           ...x,
           sev:

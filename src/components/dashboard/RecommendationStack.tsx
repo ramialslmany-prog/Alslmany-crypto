@@ -52,7 +52,15 @@ export function RecommendationStack() {
     setOpenSym(sym);
     if (!analyses[sym]) {
       setAnalyses((a) => ({ ...a, [sym]: { text: "", provider: "local", loading: true } }));
-      const res = await deepAnalyze(pick.c, lang);
+      // Bounce cards are counter-trend by definition — tell the analyst the
+      // frame so its read matches the card instead of contradicting it.
+      const bounceCtx =
+        pick.type === "bounce"
+          ? lang === "ar"
+            ? "ملاحظة سياق: تُعرض هذه العملة كفكرة ارتداد قصير عكس الاتجاه عند دعم (مخاطرة أعلى). قيّم فكرة الارتداد نفسها: هل الدعم صالح؟ وما الذي يُبطلها؟"
+            : "Context: this coin is shown as a short-term counter-trend bounce idea at support (higher risk). Evaluate the bounce case itself: is the support valid, and what invalidates it?"
+          : undefined;
+      const res = await deepAnalyze(pick.c, lang, bounceCtx);
       setAnalyses((a) => ({ ...a, [sym]: { text: res.text, provider: res.provider, loading: false } }));
     }
   };

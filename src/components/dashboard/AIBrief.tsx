@@ -22,14 +22,14 @@ export function AIBrief() {
   const generate = useCallback(async () => {
     if (!coins.length) return;
     setLoading(true);
-    const facts = marketContext(coins, lang);
+    const facts = await marketContext(coins, lang);
     let text = facts;
     let prov: "ai" | "local" = "local";
     try {
       const sys =
         lang === "ar"
-          ? "أنت مستثمر كريبتو مخضرم. اكتب موجزاً (٤–٧ جمل) عن حالة السوق وأبرز الفرص: استخدم البيانات المعطاة للأرقام، وادمجها بمعرفتك بالسياق الأوسع (دورات السوق، السيولة، السرديات الحالية، سلوك بيتكوين كقائد للسوق). اختم برأيك: ماذا ستفعل أنت اليوم؟ بالعربية. ليست نصيحة مالية."
-          : "You are a veteran crypto investor. Write a brief (4–7 sentences) on the market state and best opportunities: use the provided data for numbers, blended with your broader knowledge (market cycles, liquidity, current narratives, Bitcoin as the market leader). End with your own call: what would YOU do today? Not financial advice.";
+          ? "أنت مستثمر كريبتو مخضرم. اكتب موجزاً (٤–٧ جمل) عن حالة السوق وأبرز الفرص: استخدم البيانات المعطاة للأرقام فقط — لا تذكر أي سعر أو رقم غير وارد فيها — وادمجها بمعرفتك بالسياق الأوسع (دورات السوق، السيولة، السرديات الحالية، سلوك بيتكوين كقائد للسوق). اختم برأيك: ماذا ستفعل أنت اليوم؟ اكتب بالعربية الفصحى حصراً — يُسمح برموز العملات فقط، وممنوع أي كلمات من لغات أخرى. ليست نصيحة مالية."
+          : "You are a veteran crypto investor. Write a brief (4–7 sentences) on the market state and best opportunities: use ONLY the provided data for numbers — never state a price or figure not present in it — blended with your broader knowledge (market cycles, liquidity, current narratives, Bitcoin as the market leader). End with your own call: what would YOU do today? Not financial advice.";
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "content-type": "application/json" },

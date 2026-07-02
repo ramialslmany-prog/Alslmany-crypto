@@ -11,8 +11,21 @@
  */
 import type { Coin } from "@/lib/mock-data";
 import { scanCoin } from "@/lib/scan-engine";
+import { qualityScore, type Recommendation } from "@/lib/signal-engine";
 import { isStable, liqBonus } from "@/lib/coin-meta";
 import { formatUsd, formatPercent } from "@/lib/format";
+
+/** The SAME rigorous multi-timeframe engine the coin page & deep analysis use —
+ *  the copilot must never contradict them. Fast scanner only as offline fallback. */
+async function deepRec(symbol: string): Promise<Recommendation | null> {
+  try {
+    const r = await fetch(`/api/signals?symbol=${symbol}&style=day&market=spot`);
+    if (!r.ok) return null;
+    return (await r.json()) as Recommendation;
+  } catch {
+    return null;
+  }
+}
 
 type Lang = "en" | "ar";
 
@@ -41,8 +54,9 @@ const trendWord = (t: string, lang: Lang) =>
 const actionWord = (s: string, lang: Lang) =>
   lang === "ar" ? (s === "LONG" ? "شراء" : s === "SHORT" ? "بيع / تجنّب" : "انتظار") : s === "LONG" ? "BUY" : s === "SHORT" ? "SELL / AVOID" : "WAIT";
 
-function analyzeCoin(c: Coin, lang: Lang): string {
-  const r = scanCoin(c, "day", "spot");
+async function analyzeCoin(c: Coin, lang: Lang): Promise<string> {
+  // Deep engine first (identical numbers to the coin page); scanner offline-only.
+  const r = (await deepRec(c.symbol)) ?? scanCoin(c, "day", "spot");
   const plan =
     r.signal !== "NEUTRAL"
       ? lang === "ar"
@@ -67,20 +81,32 @@ function analyzeCoin(c: Coin, lang: Lang): string {
   );
 }
 
-function bestBuys(coins: Coin[], lang: Lang): string {
-  const buys = coins
-    .filter((c) => !isStable(c.symbol))
+async function bestBuys(coins: Coin[], lang: Lang): Promise<string> {
+  // SAME funnel as the opportunity radar: quality stage-1 (liquid, non-pumped,
+  // confirmed uptrend on the fast scan) → dual confirmation by the rigorous
+  // engine at the radar's BUY bar — so the copilot and the radar always agree.
+  const candidates = coins
+    .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 130 && (c.change24h ?? 0) <= 18 && (c.change24h ?? 0) >= -12)
     .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
-    .filter((x) => x.r.signal === "LONG")
-    .map((x) => ({ ...x, score: x.r.confidence + liqBonus(x.c.rank) }))
+    .filter((x) => x.r.signal === "LONG" && x.r.trend === "up" && x.r.confidence >= 55)
+    .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-  if (!buys.length) return lang === "ar" ? "لا توجد فرص شراء واضحة الآن — السوق في وضع حذر." : "No clean buy setups right now — the market is risk-off.";
+    .slice(0, 6);
+  const confirmed: { c: Coin; r: Recommendation }[] = [];
+  await Promise.all(
+    candidates.map(async (cand) => {
+      const rec = await deepRec(cand.c.symbol);
+      if (rec && rec.signal === "LONG" && rec.confidence >= 60) confirmed.push({ c: cand.c, r: rec });
+    })
+  );
+  confirmed.sort((a, b) => b.r.confidence - a.r.confidence);
+  const buys = confirmed.slice(0, 5);
+  if (!buys.length) return lang === "ar" ? "لا توجد فرص شراء مؤكّدة عالية الجودة الآن — السوق في وضع حذر." : "No confirmed high-quality buy setups right now — the market is cautious.";
   const lines = buys.map((x, i) => {
     const tp1 = ((x.r.targets[0] - x.r.entry) / x.r.entry) * 100;
     return `${i + 1}. ${x.c.symbol} · ${lang === "ar" ? "ثقة" : "conf"} ${x.r.confidence}% · ${lang === "ar" ? "هدف" : "TP1"} +${tp1.toFixed(1)}%`;
   });
-  return (lang === "ar" ? "🎯 أفضل فرص الشراء الآن:\n" : "🎯 Top buy setups now:\n") + lines.join("\n");
+  return (lang === "ar" ? "🎯 أفضل فرص الشراء المؤكّدة الآن:\n" : "🎯 Top confirmed buy setups now:\n") + lines.join("\n");
 }
 
 function movers(coins: Coin[], lang: Lang, dir: "up" | "down"): string {
@@ -95,12 +121,17 @@ function movers(coins: Coin[], lang: Lang, dir: "up" | "down"): string {
 
 function marketSummary(coins: Coin[], lang: Lang): string {
   const ns = coins.filter((c) => !isStable(c.symbol));
-  const buys = ns.map((c) => scanCoin(c, "day", "spot")).filter((r) => r.signal === "LONG").length;
+  // Screener count with the SAME quality bar as the radar's stage 1 — and
+  // labeled as preliminary, so it can't contradict the confirmed picks count.
+  const buys = ns
+    .filter((c) => (c.rank ?? 999) <= 130)
+    .map((c) => scanCoin(c, "day", "spot"))
+    .filter((r) => r.signal === "LONG" && r.trend === "up").length;
   const avg = ns.reduce((a, c) => a + c.change24h, 0) / (ns.length || 1);
   const top = [...ns].sort((a, b) => b.change24h - a.change24h)[0];
   return lang === "ar"
-    ? `🧭 حالة السوق: ${buys} فرصة شراء · متوسط التغيّر ٢٤س ${formatPercent(avg)} · الأقوى ${top.symbol} ${formatPercent(top.change24h)}`
-    : `🧭 Market: ${buys} buy setups · avg 24h ${formatPercent(avg)} · top mover ${top.symbol} ${formatPercent(top.change24h)}`;
+    ? `🧭 حالة السوق: ${buys} إشارة شراء أوّلية (قبل التأكيد الدقيق) · متوسط التغيّر ٢٤س ${formatPercent(avg)} · الأقوى ${top.symbol} ${formatPercent(top.change24h)}`
+    : `🧭 Market: ${buys} preliminary buy signals (pre-confirmation) · avg 24h ${formatPercent(avg)} · top mover ${top.symbol} ${formatPercent(top.change24h)}`;
 }
 
 async function sentiment(lang: Lang): Promise<string> {
@@ -122,8 +153,8 @@ function help(lang: Lang): string {
 }
 
 /** Compact live-market context (used to ground the LLM / as a fallback brief). */
-export function marketContext(coins: Coin[], lang: Lang): string {
-  return `${marketSummary(coins, lang)}\n${bestBuys(coins, lang)}`;
+export async function marketContext(coins: Coin[], lang: Lang): Promise<string> {
+  return `${marketSummary(coins, lang)}\n${await bestBuys(coins, lang)}`;
 }
 
 /** Main entry — returns a real answer string. */
