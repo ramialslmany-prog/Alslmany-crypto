@@ -3,6 +3,7 @@ import { KpiRow } from "@/components/dashboard/KpiRow";
 import { PriceIntegrity } from "@/components/dashboard/PriceIntegrity";
 import { ChartPanel } from "@/components/dashboard/ChartPanel";
 import { RecommendationStack } from "@/components/dashboard/RecommendationStack";
+import { DownsideWatch } from "@/components/dashboard/DownsideWatch";
 import { MarketHeatmap } from "@/components/dashboard/MarketHeatmap";
 import { FearGreedGauge } from "@/components/dashboard/FearGreedGauge";
 import { WhaleFeed } from "@/components/dashboard/WhaleFeed";
@@ -29,9 +30,10 @@ export default function DashboardPage() {
           <FearGreedGauge />
         </div>
 
-        {/* flow + AI recommendations across the foot */}
-        <div className="xl:col-span-5">
+        {/* flow + downside warnings + AI recommendations across the foot */}
+        <div className="space-y-4 xl:col-span-5">
           <WhaleFeed />
+          <DownsideWatch />
         </div>
         <div className="xl:col-span-7">
           <RecommendationStack />
