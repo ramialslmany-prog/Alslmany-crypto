@@ -74,7 +74,9 @@ export function RecommendationStack() {
             !(Math.abs(c.change24h ?? 0) < 0.8 && Math.abs(c.change7d ?? 0) < 1.5)
         )
         .map((c) => ({ c, r: scan(c, style, "spot") }))
-        .filter((x) => x.r.signal !== "SHORT" && x.r.trend !== "down")
+        // Buy-side candidates, plus momentum-ignition movers whose 7d stack
+        // hasn't flipped yet — the rigorous engine (stage 2) decides on those.
+        .filter((x) => (x.r.signal !== "SHORT" && x.r.trend !== "down") || ((x.c.change24h ?? 0) >= 4 && x.r.indicators.macdHist > 0))
         .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) + Math.max(0, (x.c.change24h ?? 0) - btcCh) * 2 }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10),
@@ -110,7 +112,10 @@ export function RecommendationStack() {
         candidates.map(async (cand) => {
           try {
             const rec = (await (await fetch(`/api/signals?symbol=${cand.c.symbol}&style=${style}&market=spot`)).json()) as Recommendation;
-            if (rec.signal === "SHORT" || rec.trend === "down") return;
+            // Keep breakdowns out — but let the engine's EARLY-REVERSAL longs
+            // (bullish CHoCH before the EMA stack flips) through: that's exactly
+            // how recoveries are caught without chasing extended movers.
+            if (rec.signal === "SHORT" || (rec.trend === "down" && rec.signal !== "LONG")) return;
             const type: OppType = rec.signal === "LONG" && rec.confidence >= 60 ? "buy" : rec.signal === "LONG" ? "setup" : "watch";
             confirmed.push({ c: cand.c, r: rec, type });
           } catch {
@@ -174,7 +179,7 @@ export function RecommendationStack() {
       try {
         const sys =
           lang === "ar"
-            ? `أنت مستثمر كريبتو مخضرم. أمامك قائمة فرص مصنّفة (buy=شراء قوي، setup=إعداد، bounce=ارتداد ذروة بيع عكس الاتجاه عند دعم — مخاطرة أعلى ومدة أقصر، watch=مراقبة) في سوق ${cautious ? "حذر (بيتكوين ضعيف على الإطار الأعلى)" : "مؤاتٍ"}. رتّبها بصدق في جملتين أو ثلاث: ما أفضل فرصة الآن ولماذا، وأيّها الأعلى مخاطرة، وما شرط الدخول. ${cautious ? "وضّح أن فرص الارتداد قصيرة وتتطلّب وقفاً ضيّقاً وحجماً أصغر." : ""} لا تذكر سعراً محدّداً. بالعربية الفصحى فقط. ليست نصيحة مالية.`
+            ? `أنت مستثمر كريبتو مخضرم. أمامك قائمة فرص مصنّفة (buy=شراء قوي، setup=إعداد، bounce=ارتداد ذروة بيع عكس الاتجاه عند دعم — مخاطرة أعلى ومدة أقصر، watch=مراقبة) في سوق ${cautious ? "حذر (بيتكوين ضعيف على الإطار الأعلى)" : "مؤاتٍ"}. رتّبها بصدق في جملتين أو ثلاث: ما أفضل فرصة الآن ولماذا، وأيّها الأعلى مخاطرة، وما شرط الدخول. ${cautious ? "وضّح أن فرص الارتداد قصيرة وتتطلّب وقفاً ضيّقاً وحجماً أصغر." : ""} لا تذكر سعراً محدّداً. اكتب بالعربية الفصحى حصراً — يُسمح برموز العملات (مثل BTC) فقط، وممنوع تماماً أي كلمات إنجليزية أو صينية أو من أي لغة أخرى. ليست نصيحة مالية.`
             : `You are a veteran crypto investor. Here is a graded opportunity list (buy/setup/bounce=oversold counter-trend play at support — higher risk & shorter duration/watch) in a ${cautious ? "cautious market (BTC weak on the higher timeframe)" : "favorable market"}. Rank them candidly in 2-3 sentences: the best opportunity now and why, the riskiest, and the entry condition. ${cautious ? "Make clear that bounce plays are short-term and need tight stops and smaller size." : ""} Don't state a specific price. Not financial advice.`;
         const res = await fetch("/api/ai", {
           method: "POST",

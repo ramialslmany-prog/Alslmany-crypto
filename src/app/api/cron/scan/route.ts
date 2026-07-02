@@ -25,8 +25,9 @@ const SCAN_UNIVERSE = 24; // most-liquid coins we deep-scan per run
  *  long-only scan should not hand out buys in a falling market. */
 async function marketLeaderBearish(): Promise<boolean> {
   try {
-    const [h4, d1] = await Promise.all([fetchCandles("BTC", "4h", 220), fetchCandles("BTC", "1d", 220)]);
-    return analyzeTimeframe("1d", d1.candles).trend === "down" || analyzeTimeframe("4h", h4.candles).trend === "down";
+    // 4h stack only — the daily lags recoveries by weeks (see cron/tick).
+    const h4 = await fetchCandles("BTC", "4h", 220);
+    return analyzeTimeframe("4h", h4.candles).trend === "down";
   } catch {
     return false;
   }

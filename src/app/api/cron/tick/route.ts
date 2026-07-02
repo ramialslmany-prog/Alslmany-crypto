@@ -96,10 +96,12 @@ function marketRiskOff(coins: Coin[]): boolean {
  */
 async function marketLeaderBearish(): Promise<boolean> {
   try {
-    const [h4, d1] = await Promise.all([fetchCandles("BTC", "4h", 220), fetchCandles("BTC", "1d", 220)]);
-    const a4 = analyzeTimeframe("4h", h4.candles);
-    const a1 = analyzeTimeframe("1d", d1.candles);
-    return a1.trend === "down" || a4.trend === "down";
+    // Gate on the 4h stack only. The daily EMA stack lags a genuine bottom by
+    // WEEKS — gating on it kept the bot dark through entire recoveries. The 4h
+    // flips within days, and every entry still needs its own multi-timeframe
+    // confirmation (LONG + uptrend + confidence + volume) before firing.
+    const h4 = await fetchCandles("BTC", "4h", 220);
+    return analyzeTimeframe("4h", h4.candles).trend === "down";
   } catch {
     return false;
   }
