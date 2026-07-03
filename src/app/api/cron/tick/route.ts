@@ -59,6 +59,22 @@ function entryCard(t: JTrade): string {
     `🛡️ خاطر بـ١-٢٪ من محفظتك فقط لكل صفقة\n⚠️ ليست نصيحة مالية`
   );
 }
+/** Instant radar alert: a confirmed BUY-grade setup goes to Telegram the moment
+ *  it appears — even when the bot doesn't auto-enter (slots full, cautious
+ *  regime, entries paused, or confidence below the auto-entry bar). */
+function opportunityCard(r: { symbol: string; entry: number; stop: number; targets: number[]; confidence: number }, cautious: boolean, entryBar: number): string {
+  const f = (p: number) => { const v = ((p - r.entry) / r.entry) * 100; return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; };
+  return (
+    `📡 راصد الفرص — فرصة شراء مؤكّدة\n#${r.symbol}/USDT 🟢 الثقة: ${r.confidence}%\n\n` +
+    `الدخول: ${fmtPrice(r.entry)}\n` +
+    `وقف الخسارة: ${fmtPrice(r.stop)} (${f(r.stop)})\n\n` +
+    r.targets.map((t, i) => `الهدف ${i + 1}: ${fmtPrice(t)} (${f(t)})`).join("\n") +
+    `\n\n🛡️ خاطر بـ١-٢٪ من محفظتك فقط لكل صفقة` +
+    (cautious ? `\n⚠️ السوق حذر (قائد السوق ضعيف) — حجم أصغر ووقف صارم.` : "") +
+    (r.confidence < entryBar ? `\nℹ️ تنبيه معلوماتي فقط — البوت يدخل آلياً من ثقة ${entryBar}%.` : "") +
+    `\n⚠️ ليست نصيحة مالية`
+  );
+}
 function closeMsg(t: JTrade): string {
   const head = `#${t.symbol}/USDT - طويل🟢\n\n`;
   const ret = t.retPct ?? 0;
@@ -173,49 +189,76 @@ export async function GET(req: Request) {
     ...warned.map((t) => tg(token, chatId, `#${t.symbol}/USDT - طويل🟢\n\n⚠️ تحذير مخاطرة\nالسعر ${fmtPrice(priceOf(t.symbol))} يقترب من وقف الخسارة ${fmtPrice(t.stop)}\nنقطة الدخول: ${fmtPrice(t.entry)} — راقب الصفقة.`)),
   ]);
 
-  // 2) Enter new high-quality setups when slots are free, the market isn't
-  //    risk-off, AND the market leader (BTC) isn't in a downtrend. In an
-  //    unfavorable regime the bot holds cash — capital preservation is the edge.
+  // 2) Scan the ENTIRE market every tick. Confirmed setups drive BOTH the
+  //    instant Telegram opportunity alerts (always on) and the auto-entries
+  //    (gated by slots / regime / user settings).
   let entered = 0;
-  let shortlisted = 0;
+  let alerted = 0;
   const openCount = journal.filter((t) => t.status === "open").length;
   const slots = settings.maxOpen - openCount;
   const regimeBlocked = marketRiskOff(markets) || (await marketLeaderBearish());
-  if (slots > 0 && !regimeBlocked && settings.entriesEnabled) {
-    // Stage 1 — fast-scan the ENTIRE market snapshot (top 300, zero extra
-    // requests: the close-only scanner runs on the sparklines we already have).
-    // The best-looking LONG candidates move on — so an opportunity in rank #90
-    // is seen too, not just the biggest caps.
-    const universe = markets
-      .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 150 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
-      .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
-      .filter((x) => x.r.signal === "LONG" && x.r.trend === "up" && x.r.confidence >= 55)
-      .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, SCAN_UNIVERSE)
-      .map((x) => x.c);
-    shortlisted = universe.length;
-    // Stage 2 — rigorous multi-timeframe confirmation on the shortlist only.
-    const { ltf, htf } = STYLE_TF.day;
-    const recs = await Promise.all(
+  const meta = await loadMeta();
+  const now = Date.now();
+
+  // Stage 1 — fast-scan the full snapshot (top 300, zero extra requests: the
+  // close-only scanner runs on the sparklines we already have), shortlist the
+  // best LONG candidates — so an opportunity in rank #90 is seen too.
+  const universe = markets
+    .filter((c) => !isStable(c.symbol) && (c.rank ?? 999) <= 150 && (c.change24h ?? 0) <= 15 && (c.change24h ?? 0) >= -10)
+    .map((c) => ({ c, r: scanCoin(c, "day", "spot") }))
+    .filter((x) => x.r.signal === "LONG" && x.r.trend === "up" && x.r.confidence >= 55)
+    .map((x) => ({ ...x, score: qualityScore(x.r) + liqBonus(x.c.rank) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, SCAN_UNIVERSE)
+    .map((x) => x.c);
+  const shortlisted = universe.length;
+
+  // Stage 2 — rigorous multi-timeframe confirmation on the shortlist only.
+  const { ltf, htf } = STYLE_TF.day;
+  const recs = (
+    await Promise.all(
       universe.map(async (c) => {
         try {
           const [l, h] = await Promise.all([fetchCandles(c.symbol, ltf, 220), fetchCandles(c.symbol, htf, 220)]);
           return buildRecommendation(c.symbol, "day", analyzeTimeframe(ltf, l.candles), analyzeTimeframe(htf, h.candles), l.source, "spot");
         } catch { return null; }
       })
-    );
-    const openSyms = new Set(journal.filter((t) => t.status === "open").map((t) => t.symbol));
+    )
+  ).filter((r): r is NonNullable<typeof r> => !!r);
+  const openSyms = new Set(journal.filter((t) => t.status === "open").map((t) => t.symbol));
+
+  // 2a) Auto-entries — strict bar, unchanged: slots free, favorable regime,
+  //     entries enabled, and the user's confidence bar.
+  const enteredSyms = new Set<string>();
+  if (slots > 0 && !regimeBlocked && settings.entriesEnabled) {
     const picks = recs
-      .filter((r): r is NonNullable<typeof r> => !!r && r.signal === "LONG" && r.confidence >= settings.minConfidence && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
+      .filter((r) => r.signal === "LONG" && r.confidence >= settings.minConfidence && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, slots);
-    const now = Date.now();
     const newTrades = picks.map((r): JTrade => ({ id: `${r.symbol}|${now}`, symbol: r.symbol, entry: r.entry, stop: r.stop, targets: r.targets, confidence: r.confidence, issuedAt: now, status: "open" }));
-    for (const t of newTrades) journal.unshift(t);
+    for (const t of newTrades) { journal.unshift(t); enteredSyms.add(t.symbol); }
     // Fire all entry cards in parallel — the alert lands the instant a trade opens.
     await Promise.all(newTrades.map((t) => tg(token, chatId, entryCard(t))));
     entered = newTrades.length;
+  }
+
+  // 2b) INSTANT opportunity alerts — every confirmed BUY-grade setup (conf>=60)
+  //     goes to Telegram the moment it appears, even when the bot doesn't
+  //     auto-enter. Deduped per symbol (6h cooldown) so the radar never spams;
+  //     max 3 per tick; skips coins already open or just entered.
+  const ALERT_CONF = 60;
+  const ALERT_COOLDOWN_MS = 6 * 3600_000;
+  const fresh = recs
+    .filter((r) => r.signal === "LONG" && r.confidence >= ALERT_CONF && !openSyms.has(r.symbol) && !enteredSyms.has(r.symbol))
+    .filter((r) => now - (meta[`alert:${r.symbol}`] ?? 0) >= ALERT_COOLDOWN_MS)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 3);
+  if (fresh.length) {
+    await Promise.all(fresh.map((r) => tg(token, chatId, opportunityCard(r, regimeBlocked, settings.minConfidence))));
+    for (const r of fresh) meta[`alert:${r.symbol}`] = now;
+    // keep the meta store tiny — drop alert stamps older than 48h
+    for (const k of Object.keys(meta)) if (k.startsWith("alert:") && now - meta[k] > 48 * 3600_000) delete meta[k];
+    alerted = fresh.length;
   }
 
   await saveJournal(journal);
@@ -223,11 +266,9 @@ export async function GET(req: Request) {
   // Hourly heartbeat: if nothing happened (no entries/exits) and it's been ≥1h
   // since the last Telegram message, ping "still watching — no setup" so the
   // user knows the bot is alive. Any real trade resets the hourly timer.
-  const sentSomething = entered + closed.length + advanced.length + warned.length > 0;
+  const sentSomething = entered + alerted + closed.length + advanced.length + warned.length > 0;
   const openNow = journal.filter((t) => t.status === "open").length;
   let heartbeat = false;
-  const meta = await loadMeta();
-  const now = Date.now();
   if (sentSomething) {
     meta.lastMsg = now;
     await saveMeta(meta);
@@ -249,6 +290,7 @@ export async function GET(req: Request) {
     closed: closed.length,
     advanced: advanced.length,
     heartbeat,
+    alerted,
     riskOff: marketRiskOff(markets),
     regimeBlocked,
     settings,
