@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/coingecko";
 import { fetchCandles } from "@/lib/candles";
-import { analyzeTimeframe, buildRecommendation, qualityScore, STYLE_TF } from "@/lib/signal-engine";
+import { analyzeTimeframe, buildRecommendation, qualityScore } from "@/lib/signal-engine";
 import { scanCoin } from "@/lib/scan-engine";
 import { storageConfigured, loadJournal, saveJournal, loadMeta, saveMeta, loadSettings, type JTradeS as JTrade } from "@/lib/store";
 import { isStable, liqBonus } from "@/lib/coin-meta";
@@ -59,13 +59,21 @@ function entryCard(t: JTrade): string {
     `🛡️ خاطر بـ١-٢٪ من محفظتك فقط لكل صفقة\n⚠️ ليست نصيحة مالية`
   );
 }
+/** Horizon labels for the radar cards — every opportunity type, near or far. */
+const STYLE_LABEL: Record<string, string> = {
+  scalp: "⚡ قصير المدى (سكالبينغ · 15د/1س)",
+  day: "📅 متوسط المدى (يومي · 1س/4س)",
+  swing: "🌊 بعيد المدى (متأرجح · 4س/1يوم)",
+};
+
 /** Instant radar alert: a confirmed BUY-grade setup goes to Telegram the moment
  *  it appears — even when the bot doesn't auto-enter (slots full, cautious
  *  regime, entries paused, or confidence below the auto-entry bar). */
-function opportunityCard(r: { symbol: string; entry: number; stop: number; targets: number[]; confidence: number }, cautious: boolean, entryBar: number): string {
+function opportunityCard(r: { symbol: string; style: string; entry: number; stop: number; targets: number[]; confidence: number }, cautious: boolean, entryBar: number): string {
   const f = (p: number) => { const v = ((p - r.entry) / r.entry) * 100; return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`; };
   return (
-    `📡 راصد الفرص — فرصة شراء مؤكّدة\n#${r.symbol}/USDT 🟢 الثقة: ${r.confidence}%\n\n` +
+    `📡 راصد الفرص — فرصة شراء مؤكّدة\n#${r.symbol}/USDT 🟢 الثقة: ${r.confidence}%\n` +
+    `الأفق: ${STYLE_LABEL[r.style] ?? r.style}\n\n` +
     `الدخول: ${fmtPrice(r.entry)}\n` +
     `وقف الخسارة: ${fmtPrice(r.stop)} (${f(r.stop)})\n\n` +
     r.targets.map((t, i) => `الهدف ${i + 1}: ${fmtPrice(t)} (${f(t)})`).join("\n") +
@@ -213,18 +221,32 @@ export async function GET(req: Request) {
     .map((x) => x.c);
   const shortlisted = universe.length;
 
-  // Stage 2 — rigorous multi-timeframe confirmation on the shortlist only.
-  const { ltf, htf } = STYLE_TF.day;
+  // Stage 2 — rigorous confirmation across ALL horizons (scalp 15m/1h, day
+  // 1h/4h, swing 4h/1d), built from ONE set of kline fetches per coin — so
+  // near-term AND longer-term opportunities are both caught.
   const recs = (
     await Promise.all(
       universe.map(async (c) => {
         try {
-          const [l, h] = await Promise.all([fetchCandles(c.symbol, ltf, 220), fetchCandles(c.symbol, htf, 220)]);
-          return buildRecommendation(c.symbol, "day", analyzeTimeframe(ltf, l.candles), analyzeTimeframe(htf, h.candles), l.source, "spot");
-        } catch { return null; }
+          const [m15, h1, h4, d1] = await Promise.all([
+            fetchCandles(c.symbol, "15m", 220),
+            fetchCandles(c.symbol, "1h", 220),
+            fetchCandles(c.symbol, "4h", 220),
+            fetchCandles(c.symbol, "1d", 220),
+          ]);
+          const a15 = analyzeTimeframe("15m", m15.candles);
+          const a1h = analyzeTimeframe("1h", h1.candles);
+          const a4h = analyzeTimeframe("4h", h4.candles);
+          const a1d = analyzeTimeframe("1d", d1.candles);
+          return [
+            buildRecommendation(c.symbol, "scalp", a15, a1h, m15.source, "spot"),
+            buildRecommendation(c.symbol, "day", a1h, a4h, h1.source, "spot"),
+            buildRecommendation(c.symbol, "swing", a4h, a1d, h4.source, "spot"),
+          ];
+        } catch { return []; }
       })
     )
-  ).filter((r): r is NonNullable<typeof r> => !!r);
+  ).flat();
   const openSyms = new Set(journal.filter((t) => t.status === "open").map((t) => t.symbol));
 
   // 2a) Auto-entries — strict bar, unchanged: slots free, favorable regime,
@@ -232,7 +254,7 @@ export async function GET(req: Request) {
   const enteredSyms = new Set<string>();
   if (slots > 0 && !regimeBlocked && settings.entriesEnabled) {
     const picks = recs
-      .filter((r) => r.signal === "LONG" && r.confidence >= settings.minConfidence && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
+      .filter((r) => r.style === "day" && r.signal === "LONG" && r.confidence >= settings.minConfidence && r.riskReward >= MIN_RR && r.trend === "up" && r.indicators.volRatio >= 1.1 && !openSyms.has(r.symbol))
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, slots);
     const newTrades = picks.map((r): JTrade => ({ id: `${r.symbol}|${now}`, symbol: r.symbol, entry: r.entry, stop: r.stop, targets: r.targets, confidence: r.confidence, issuedAt: now, status: "open" }));
@@ -248,11 +270,17 @@ export async function GET(req: Request) {
   //     max 3 per tick; skips coins already open or just entered.
   const ALERT_CONF = 60;
   const ALERT_COOLDOWN_MS = 6 * 3600_000;
-  const fresh = recs
-    .filter((r) => r.signal === "LONG" && r.confidence >= ALERT_CONF && !openSyms.has(r.symbol) && !enteredSyms.has(r.symbol))
+  const pool = recs.filter((r) => r.signal === "LONG" && r.confidence >= ALERT_CONF && !openSyms.has(r.symbol) && !enteredSyms.has(r.symbol));
+  // One card per coin — its best-confidence horizon wins (the card names it).
+  const bestBySym = new Map<string, (typeof pool)[number]>();
+  for (const r of pool) {
+    const b = bestBySym.get(r.symbol);
+    if (!b || r.confidence > b.confidence) bestBySym.set(r.symbol, r);
+  }
+  const fresh = [...bestBySym.values()]
     .filter((r) => now - (meta[`alert:${r.symbol}`] ?? 0) >= ALERT_COOLDOWN_MS)
     .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 3);
+    .slice(0, 4);
   if (fresh.length) {
     await Promise.all(fresh.map((r) => tg(token, chatId, opportunityCard(r, regimeBlocked, settings.minConfidence))));
     for (const r of fresh) meta[`alert:${r.symbol}`] = now;
