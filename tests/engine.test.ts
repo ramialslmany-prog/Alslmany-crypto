@@ -53,8 +53,8 @@ function stackOf(build: (tf: Timeframe) => Candle[], source = "binance") {
   };
 }
 
-export function run() {
-  describe("risk — position sizing", () => {
+export async function run() {
+  await describe("risk — position sizing", () => {
     // 1% risk with the stop 2% away must buy a 50% position: the loss taken
     // when the stop is hit is 1% of the account either way.
     near(positionSize(100, 98, 1, 100), 50, 1e-6, "1% risk, 2% stop → 50% position");
@@ -65,7 +65,7 @@ export function run() {
     equal(positionSize(100, 105, 1, 25), 0, "a stop above entry buys nothing");
   });
 
-  describe("risk — haircuts only ever shrink", () => {
+  await describe("risk — haircuts only ever shrink", () => {
     const base = 1;
     ok(effectiveRisk(base, 1, 1, 100) <= base, "a perfect setup never exceeds the configured risk");
     ok(effectiveRisk(base, 0.3, 3, 20) < effectiveRisk(base, 1, 1, 90), "a hostile tape on a small cap risks less");
@@ -78,7 +78,7 @@ export function run() {
     }
   });
 
-  describe("risk — stop placement", () => {
+  await describe("risk — stop placement", () => {
     const candles = ramp(200, 100, 0.004);
     const price = candles[candles.length - 1].c;
     const { stop } = deriveStop(price, candles, readStructure(candles));
@@ -88,7 +88,7 @@ export function run() {
     ok(distancePct > 0.2, "it clears the noise floor rather than hugging price", `${distancePct.toFixed(2)}%`);
   });
 
-  describe("risk — blended reward", () => {
+  await describe("risk — blended reward", () => {
     near(
       blendedRewardRisk([
         { price: 0, rMultiple: 1, allocationPct: 50, basis: "x" },
@@ -107,7 +107,7 @@ export function run() {
     equal(blendedRewardRisk([]), 0, "no targets means no reward claim");
   });
 
-  describe("engine — a healthy uptrend", () => {
+  await describe("engine — a healthy uptrend", () => {
     const rec = recommend({
       entry: ENTRY,
       stack: stackOf(() => ramp(300, 100, 0.005)),
@@ -125,7 +125,7 @@ export function run() {
     ok(rec.plan!.positionSizePct <= DEFAULT_RISK.maxPositionPct, "position respects the hard cap");
   });
 
-  describe("engine — a broken downtrend", () => {
+  await describe("engine — a broken downtrend", () => {
     const rec = recommend({
       entry: ENTRY,
       stack: stackOf(() => ramp(300, 300, -0.005)),
@@ -139,7 +139,7 @@ export function run() {
     }
   });
 
-  describe("engine — the higher timeframe holds a veto", () => {
+  await describe("engine — the higher timeframe holds a veto", () => {
     // A strong short-term bounce inside a broken daily and 4h.
     const rec = recommend({
       entry: ENTRY,
@@ -155,7 +155,7 @@ export function run() {
     ok(rec.warnings.includes("warn.bearMarket"), "and the bear market is stated as a warning");
   });
 
-  describe("engine — evidence is published for both sides", () => {
+  await describe("engine — evidence is published for both sides", () => {
     const rec = recommend({
       entry: ENTRY,
       stack: stackOf(() => ramp(300, 100, 0.005)),
@@ -169,7 +169,7 @@ export function run() {
     ok(rec.bullish.every((f) => f.detail.length > 0), "every factor carries its numbers");
   });
 
-  describe("engine — scenarios are probabilities, not predictions", () => {
+  await describe("engine — scenarios are probabilities, not predictions", () => {
     const rec = recommend({
       entry: ENTRY,
       stack: stackOf(() => ramp(300, 100, 0.005)),
@@ -183,7 +183,7 @@ export function run() {
     ok(bear.probability >= 5, "a downside case is always carried", `${bear.probability}%`);
   });
 
-  describe("engine — determinism and guards", () => {
+  await describe("engine — determinism and guards", () => {
     const build = () => stackOf(() => ramp(300, 100, 0.005));
     const a = recommend({ entry: ENTRY, stack: build(), market: bullMarket })!;
     const b = recommend({ entry: ENTRY, stack: build(), market: bullMarket })!;
@@ -201,7 +201,7 @@ export function run() {
     );
   });
 
-  describe("engine — synthetic data is quarantined", () => {
+  await describe("engine — synthetic data is quarantined", () => {
     const rec = recommend({
       entry: ENTRY,
       stack: stackOf(() => ramp(300, 100, 0.005), "synthetic"),
@@ -212,7 +212,7 @@ export function run() {
     ok(rec.confidence <= 25, "and caps confidence hard", `${rec.confidence}`);
   });
 
-  describe("engine — a meme small-cap is warned about", () => {
+  await describe("engine — a meme small-cap is warned about", () => {
     const rec = recommend({
       entry: { ...ENTRY, sector: "meme", tier: 3 },
       stack: stackOf(() => ramp(300, 100, 0.005)),
@@ -229,14 +229,14 @@ export function run() {
     );
   });
 
-  describe("engine — ranking", () => {
+  await describe("engine — ranking", () => {
     const strong = recommend({ entry: ENTRY, stack: stackOf(() => ramp(300, 100, 0.005)), market: bullMarket })!;
     const weak = recommend({ entry: ENTRY, stack: stackOf(() => ramp(300, 300, -0.005)), market: bearMarket })!;
     const ranked = rankRecommendations([weak, strong]);
     equal(ranked[0].verdict, strong.verdict, "actionable calls rank above avoided ones");
   });
 
-  describe("engine — plan integrity", () => {
+  await describe("engine — plan integrity", () => {
     const candles = ramp(300, 100, 0.005);
     const structure = readStructure(candles);
     const price = candles[candles.length - 1].c;

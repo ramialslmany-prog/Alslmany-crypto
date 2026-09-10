@@ -26,8 +26,8 @@ function zigzag(legs: number[], barsPerLeg = 8): Candle[] {
   return out;
 }
 
-export function run() {
-  describe("swing detection", () => {
+export async function run() {
+  await describe("swing detection", () => {
     const candles = zigzag([100, 120, 108, 135, 118, 150]);
     const swings = findSwings(candles, 3);
     ok(swings.length >= 4, "finds the turning points of a zigzag", `${swings.length} swings`);
@@ -41,7 +41,7 @@ export function run() {
     equal(findSwings(zigzag([100, 110]).slice(0, 4), 3).length, 0, "a series shorter than the window yields nothing");
   });
 
-  describe("trend classification", () => {
+  await describe("trend classification", () => {
     const up = classifyTrend(findSwings(zigzag([100, 120, 112, 138, 128, 160]), 3));
     equal(up.trend, "up", "higher highs and higher lows reads as an uptrend");
 
@@ -54,7 +54,7 @@ export function run() {
     equal(classifyTrend([]).trend, "range", "no swings falls back to range, never to a guess");
   });
 
-  describe("levels", () => {
+  await describe("levels", () => {
     // Price turns three separate times at ~115: one level, three touches.
     const candles = zigzag([100, 115, 102, 115, 101, 115, 104]);
     const levels = findLevels(candles, findSwings(candles, 3));
@@ -68,7 +68,7 @@ export function run() {
     );
   });
 
-  describe("fair value gaps", () => {
+  await describe("fair value gaps", () => {
     // Bar 1 highs at 101, bar 3 lows at 110 — a clean unfilled bullish gap.
     const candles: Candle[] = [
       bar(0, 100, 101, 99, 100),
@@ -92,7 +92,7 @@ export function run() {
     );
   });
 
-  describe("fibonacci", () => {
+  await describe("fibonacci", () => {
     const swings = findSwings(zigzag([100, 200, 150, 220]), 3);
     const fib = fibonacci(swings);
     ok(fib !== null, "produces a retracement across the last completed impulse");
@@ -114,7 +114,7 @@ export function run() {
     ok(fibonacci(contrived) !== null, "still measures a leg when the last two pivots share a kind");
   });
 
-  describe("regime classification", () => {
+  await describe("regime classification", () => {
     // A long, steady advance.
     const bull: Candle[] = Array.from({ length: 260 }, (_, i) => {
       const p = 100 * Math.pow(1.006, i);
@@ -145,7 +145,7 @@ export function run() {
     );
   });
 
-  describe("market regime and risk budget", () => {
+  await describe("market regime and risk budget", () => {
     const bull: Candle[] = Array.from({ length: 260 }, (_, i) => {
       const p = 100 * Math.pow(1.006, i);
       return bar(i, p * 0.998, p * 1.012, p * 0.99, p);
@@ -175,7 +175,7 @@ export function run() {
     ok(computeBreadth([bull]) === null, "too few series reports unknown breadth");
   });
 
-  describe("full structural read", () => {
+  await describe("full structural read", () => {
     const candles = zigzag([100, 130, 115, 160, 140, 190], 10);
     const s = readStructure(candles);
     equal(s.trend, "up", "reads the uptrend");

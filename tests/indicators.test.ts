@@ -9,8 +9,8 @@ const bar = (o: number, h: number, l: number, c: number, i: number): Candle => (
   t: i * 3600_000, o, h, l, c, v: 1,
 });
 
-export function run() {
-  describe("moving averages", () => {
+export async function run() {
+  await describe("moving averages", () => {
     near(last(sma([1, 2, 3, 4, 5], 5)), 3, 1e-9, "SMA of 1..5 over 5 = 3");
 
     // EMA is seeded with the SMA of the first `period` values, then k = 2/(n+1).
@@ -21,7 +21,7 @@ export function run() {
     equal(sma(new Array(10).fill(1), 20).every((v) => v === null), true, "SMA is all null when the series is shorter than its period");
   });
 
-  describe("RSI — checked against Wilder's 1978 table", () => {
+  await describe("RSI — checked against Wilder's 1978 table", () => {
     const closes = [
       44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.1, 45.42, 45.84, 46.08,
       45.89, 46.03, 45.61, 46.28, 46.28, 46.0, 46.03, 46.41, 46.22, 45.64,
@@ -36,7 +36,7 @@ export function run() {
     near(last(rsi(Array.from({ length: 40 }, (_, i) => 200 - i), 14)), 0, 1e-6, "a series that only falls pins at 0");
   });
 
-  describe("alignment — a line must never be shorter than its input", () => {
+  await describe("alignment — a line must never be shorter than its input", () => {
     const closes = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 3) * 5);
     equal(sma(closes, 20).length, 60, "SMA");
     equal(ema(closes, 20).length, 60, "EMA");
@@ -46,14 +46,14 @@ export function run() {
     equal(m.macd.length === 60 && m.signal.length === 60 && m.histogram.length === 60, true, "MACD, signal and histogram");
   });
 
-  describe("MACD", () => {
+  await describe("MACD", () => {
     const rising = Array.from({ length: 80 }, (_, i) => 100 + i);
     ok((last(macd(rising).macd) ?? 0) > 0, "MACD is positive through a sustained uptrend");
     const falling = Array.from({ length: 80 }, (_, i) => 200 - i);
     ok((last(macd(falling).macd) ?? 0) < 0, "MACD is negative through a sustained downtrend");
   });
 
-  describe("volatility", () => {
+  await describe("volatility", () => {
     const constantRange: Candle[] = Array.from({ length: 40 }, (_, i) => bar(100, 102, 98, 100, i));
     near(last(atr(constantRange, 14)), 4, 1e-9, "ATR of a constant 4-point range = 4");
     near(last(atrPercent(constantRange, 14)), 4, 1e-9, "ATR% against a price of 100 = 4%");
@@ -65,7 +65,7 @@ export function run() {
     near(realizedVolatility(new Array(40).fill(100), 30), 0, 1e-9, "realised volatility of a flat series is zero");
   });
 
-  describe("ADX — trend strength, direction-agnostic", () => {
+  await describe("ADX — trend strength, direction-agnostic", () => {
     const trend: Candle[] = Array.from({ length: 120 }, (_, i) => bar(100 + i, 101 + i, 99 + i, 100.5 + i, i));
     const chop: Candle[] = Array.from({ length: 120 }, (_, i) => {
       const b = 100 + (i % 2 ? 1 : -1);
@@ -77,13 +77,13 @@ export function run() {
     ok((last(d.plusDi) ?? 0) > (last(d.minusDi) ?? 0), "+DI leads in an uptrend");
   });
 
-  describe("StochRSI", () => {
+  await describe("StochRSI", () => {
     const closes = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 3) * 5);
     const values = stochRsi(closes).filter((v): v is number => v !== null);
     ok(values.every((v) => v >= -1e-9 && v <= 100 + 1e-9), "stays inside [0, 100]");
   });
 
-  describe("correlation", () => {
+  await describe("correlation", () => {
     const a = Array.from({ length: 60 }, (_, i) => 100 * Math.exp(Math.sin(i / 4) * 0.05));
     near(correlation(a, a.map((v) => v * 2)), 1, 1e-6, "a series against a scaled copy of itself = +1");
 

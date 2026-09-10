@@ -10,10 +10,11 @@ let failures = 0;
 let checks = 0;
 let suite = "";
 
-export function describe(name: string, body: () => void) {
+export async function describe(name: string, body: () => void | Promise<void>) {
   suite = name;
   console.log(`\n\x1b[1m${name}\x1b[0m`);
-  body();
+  // Awaited, so an async block's assertions land before the report is written.
+  await body();
 }
 
 function pass(label: string, detail = "") {
