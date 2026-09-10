@@ -2,253 +2,183 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================
-   Alslmany Crypto — global atmosphere & token bindings
-   Lane: dark-cinematic × technical-precise (institutional grade)
-   ============================================================ */
-
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
-@keyframes enter-rise {
-  0% {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+/* ─────────────────────────────────────────────────────────────
+   Font roles. Loaded via <link> in the root layout so the build
+   never depends on fetching font files.
+   ───────────────────────────────────────────────────────────── */
 :root {
-  --font-display: "Satoshi", "IBM Plex Sans Arabic", system-ui, sans-serif;
-  --font-sans: "Inter", "IBM Plex Sans Arabic", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Amiri", Georgia, serif;
+  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  --bg: #05060f;
-  --surface: rgba(255, 255, 255, 0.045);
-  --surface-strong: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.07);
-  --border-glow: rgba(124, 77, 255, 0.35);
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
+  --ground: #08080a;
+  --ink: #efebe3;
 
-* {
-  border-color: var(--border);
+  /* Vertical rhythm for the editorial sections */
+  --section-y: clamp(4rem, 9vw, 8rem);
+  --gutter: clamp(1.25rem, 4vw, 4rem);
 }
 
-html {
-  scroll-behavior: smooth;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-body {
-  background-color: var(--bg);
-  color: #e8ecf6;
-  font-family: var(--font-sans);
-  overflow-x: hidden;
-  /* Cohesive two-accent atmosphere + a faint technical grid baked behind
-     everything — premium depth without the rainbow-glow cliché. */
-  background-image:
-    radial-gradient(1100px 720px at 12% -12%, rgba(124, 77, 255, 0.14), transparent 58%),
-    radial-gradient(900px 640px at 100% -6%, rgba(0, 212, 255, 0.1), transparent 55%),
-    radial-gradient(1200px 900px at 50% 116%, rgba(0, 212, 255, 0.04), transparent 60%),
-    linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 100% 100%, 64px 64px, 64px 64px;
-  background-attachment: fixed;
-}
-
-/* Fine film-grain so flat fills never look plastic */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.03;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* ---- Refined thin scrollbar ---- */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(124, 77, 255, 0.7), rgba(0, 212, 255, 0.6));
-  background-clip: padding-box;
-  border: 2px solid transparent;
-}
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
-}
-
-::selection {
-  background: rgba(0, 212, 255, 0.26);
-  color: #fff;
-}
-
-/* Polished, accessible focus ring on interactive elements only */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid rgba(0, 212, 255, 0.55);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-
-/* Display headings: tighter, balanced wrapping */
-h1,
-h2,
-h3 {
-  text-wrap: balance;
-}
-
-/* ============================================================
-   Component utilities
-   ============================================================ */
-@layer components {
-  /* Glass panel — premium layered surface (subtle vertical sheen + soft depth) */
-  .glass {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.022));
-    backdrop-filter: blur(22px) saturate(135%);
-    -webkit-backdrop-filter: blur(22px) saturate(135%);
-    border: 1px solid var(--border);
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-      0 1px 2px rgba(0, 0, 0, 0.28),
-      0 18px 48px -28px rgba(0, 0, 0, 0.8);
+@layer base {
+  * {
+    border-color: theme("colors.rule.DEFAULT");
   }
 
-  .glass-strong {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
-    backdrop-filter: blur(30px) saturate(150%);
-    -webkit-backdrop-filter: blur(30px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
-      0 24px 60px -30px rgba(0, 0, 0, 0.85);
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
-  /* Hairline gradient border that glows on hover */
-  .glow-border {
-    position: relative;
-  }
-  .glow-border::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(
-      135deg,
-      rgba(0, 212, 255, 0.45),
-      rgba(124, 77, 255, 0.38) 45%,
-      transparent 72%
-    );
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0.42;
-    transition: opacity 0.45s var(--ease);
-    pointer-events: none;
-  }
-  .glow-border:hover::before {
-    opacity: 1;
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Subtle lift on hover — for interactive cards/buttons */
-  .hover-lift {
-    transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease);
-  }
-  .hover-lift:hover {
-    transform: translateY(-2px);
+  /* Arabic sets a touch larger — naskh/kufi x-heights run small. */
+  html[lang="ar"] body {
+    font-size: 1rem;
+    line-height: 1.75;
   }
 
-  /* Staggered entrance for page content — the one hero motion moment */
-  .page-enter > * {
-    animation: enter-rise 0.55s var(--ease) both;
-  }
-  .page-enter > *:nth-child(2) { animation-delay: 0.06s; }
-  .page-enter > *:nth-child(3) { animation-delay: 0.12s; }
-  .page-enter > *:nth-child(4) { animation-delay: 0.18s; }
-  .page-enter > *:nth-child(n + 5) { animation-delay: 0.24s; }
-
-  /* Gradient text */
-  .text-gradient {
-    background: linear-gradient(135deg, #ffffff 0%, #a98bff 55%, #5be7ff 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .text-gradient-accent {
-    background: linear-gradient(135deg, #00d4ff 0%, #7c4dff 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
   }
 
-  /* Shimmer sweep for skeletons / cards */
-  .shimmer {
-    position: relative;
-    overflow: hidden;
-  }
-  .shimmer::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    transform: translateX(-100%);
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.08),
-      transparent
-    );
-    animation: shimmer 2.2s infinite;
-  }
-
-  .tnum {
+  /* Every figure on this site is monospaced and tabular so columns of
+     numbers align optically, which is what makes data feel trustworthy. */
+  .num,
+  time,
+  code,
+  kbd {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
   }
+
+  /* Latin numerals inside Arabic copy stay LTR and monospaced. */
+  html[dir="rtl"] .num {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  ::selection {
+    background: rgba(232, 163, 61, 0.28);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.amber.DEFAULT");
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: theme("colors.ground.950");
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme("colors.ground.700");
+    border: 2px solid theme("colors.ground.950");
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.ground.600");
+  }
 }
 
-/* RTL: Arabic script must not be letter-spaced (breaks cursive joining). */
-[dir="rtl"] * {
-  letter-spacing: normal !important;
+@layer components {
+  /* A panel is the base instrument surface: hairline rule, no soft glow. */
+  .panel {
+    @apply border border-rule bg-ground-900/70 backdrop-blur-[2px];
+  }
+
+  .panel-raised {
+    @apply border border-rule bg-ground-850 shadow-elev-1;
+  }
+
+  /* Small uppercase label used to title every data block. */
+  .eyebrow {
+    @apply font-mono text-2xs uppercase tracking-[0.18em] text-ink-faint;
+  }
+
+  .hairline {
+    @apply h-px w-full bg-rule;
+  }
+
+  /* Ghost button — the default action treatment. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-rule-strong
+           px-4 py-2 font-sans text-sm text-ink transition-all duration-200 ease-instrument
+           hover:border-amber/60 hover:bg-amber-wash focus-visible:border-amber
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-rule-strong
+           disabled:hover:bg-transparent;
+  }
+
+  .btn-primary {
+    @apply border-amber/70 bg-amber-wash text-amber-soft hover:bg-amber/20 hover:border-amber;
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-1 text-xs;
+  }
+
+  /* Status pill for BUY / WATCH / AVOID and the like. */
+  .tag {
+    @apply inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5
+           font-mono text-2xs uppercase tracking-[0.12em];
+  }
 }
 
-/* Respect reduced motion everywhere */
+@layer utilities {
+  /* Film-grain overlay. Depth without a single gradient cliché. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.16;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.5'/></svg>");
+  }
+
+  /* Fade a scrolling edge out rather than cutting it off. */
+  .mask-edges {
+    mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 6%,
+      black 94%,
+      transparent
+    );
+  }
+
+  .stack-delay-1 { animation-delay: 60ms; }
+  .stack-delay-2 { animation-delay: 120ms; }
+  .stack-delay-3 { animation-delay: 180ms; }
+  .stack-delay-4 { animation-delay: 240ms; }
+  .stack-delay-5 { animation-delay: 300ms; }
+  .stack-delay-6 { animation-delay: 360ms; }
+}
+
+/* Honour the OS setting — motion is a garnish, never the meal. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }

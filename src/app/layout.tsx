@@ -1,49 +1,66 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { LANG_COOKIE, dirOf, normalizeLang } from "@/lib/i18n/types";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://alslmany-crypto.vercel.app"),
   title: {
-    default: "Alslmany Crypto — AI Trading Intelligence",
-    template: "%s · Alslmany Crypto",
+    default: "السلماني كريبتو — توصيات العملات الرقمية وروبوت التداول",
+    template: "%s · السلماني كريبتو",
   },
   description:
-    "AI-powered crypto trading intelligence: live recommendations, deep coin analysis, multi-exchange price validation and Telegram alerts.",
-  keywords: ["crypto", "AI trading", "smart money", "trading signals", "Alslmany"],
-  authors: [{ name: "Alslmany Crypto" }],
+    "توصيات عملات رقمية مبنية على تحليل قابل للمراجعة، وروبوت تداول ذاتي يدير صفقاته بانضباط. تحليل متعدد الأطر، إدارة مخاطر صارمة، وسجل أداء شفاف.",
+  keywords: [
+    "توصيات العملات الرقمية",
+    "تحليل كريبتو",
+    "روبوت تداول",
+    "crypto recommendations",
+    "trading bot",
+    "technical analysis",
+  ],
   openGraph: {
-    title: "Alslmany Crypto — AI Trading Intelligence",
-    description: "AI-powered crypto trading intelligence platform.",
     type: "website",
+    siteName: "Alslmany Crypto",
+    title: "السلماني كريبتو — توصيات مبنية على تحليل قابل للمراجعة",
+    description:
+      "كل توصية مرفقة بأدلتها: الإطار الزمني، البنية السعرية، الزخم، والسيولة — مع نقطة إبطال واضحة.",
   },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#060816",
+  themeColor: "#08080A",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const store = await cookies();
+  const lang = normalizeLang(store.get(LANG_COOKIE)?.value);
+
   return (
-    <html lang="en" dir="ltr" className="dark" suppressHydrationWarning>
+    <html lang={lang} dir={dirOf(lang)} className="dark" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://api.fontshare.com" />
-        {/* Satoshi — characterful display face (Fontshare) */}
+        {/* Amiri — editorial display, Arabic + Latin.
+            IBM Plex Sans Arabic — UI voice.
+            IBM Plex Mono — every figure on the site. */}
         <link
-          href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap"
-          rel="stylesheet"
-        />
-        {/* Inter (UI) + JetBrains Mono (figures) + IBM Plex Sans Arabic (RTL) */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen antialiased selection:bg-cyan/30">
-        <Providers>{children}</Providers>
+      <body className="min-h-screen bg-ground-950 text-ink antialiased">
+        <Providers lang={lang}>{children}</Providers>
       </body>
     </html>
   );

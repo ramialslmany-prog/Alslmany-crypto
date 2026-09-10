@@ -7,21 +7,19 @@
 /.next/
 /out/
 /build
-
-# production
 /dist
 
 # misc
 .DS_Store
-*.pem
 Thumbs.db
+*.pem
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env files
+# env
 .env
 .env*.local
 
