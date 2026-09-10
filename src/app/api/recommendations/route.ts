@@ -25,6 +25,9 @@ export async function GET(req: Request) {
       scanMarket({ maxTier: tier, limit }),
     );
     return ok(result.value, {
+      // Without the source the banner cannot tell "stale but real" from
+      // "generated" — and those must never look the same to a reader.
+      source: result.value.source,
       fetchedAt: result.fetchedAt,
       degraded: result.degraded || result.value.degraded,
       note: result.note,

@@ -28,6 +28,8 @@ export type ScanResult = {
   scanned: number;
   /** Symbols we could not analyse, and why. */
   skipped: { symbol: string; reason: string }[];
+  /** Provenance of the candles behind the scan, so the UI can name it. */
+  source: string;
   degraded: boolean;
 };
 
@@ -104,6 +106,7 @@ export async function scanMarket(options: {
     scannedAt: Date.now(),
     scanned: loaded.length,
     skipped,
+    source: btcAnchor.source,
     degraded:
       btcAnchor.source === "synthetic" ||
       recommendations.some((r) => r.degraded),

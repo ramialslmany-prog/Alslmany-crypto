@@ -1,9 +1,10 @@
 import { common } from "./common";
+import { signals } from "./signals";
 import { site } from "./site";
 import { terminal } from "./terminal";
 import type { Area, Entries, Lang } from "./types";
 
-const AREAS: Area[] = [common, site, terminal];
+const AREAS: Area[] = [common, signals, site, terminal];
 
 function merge(lang: Lang): Entries {
   return Object.assign({}, ...AREAS.map((a) => a[lang])) as Entries;

@@ -28,10 +28,9 @@ function makeRec(over: Partial<Recommendation> = {}): Recommendation {
       invalidationKey: "invalidation.structure", invalidationPrice: 90,
     },
     timeframes: [], bullish: [], bearish: [], scenarios: [], warnings: [],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    regime: { label: "bull" } as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    structure: {} as any,
+    // Only the fields the bot actually reads are stubbed here.
+    regime: { label: "bull" } as unknown as Recommendation["regime"],
+    structure: {} as unknown as Recommendation["structure"],
     dataSource: "binance", degraded: false,
     ...over,
   } as Recommendation;
