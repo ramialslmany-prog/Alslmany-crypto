@@ -2,13 +2,14 @@
   "name": "alslmany-crypto",
   "version": "1.0.0",
   "private": true,
-  "description": "Alslmany Crypto — crypto recommendations & an autonomous trading bot, built on auditable analysis.",
+  "description": "Alslmany Crypto \u2014 crypto recommendations & an autonomous trading bot, built on auditable analysis.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node tests/bootstrap.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.0",
