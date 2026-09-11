@@ -233,7 +233,7 @@ function Rung({
         {label}
       </dt>
       <dd className="flex min-w-0 items-baseline gap-2">
-        {meta && <span className="truncate font-mono text-2xs text-ink-faint">{meta}</span>}
+        {meta && <span className="num truncate text-2xs text-ink-faint">{meta}</span>}
         <Num size={emphasis ? "sm" : "xs"} className={cn(emphasis && "text-ink")}>
           {fmtPrice(price)}
         </Num>

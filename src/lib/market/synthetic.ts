@@ -68,7 +68,15 @@ export function syntheticCandles(
   const rand = rng(hashString(`${sym}:${timeframe}`));
   const stepMs = TF_MINUTES[timeframe] * 60_000;
   const now = Date.now();
-  const start = now - count * stepMs;
+
+  // Always walk the same canonical path and return its tail, so asking for
+  // 200 bars and asking for 300 agree on the latest price. Generating exactly
+  // `count` bars instead would give each caller its own random walk, and a
+  // chart and a signal card on one screen would quote different prices for
+  // the same asset.
+  const CANONICAL = 1000;
+  const total = Math.max(count, CANONICAL);
+  const start = now - total * stepMs;
 
   // Per-bar volatility, scaled by timeframe and by how speculative the asset is.
   const tierVol = sym === "BTC" ? 0.9 : sym === "ETH" ? 1.05 : 1.5;
@@ -80,7 +88,7 @@ export function syntheticCandles(
   const trendAmp = 0.0012 * tierVol;
 
   const out: Candle[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < total; i++) {
     // Volatility clusters: today's vol pulls toward yesterday's.
     vol = vol * 0.94 + baseVol * (0.06 + 0.08 * rand());
     const trend = Math.sin((i / trendPeriod) * Math.PI * 2) * trendAmp;
@@ -105,7 +113,7 @@ export function syntheticCandles(
     });
     price = close;
   }
-  return out;
+  return out.slice(-count);
 }
 
 export function syntheticMarkets(): CoinMarket[] {
