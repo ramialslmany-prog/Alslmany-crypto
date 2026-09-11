@@ -10,6 +10,33 @@ import type { Area } from "./types";
  */
 export const signals: Area = {
   ar: {
+    // Market-regime evidence. These keys come from the regime classifier and
+    // are shaped differently from the per-timeframe factor keys below — they
+    // are a separate vocabulary and need their own entries, or they surface
+    // to the reader as raw identifiers.
+    "above-200ema": "السعر فوق متوسط ٢٠٠",
+    "below-200ema": "السعر تحت متوسط ٢٠٠",
+    "ma-stack-bull": "متوسط ٥٠ فوق ٢٠٠",
+    "ma-stack-bear": "متوسط ٥٠ تحت ٢٠٠",
+    "short-ma-bull": "متوسط ٢٠ فوق ٥٠",
+    "short-ma-bear": "متوسط ٢٠ تحت ٥٠",
+    "structure-up": "بنية صاعدة",
+    "structure-down": "بنية هابطة",
+    "structure-range": "بنية عرضية",
+    "adx-trending-up": "اتجاه صاعد مؤكَّد",
+    "adx-trending-down": "اتجاه هابط مؤكَّد",
+    "adx-weak": "لا اتجاه مسيطر",
+    "bos-bullish": "كسر بنية صعودي",
+    "bos-bearish": "كسر بنية هبوطي",
+    "choch-bullish": "تغيّر طابع صعودي",
+    "choch-bearish": "تغيّر طابع هبوطي",
+
+    "breadth-broad": "اتساع السوق جيّد — الصعود يشمل معظم الأصول",
+    "breadth-mixed": "اتساع السوق متفاوت",
+    "breadth-narrow": "اتساع السوق ضيّق — الحركة محصورة في قلّة",
+    "sentiment-capitulation": "استسلام في المزاج العام",
+    "sentiment-euphoria": "نشوة مفرطة في المزاج العام",
+
     "group.trend": "الاتجاه",
     "group.momentum": "الزخم",
     "group.structure": "البنية",
@@ -100,6 +127,30 @@ export const signals: Area = {
     "exit.manual": "إغلاق يدوي",
   },
   en: {
+    // Market-regime evidence — a separate vocabulary from the factor keys.
+    "above-200ema": "Price above the 200 EMA",
+    "below-200ema": "Price below the 200 EMA",
+    "ma-stack-bull": "50 EMA above the 200",
+    "ma-stack-bear": "50 EMA below the 200",
+    "short-ma-bull": "20 EMA above the 50",
+    "short-ma-bear": "20 EMA below the 50",
+    "structure-up": "Uptrend structure",
+    "structure-down": "Downtrend structure",
+    "structure-range": "Ranging structure",
+    "adx-trending-up": "Confirmed uptrend",
+    "adx-trending-down": "Confirmed downtrend",
+    "adx-weak": "No dominant direction",
+    "bos-bullish": "Bullish break of structure",
+    "bos-bearish": "Bearish break of structure",
+    "choch-bullish": "Bullish change of character",
+    "choch-bearish": "Bearish change of character",
+
+    "breadth-broad": "Broad participation — the move carries most assets",
+    "breadth-mixed": "Mixed breadth",
+    "breadth-narrow": "Narrow breadth — the move is confined to a few names",
+    "sentiment-capitulation": "Capitulation in sentiment",
+    "sentiment-euphoria": "Euphoria in sentiment",
+
     "group.trend": "Trend",
     "group.momentum": "Momentum",
     "group.structure": "Structure",

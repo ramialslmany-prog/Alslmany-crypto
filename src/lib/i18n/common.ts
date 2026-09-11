@@ -44,7 +44,7 @@ export const common: Area = {
     "grade.b": "درجة ثانية",
     "grade.c": "مراقبة",
 
-    "verdict.buy": "دخول",
+    "verdict.enter": "دخول",
     "verdict.accumulate": "تجميع",
     "verdict.watch": "مراقبة",
     "verdict.avoid": "تجنّب",
@@ -140,7 +140,7 @@ export const common: Area = {
     "grade.b": "Grade B",
     "grade.c": "Watchlist",
 
-    "verdict.buy": "Enter",
+    "verdict.enter": "Enter",
     "verdict.accumulate": "Accumulate",
     "verdict.watch": "Watch",
     "verdict.avoid": "Avoid",

@@ -3,6 +3,7 @@ import { run as indicators } from "./indicators.test";
 import { run as structure } from "./structure.test";
 import { run as engine } from "./engine.test";
 import { run as bot } from "./bot.test";
+import { run as i18n } from "./i18n.test";
 
 /**
  * Suites run in sequence so their output stays readable, and every one is
@@ -14,6 +15,7 @@ async function main() {
   await structure();
   await engine();
   await bot();
+  await i18n();
   report();
 }
 
