@@ -52,7 +52,7 @@ export function SignalsView() {
                 aria-pressed={filter === f}
                 className={cn(
                   "btn btn-sm",
-                  filter === f && "border-amber/70 bg-amber-wash text-amber-soft",
+                  filter === f && "border-amber/70 bg-amber/10 text-amber-soft",
                 )}
               >
                 {t(`term.signals.filter.${f}`)}

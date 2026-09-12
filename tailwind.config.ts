@@ -29,31 +29,37 @@ const config: Config = {
           700: "#26262F",
           600: "#33333E",
         },
-        // Ink roles
+        // Ink roles.
+        // `faint` is the quietest text on the site and is used for eyebrows,
+        // metadata and units. It was #6E6A62, which measured 3.35–3.72:1
+        // against the ground ramp — below the 4.5:1 WCAG AA needs for text
+        // this small, on every surface. #8A857B is the most muted value that
+        // clears it (4.91:1 worst case) and keeps the hierarchy intact.
         ink: {
           DEFAULT: "#EFEBE3",
           muted: "#A09B91",
-          faint: "#6E6A62",
+          faint: "#8A857B",
         },
-        // The one brand accent
+        // The one brand accent.
+        // Note: no pre-baked alpha values live here. A colour defined as rgba
+        // cannot take a Tailwind opacity modifier — `bg-x/20` on it yields an
+        // unpredictable solid rather than a tint — so tints are expressed at
+        // the call site as `bg-amber/10` and compose correctly.
         amber: {
           DEFAULT: "#E8A33D",
           soft: "#FFCB7D",
           deep: "#8A5A14",
-          wash: "rgba(232,163,61,0.10)",
         },
         // Direction only — never decorative
         bull: {
           DEFAULT: "#33D69F",
           soft: "#7CF0C4",
           deep: "#0E5F45",
-          wash: "rgba(51,214,159,0.10)",
         },
         bear: {
           DEFAULT: "#FF4D6A",
           soft: "#FF93A5",
           deep: "#7A1526",
-          wash: "rgba(255,77,106,0.10)",
         },
         rule: {
           DEFAULT: "rgba(239,235,227,0.10)",

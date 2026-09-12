@@ -1,13 +1,17 @@
 import { loadState, isDurable } from "@/lib/bot/store";
 import { computeStats, equityCurve, groupStats } from "@/lib/bot/ledger";
 import { DEFAULT_BOT_CONFIG } from "@/lib/bot/types";
-import { ok, fail } from "@/lib/api";
+import { ok, fail, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The bot's book, its history and the statistics derived from them. */
-export async function GET() {
+export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "bot"), LIMITS.light.limit, LIMITS.light.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   try {
     const state = await loadState();
     return ok(

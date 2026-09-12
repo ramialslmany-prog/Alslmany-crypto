@@ -107,7 +107,7 @@ export function SignalCard({
 
       {/* Warnings sit above the call to action, never beneath it. */}
       {rec.warnings.length > 0 && (
-        <ul className="space-y-1.5 border-b border-rule bg-bear-wash/40 p-4">
+        <ul className="space-y-1.5 border-b border-rule bg-bear/[0.08] p-4">
           {rec.warnings.map((w) => (
             <li key={w} className="flex items-start gap-2 text-xs leading-relaxed text-ink-muted">
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-bear" aria-hidden />
@@ -276,7 +276,7 @@ function FactorColumn({
   const { t } = useI18n();
   return (
     <div className="bg-ground-900 p-4">
-      <p className={cn("eyebrow mb-2", tone === "bull" ? "text-bull/70" : "text-bear/70")}>
+      <p className={cn("eyebrow mb-2", tone === "bull" ? "text-bull" : "text-bear")}>
         {title}
       </p>
       {factors.length === 0 ? (
@@ -290,7 +290,7 @@ function FactorColumn({
               <span
                 className={cn(
                   "num shrink-0 text-2xs",
-                  tone === "bull" ? "text-bull/80" : "text-bear/80",
+                  tone === "bull" ? "text-bull" : "text-bear",
                 )}
               >
                 {f.weight > 0 ? "+" : ""}

@@ -17,7 +17,7 @@ export function Disclosure() {
   return (
     <section className="px-[var(--gutter)] py-[var(--section-y)]">
       <div className="max-w-2xl">
-        <div className="mb-5 inline-flex items-center gap-2 border border-bear/40 bg-bear-wash px-3 py-1.5">
+        <div className="mb-5 inline-flex items-center gap-2 border border-bear/40 bg-bear/10 px-3 py-1.5">
           <ShieldAlert className="h-4 w-4 text-bear" aria-hidden />
           <span className="font-mono text-2xs uppercase tracking-[0.14em] text-bear">
             {t("nav.disclosure")}

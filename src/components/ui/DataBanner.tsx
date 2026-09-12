@@ -23,7 +23,7 @@ export function DataBanner({ meta }: { meta: Meta | undefined }) {
     return (
       <div
         role="alert"
-        className="flex items-start gap-3 border-b border-amber/30 bg-amber-wash px-[var(--gutter)] py-3"
+        className="flex items-start gap-3 border-b border-amber/30 bg-amber/10 px-[var(--gutter)] py-3"
       >
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber" aria-hidden />
         <p className="text-sm leading-relaxed text-amber-soft">

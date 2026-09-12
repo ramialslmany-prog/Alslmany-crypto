@@ -1,11 +1,15 @@
 import { loadSeries } from "@/lib/market/feed";
 import { TIMEFRAMES, type Timeframe } from "@/lib/market/types";
-import { ok, fail, enumParam, intParam, symbolParam } from "@/lib/api";
+import { ok, fail, enumParam, intParam, symbolParam, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "candles"), LIMITS.light.limit, LIMITS.light.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   const url = new URL(req.url);
   const symbol = symbolParam(url);
   const timeframe = enumParam<Timeframe>(url, "tf", TIMEFRAMES, "1h");

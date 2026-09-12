@@ -1,6 +1,9 @@
 import "server-only";
 import { mapLimit } from "@/lib/utils";
-import { loadSentiment, loadStack, loadGlobal } from "@/lib/market/feed";
+import { loadSentiment, loadStack, loadGlobal, loadMarkets } from "@/lib/market/feed";
+import { readMacro } from "@/lib/analysis/macro";
+import type { SupplyInput } from "@/lib/analysis/tokenomics";
+import type { CoinMarket } from "@/lib/market/types";
 import { fetchDerivatives } from "@/lib/market/derivatives";
 import { loadLiquidity } from "@/lib/market/liquidity";
 import { cached } from "@/lib/market/cache";
@@ -45,10 +48,11 @@ export async function scanMarket(options: {
   const universe = scanUniverse(maxTier).slice(0, options.limit ?? 60);
 
   // ── 1. The tide ──
-  const [btcStack, sentiment, global] = await Promise.all([
+  const [btcStack, sentiment, global, markets] = await Promise.all([
     loadStack("BTC", STACK),
     loadSentiment().catch(() => null),
     loadGlobal().catch(() => null),
+    loadMarkets(250).catch(() => null),
   ]);
 
   const btcAnchor = btcStack["1d"] ?? btcStack["4h"];
@@ -93,6 +97,19 @@ export async function scanMarket(options: {
   });
 
   // ── 4. Per-asset recommendations, inside that regime ──
+  // Rotation is computed once for the whole scan rather than per asset: it is
+  // a property of the market, not of any one coin.
+  const macro = markets
+    ? readMacro({ markets: markets.data, btcDominance: global?.data.btcDominance ?? null })
+    : null;
+  // Rows without usable supply figures are dropped rather than stored as
+  // null, so a lookup miss and "no supply data" are the same thing.
+  const supplyBySymbol = new Map<string, SupplyInput>();
+  for (const m of markets?.data ?? []) {
+    const supply = toSupply(m);
+    if (supply) supplyBySymbol.set(m.symbol, supply);
+  }
+
   const btcDaily = btcStack["1d"]?.candles ?? null;
   const skipped: { symbol: string; reason: string }[] = [];
   const recommendations: Recommendation[] = [];
@@ -108,7 +125,11 @@ export async function scanMarket(options: {
         ? correlation(closes(own), closes(btcDaily))
         : null;
 
-    const rec = recommend({ entry, stack, market, btcCorrelation, derivatives });
+    const rec = recommend({
+      entry, stack, market, btcCorrelation, derivatives,
+      supply: supplyBySymbol.get(entry.symbol) ?? null,
+      macro,
+    });
     if (rec) recommendations.push(rec);
     else skipped.push({ symbol: entry.symbol, reason: "insufficient higher-timeframe data" });
   }
@@ -131,7 +152,7 @@ export async function analyzeSymbol(entry: UniverseEntry): Promise<{
   recommendation: Recommendation | null;
   market: MarketRegime;
 }> {
-  const [btcStack, ownStack, sentiment, global, derivatives, liquidity] = await Promise.all([
+  const [btcStack, ownStack, sentiment, global, derivatives, liquidity, markets] = await Promise.all([
     loadStack("BTC", STACK),
     loadStack(entry.symbol, STACK),
     loadSentiment().catch(() => null),
@@ -144,6 +165,7 @@ export async function analyzeSymbol(entry: UniverseEntry): Promise<{
     cached(`liquidity:${entry.symbol}`, 45_000, () => loadLiquidity(entry.symbol))
       .then((r) => r.value)
       .catch(() => null),
+    loadMarkets(250).catch(() => null),
   ]);
 
   const btcAnchor = btcStack["1d"] ?? btcStack["4h"];
@@ -170,7 +192,32 @@ export async function analyzeSymbol(entry: UniverseEntry): Promise<{
       btcCorrelation,
       derivatives,
       liquidity,
+      supply: markets ? toSupply(markets.data.find((m) => m.symbol === entry.symbol)) : null,
+      macro: markets
+        ? readMacro({ markets: markets.data, btcDominance: global?.data.btcDominance ?? null })
+        : null,
     }),
     market,
+  };
+}
+
+/**
+ * Project a market row onto the supply figures the tokenomics read needs.
+ *
+ * CoinGecko does not expose max supply on this endpoint, so `maxSupply` is left
+ * null and the eventual supply falls back to what has been minted. That
+ * understates dilution for a capped token rather than overstating it — the
+ * safer direction to be wrong in.
+ */
+function toSupply(market: CoinMarket | undefined): SupplyInput | null {
+  if (!market || !(market.circulating > 0) || !(market.marketCap > 0)) return null;
+  return {
+    circulating: market.circulating,
+    maxSupply: null,
+    totalSupply: null,
+    marketCap: market.marketCap,
+    fullyDiluted: null,
+    athChangePct: market.athChangePct,
+    rank: market.rank,
   };
 }

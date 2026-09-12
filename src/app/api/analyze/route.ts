@@ -1,7 +1,8 @@
 import { analyzeSymbol } from "@/lib/engine/scan";
 import { lookupSymbol, isSignalEligible } from "@/lib/market/universe";
 import { cached } from "@/lib/market/cache";
-import { ok, fail, badRequest, symbolParam } from "@/lib/api";
+import { ok, fail, badRequest, symbolParam, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ export const maxDuration = 60;
 
 /** Deep dive on a single asset. */
 export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "analyze"), LIMITS.analyze.limit, LIMITS.analyze.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   const symbol = symbolParam(new URL(req.url));
   const entry = lookupSymbol(symbol);
 

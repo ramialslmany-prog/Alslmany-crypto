@@ -91,7 +91,7 @@ export function TrackRecord({ full = false }: { full?: boolean }) {
           </>
         )}
 
-        <div className="mt-10 border-s-2 border-amber/50 bg-amber-wash px-5 py-4">
+        <div className="mt-10 border-s-2 border-amber/50 bg-amber/10 px-5 py-4">
           <p className="font-display text-base text-amber-soft">
             {t("site.record.disclaimerTitle")}
           </p>

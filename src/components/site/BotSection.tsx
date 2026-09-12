@@ -63,7 +63,7 @@ function Column({
   const Icon = tone === "bull" ? Check : X;
   return (
     <div className="bg-ground-950 p-6 sm:p-8">
-      <p className={tone === "bull" ? "eyebrow mb-5 text-bull/80" : "eyebrow mb-5 text-bear/80"}>
+      <p className={tone === "bull" ? "eyebrow mb-5 text-bull" : "eyebrow mb-5 text-bear"}>
         {title}
       </p>
       <ul className="space-y-3.5">

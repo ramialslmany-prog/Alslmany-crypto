@@ -66,7 +66,7 @@ npm run dev      # http://localhost:3000
 No API keys required. Market data comes from public exchange endpoints.
 
 ```bash
-npm test         # 247 assertions over the analysis, engine and bot
+npm test         # 377 assertions over the analysis, engine and bot
 npm run build    # production build
 npm run lint
 npm run typecheck
@@ -87,7 +87,10 @@ the copy is stale. When no venue is reachable the app falls back to a **clearly
 labelled demo generator**: it always reports `source: "synthetic"`, the UI shows
 a standing banner, and **the bot refuses to trade on it**.
 
-**Analysis** (`src/lib/analysis/`) — indicators (Wilder smoothing implemented
+**Analysis** (`src/lib/analysis/`) — derivatives positioning (funding, open
+interest, long/short), price-momentum divergence, volume profile, order-book
+liquidity, supply structure and dilution pressure, capital rotation between
+Bitcoin and alts, plus indicators (Wilder smoothing implemented
 properly and verified against Wilder's 1978 RSI table), market structure
 (fractal pivots, BOS/CHoCH, level clustering, fair value gaps, Fibonacci), and
 regime classification. Bitcoin sets the tide, breadth says whether the market is
@@ -148,11 +151,17 @@ storage is ephemeral, so a reset is never mistaken for a change in strategy.
 
 ## Testing
 
+[![CI](https://github.com/ramialslmany-prog/Alslmany-crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/ramialslmany-prog/Alslmany-crypto/actions/workflows/ci.yml)
+
 ```bash
 npm test
 ```
 
-247 assertions run against compiled output, covering the indicators, market
+Every push and pull request runs typecheck, lint, the full suite and a
+production build. A test suite that only executes when someone remembers to
+type `npm test` is documentation, not a guarantee.
+
+377 assertions run against compiled output, covering the indicators, market
 structure, regime classification, the recommendation engine and the bot.
 
 The suite is not decoration — it has caught nine real defects during this build,

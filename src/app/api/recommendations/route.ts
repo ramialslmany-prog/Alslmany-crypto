@@ -1,6 +1,7 @@
 import { scanMarket } from "@/lib/engine/scan";
 import { cached } from "@/lib/market/cache";
-import { ok, fail, intParam } from "@/lib/api";
+import { ok, fail, intParam, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ export const maxDuration = 60;
  * only get us rate-limited.
  */
 export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "scan"), LIMITS.scan.limit, LIMITS.scan.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   const url = new URL(req.url);
   const tier = intParam(url, "tier", 2, 1, 3) as 1 | 2 | 3;
   const limit = intParam(url, "limit", 60, 1, 60);

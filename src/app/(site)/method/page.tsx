@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MethodSection } from "@/components/site/MethodSection";
+import { Limits } from "@/components/site/Limits";
 import { CallToAction } from "@/components/site/CallToAction";
 
 export const metadata: Metadata = {
@@ -12,6 +13,7 @@ export default function MethodPage() {
   return (
     <>
       <MethodSection />
+      <Limits />
       <CallToAction />
     </>
   );

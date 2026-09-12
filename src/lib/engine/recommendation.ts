@@ -8,6 +8,8 @@ import { classifyRegime, type MarketRegime, type RegimeRead } from "@/lib/analys
 import { analyzeDerivatives, type DerivativesAnalysis } from "@/lib/analysis/derivatives";
 import { readDivergences, type DivergenceRead } from "@/lib/analysis/divergence";
 import { readVolumeProfile, type VolumeProfileRead } from "@/lib/analysis/volume-profile";
+import { readTokenomics, type SupplyInput, type TokenomicsRead } from "@/lib/analysis/tokenomics";
+import { macroFor, type MacroRead } from "@/lib/analysis/macro";
 import type { DerivativesRead } from "@/lib/market/derivatives";
 import type { LiquidityRead } from "@/lib/analysis/liquidity";
 import { computeRealisticLoss, measureGapRisk, sizeForRealisticLoss, type RealisticLoss } from "./loss-model";
@@ -110,6 +112,10 @@ export type Recommendation = {
   realisticLoss: RealisticLoss | null;
   /** Depth behind the stop, when an order book was supplied. */
   liquidity: LiquidityRead | null;
+  /** Supply structure and dilution pressure. */
+  tokenomics: TokenomicsRead;
+  /** Where capital is rotating between Bitcoin and the rest of the market. */
+  macro: MacroRead;
   /** Provenance of the candles this was computed from. */
   dataSource: string;
   degraded: boolean;
@@ -455,6 +461,10 @@ export function recommend(input: {
   derivatives?: DerivativesRead | null;
   /** Order-book depth, used to price the real cost of being stopped out. */
   liquidity?: LiquidityRead | null;
+  /** Supply figures, when the market list carries them. */
+  supply?: SupplyInput | null;
+  /** Market-wide rotation between Bitcoin and alts. */
+  macro?: MacroRead | null;
 }): Recommendation | null {
   const settings = { ...DEFAULT_SETTINGS, ...input.settings };
   const { entry, stack, market } = input;
@@ -488,6 +498,13 @@ export function recommend(input: {
   const divergence = readDivergences(candles);
   const volumeProfile = readVolumeProfile(candles);
   const liquidity = input.liquidity ?? null;
+  const tokenomics = readTokenomics(input.supply ?? null);
+  // Rotation is a fact about alts relative to Bitcoin; it does not apply to
+  // Bitcoin itself without double-counting.
+  const macro = input.macro
+    ? macroFor(entry.symbol, input.macro)
+    : { available: false, altStrengthPct: null, btcDominance: null, dominanceChange: null,
+        phase: "neutral" as const, score: 0, evidence: [], warnings: [] };
 
   // Pick the horizon the evidence actually supports, rather than forcing every
   // setup into one house style.
@@ -506,7 +523,11 @@ export function recommend(input: {
     -35,
     Math.min(
       25,
-      derivatives.score * 0.5 + divergence.score * 0.6 + volumeProfile.score * 0.5,
+      derivatives.score * 0.5 +
+        divergence.score * 0.6 +
+        volumeProfile.score * 0.5 +
+        tokenomics.score * 0.5 +
+        macro.score * 0.5,
     ),
   );
   const composite = Math.max(-100, Math.min(100, chosen.value + adjustment));
@@ -543,6 +564,7 @@ export function recommend(input: {
   }
   if (market.breadth !== null && market.breadth <= 30) warnings.push("warn.narrowBreadth");
   warnings.push(...derivatives.warnings, ...divergence.warnings);
+  warnings.push(...tokenomics.warnings, ...macro.warnings);
   if (liquidity && liquidity.score < 40) warnings.push("warn.thinLiquidity");
 
   // ── Plan ──
@@ -550,7 +572,10 @@ export function recommend(input: {
   // just been told the trade is crowded will still take full size otherwise.
   const risk =
     effectiveRisk(settings.riskPerTradePct, market.riskBudget, entry.tier, confidence) *
-    derivatives.sizeMultiplier;
+    derivatives.sizeMultiplier *
+    // Supply still to arrive is future selling pressure; it shrinks the
+    // position the same way crowded leverage does.
+    tokenomics.sizeMultiplier;
 
   let plan = buildPlan({
     price,
@@ -665,6 +690,8 @@ export function recommend(input: {
     volumeProfile,
     realisticLoss,
     liquidity,
+    tokenomics,
+    macro,
     dataSource: anchor.source,
     degraded: anchor.source === "synthetic",
   };

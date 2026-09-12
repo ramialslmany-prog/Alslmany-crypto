@@ -45,6 +45,14 @@ function makeRec(over: Partial<Recommendation> = {}): Recommendation {
     volumeProfile: { profile: null, score: 0, detail: "" },
     realisticLoss: null,
     liquidity: null,
+    tokenomics: {
+      available: false, circulatingPct: null, fdvRatio: null, dilutionRisk: "none",
+      drawdownFromAth: null, score: 0, evidence: [], warnings: [], sizeMultiplier: 1,
+    },
+    macro: {
+      available: false, altStrengthPct: null, btcDominance: null, dominanceChange: null,
+      phase: "neutral", score: 0, evidence: [], warnings: [],
+    },
     dataSource: "binance", degraded: false,
     ...over,
   } as Recommendation;

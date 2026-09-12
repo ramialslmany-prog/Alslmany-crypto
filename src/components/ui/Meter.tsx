@@ -11,6 +11,7 @@ export function Meter({
   max = 100,
   tone = "amber",
   label,
+  ariaLabel,
   className,
   showValue = false,
 }: {
@@ -18,10 +19,13 @@ export function Meter({
   max?: number;
   tone?: "amber" | "bull" | "bear" | "neutral";
   label?: string;
+  /** Accessible name when the meter has no visible label of its own. */
+  ariaLabel?: string;
   className?: string;
   showValue?: boolean;
 }) {
   const pct = clamp((value / max) * 100, 0, 100);
+  const name = ariaLabel ?? label;
   const fill = {
     amber: "bg-amber",
     bull: "bg-bull",
@@ -39,13 +43,22 @@ export function Meter({
           )}
         </div>
       )}
+      {/* A meter role without an accessible name is worse than no role: a
+          screen reader announces "meter" and nothing else. When there is no
+          name to give, the bar is decorative reinforcement of the figure
+          beside it, so it drops the role rather than claiming one it cannot
+          fulfil. */}
       <div
         className="h-1 w-full overflow-hidden rounded-sm bg-ground-750"
-        role="meter"
-        aria-valuenow={Math.round(value)}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-label={label}
+        {...(name
+          ? {
+              role: "meter" as const,
+              "aria-valuenow": Math.round(value),
+              "aria-valuemin": 0,
+              "aria-valuemax": max,
+              "aria-label": name,
+            }
+          : { role: "presentation" as const })}
       >
         <div
           className={cn("h-full origin-left rounded-sm animate-bar-grow", fill)}

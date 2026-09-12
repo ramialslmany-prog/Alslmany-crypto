@@ -46,7 +46,7 @@ export function BotDesk() {
       <div className="space-y-7 p-5 sm:p-7">
         {/* A ledger that silently resets must never look like a strategy that reset. */}
         {snapshot && !snapshot.durable && (
-          <div className="flex items-start gap-3 border border-amber/30 bg-amber-wash px-4 py-3">
+          <div className="flex items-start gap-3 border border-amber/30 bg-amber/10 px-4 py-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber" aria-hidden />
             <p className="text-xs leading-relaxed text-ink-muted">
               {t("term.bot.ephemeralNote")}

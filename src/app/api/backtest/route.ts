@@ -3,7 +3,8 @@ import { loadSeries } from "@/lib/market/feed";
 import { lookupSymbol } from "@/lib/market/universe";
 import { TIMEFRAMES, type Timeframe } from "@/lib/market/types";
 import { cached } from "@/lib/market/cache";
-import { ok, fail, badRequest, enumParam, intParam, symbolParam } from "@/lib/api";
+import { ok, fail, badRequest, enumParam, intParam, symbolParam, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,9 @@ export const maxDuration = 60;
  * slippage charged against us.
  */
 export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "backtest"), LIMITS.backtest.limit, LIMITS.backtest.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   const url = new URL(req.url);
   const symbol = symbolParam(url);
   const timeframe = enumParam<Timeframe>(url, "tf", TIMEFRAMES, "4h");

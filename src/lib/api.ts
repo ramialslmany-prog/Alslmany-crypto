@@ -53,6 +53,34 @@ export function badRequest(message: string) {
   return fail(message, 400);
 }
 
+/**
+ * Refuse an over-quota caller.
+ *
+ * Carries the standard headers so a well-behaved client can back off on its
+ * own rather than retrying into the wall.
+ */
+export function tooManyRequests(result: {
+  limit: number;
+  remaining: number;
+  resetAt: number;
+  retryAfterSeconds: number;
+}): NextResponse<ApiErr> {
+  const res = NextResponse.json<ApiErr>(
+    {
+      ok: false,
+      error: `rate limit exceeded — retry in ${result.retryAfterSeconds}s`,
+      meta: { fetchedAt: Date.now(), degraded: true },
+    },
+    { status: 429 },
+  );
+  res.headers.set("retry-after", String(result.retryAfterSeconds));
+  res.headers.set("x-ratelimit-limit", String(result.limit));
+  res.headers.set("x-ratelimit-remaining", "0");
+  res.headers.set("x-ratelimit-reset", String(Math.floor(result.resetAt / 1000)));
+  res.headers.set("cache-control", "no-store");
+  return res;
+}
+
 /** Read and validate a query parameter against an allow-list. */
 export function enumParam<T extends string>(
   url: URL,

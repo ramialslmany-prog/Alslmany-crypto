@@ -1,10 +1,14 @@
 import { loadSentiment } from "@/lib/market/feed";
-import { ok, fail } from "@/lib/api";
+import { ok, fail, tooManyRequests } from "@/lib/api";
+import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const gate = rateLimit(clientKey(req, "sentiment"), LIMITS.light.limit, LIMITS.light.windowMs);
+  if (!gate.allowed) return tooManyRequests(gate);
+
   try {
     const r = await loadSentiment();
     return ok(r.data, {

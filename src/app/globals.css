@@ -119,13 +119,13 @@
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-md border border-rule-strong
            px-4 py-2 font-sans text-sm text-ink transition-all duration-200 ease-instrument
-           hover:border-amber/60 hover:bg-amber-wash focus-visible:border-amber
+           hover:border-amber/60 hover:bg-amber/10 focus-visible:border-amber
            disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-rule-strong
            disabled:hover:bg-transparent;
   }
 
   .btn-primary {
-    @apply border-amber/70 bg-amber-wash text-amber-soft hover:bg-amber/20 hover:border-amber;
+    @apply border-amber/70 bg-amber/10 text-amber-soft hover:bg-amber/20 hover:border-amber;
   }
 
   .btn-sm {

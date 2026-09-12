@@ -60,7 +60,7 @@ export function AssetView({ symbol }: { symbol: string }) {
                 aria-pressed={timeframe === tf}
                 className={cn(
                   "btn btn-sm font-mono",
-                  timeframe === tf && "border-amber/70 bg-amber-wash text-amber-soft",
+                  timeframe === tf && "border-amber/70 bg-amber/10 text-amber-soft",
                 )}
               >
                 {tf}
@@ -166,6 +166,7 @@ function TimeframeBreakdown({ rec }: { rec: NonNullable<ReturnType<typeof useAna
             </div>
             <Meter
               value={(tf.score + 100) / 2}
+              ariaLabel={`${tf.timeframe} ${t("term.score")}`}
               tone={tf.score > 0 ? "bull" : tf.score < 0 ? "bear" : "neutral"}
             />
             <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -213,6 +214,7 @@ function Scenarios({ rec }: { rec: NonNullable<ReturnType<typeof useAnalysis>["d
             </div>
             <Meter
               value={s.probability}
+              ariaLabel={`${t(s.detailKey)} — ${s.probability}%`}
               tone={s.kind === "bullish" ? "bull" : s.kind === "bearish" ? "bear" : "neutral"}
             />
             <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
@@ -257,7 +259,11 @@ function Levels({ rec }: { rec: NonNullable<ReturnType<typeof useAnalysis>["data
               {level.touches} {t("term.asset.touches")}
             </span>
             <div className="w-24">
-              <Meter value={level.strength} tone={level.kind === "support" ? "bull" : "bear"} />
+              <Meter
+                value={level.strength}
+                ariaLabel={`${level.kind === "support" ? t("term.asset.support") : t("term.asset.resistance")} ${fmtPrice(level.price)}`}
+                tone={level.kind === "support" ? "bull" : "bear"}
+              />
             </div>
             <Num size="sm">{fmtPrice(level.price)}</Num>
           </li>

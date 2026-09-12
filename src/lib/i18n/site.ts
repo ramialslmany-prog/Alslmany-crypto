@@ -44,6 +44,26 @@ export const site: Area = {
     "site.method.5.body":
       "الأدلة المعاكسة تُنشر بجانب المؤيدة حتى حين تكون التوصية إيجابية. عرض الجانب المتفق فقط هو أتمتة لانحياز التأكيد، لا تحليل.",
 
+    "site.limits.eyebrow": "الحدود",
+    "site.limits.title": "ما لا يراه المحرّك",
+    "site.limits.lede":
+      "المنتج المحترف يعلن حدوده. هذه أشياء تؤثّر في السعر تأثيراً كبيراً ولا يستطيع المحرّك رؤيتها — فلا تفترض أن صمته عنها يعني عدم وجودها.",
+    "site.limits.1.title": "جداول فتح التوكنات",
+    "site.limits.1.body":
+      "المحرّك يعرف كم من العرض متداول، لكنه لا يعرف متى يُفتح الباقي. أن تعلم أن ٨٥٪ لم يُطرح بعد مفيد؛ وأن تعلم أن ١٢٪ منه يُفتح الثلاثاء القادم أهم بكثير — وهذه البيانات ليست متاحة في أي مصدر مجاني. غياب تحذير هنا ليس دليلاً على غياب الفتح.",
+    "site.limits.2.title": "بيانات السلسلة (on-chain)",
+    "site.limits.2.body":
+      "تدفّقات المنصات وحركة الحيتان وMVRV وSOPR كلها إشارات حقيقية لا يقرؤها المحرّك. تتطلّب مزوّدي بيانات مدفوعين، ولم نضف تقديراً لها لأن رقماً مُختلَقاً أسوأ من لا رقم.",
+    "site.limits.3.title": "الأخبار والتنظيم",
+    "site.limits.3.body":
+      "قرار تنظيمي أو اختراق أو إدراج في منصة كبرى يمكن أن يمحو أي تحليل فني في دقائق. المحرّك لا يقرأ الأخبار، ويعمل على الافتراض الضمني بأن الغد يشبه الأمس — وهو افتراض يسقط أحياناً.",
+    "site.limits.4.title": "جودة المشروع نفسه",
+    "site.limits.4.body":
+      "لا يقيّم المحرّك الفريق ولا الكود ولا التبنّي الحقيقي ولا المنافسة. يقرأ السعر والعرض والتموضع فقط. مشروع ميت قد يعطي إشارة فنية ممتازة.",
+    "site.limits.5.title": "الماضي ليس المستقبل",
+    "site.limits.5.body":
+      "كل رقم هنا مشتقّ من سلوك سابق. الأسواق تتغيّر بنيوياً، والاستراتيجية التي عملت في دورة قد تفشل في التي تليها. الاختبار التاريخي يقيس ما كان، لا ما سيكون.",
+
     "site.signal.eyebrow": "بطاقة التوصية",
     "site.signal.title": "هكذا تُقرأ التوصية",
     "site.signal.lede":
@@ -156,6 +176,26 @@ export const site: Area = {
     "site.method.5.title": "Both sides, always",
     "site.method.5.body":
       "Contradicting evidence is published beside supporting evidence even when the call is positive. Showing only the side that agrees is confirmation bias with a schedule, not analysis.",
+
+    "site.limits.eyebrow": "Limits",
+    "site.limits.title": "What the engine cannot see",
+    "site.limits.lede":
+      "A professional product states its limits. These things move price substantially and the engine is blind to all of them — so do not read its silence as their absence.",
+    "site.limits.1.title": "Token unlock schedules",
+    "site.limits.1.body":
+      "The engine knows how much supply is circulating, but not when the rest arrives. Knowing 85% is yet to be issued is useful; knowing that 12% of it unlocks next Tuesday would matter far more — and that data is in no free source. No warning here is not evidence of no cliff.",
+    "site.limits.2.title": "On-chain data",
+    "site.limits.2.body":
+      "Exchange flows, whale movements, MVRV and SOPR are real signals the engine does not read. They require paid data providers, and we did not substitute an estimate, because an invented number is worse than no number.",
+    "site.limits.3.title": "News and regulation",
+    "site.limits.3.body":
+      "A regulatory decision, an exploit or a major listing can erase any technical read in minutes. The engine does not read the news; it works on the implicit assumption that tomorrow resembles yesterday — an assumption that sometimes fails.",
+    "site.limits.4.title": "The quality of the project itself",
+    "site.limits.4.body":
+      "The engine assesses no team, no code, no real adoption, no competition. It reads price, supply and positioning only. A dead project can print an excellent technical signal.",
+    "site.limits.5.title": "The past is not the future",
+    "site.limits.5.body":
+      "Every figure here is derived from prior behaviour. Markets change structurally, and a strategy that worked in one cycle can fail in the next. A backtest measures what was, not what will be.",
 
     "site.signal.eyebrow": "The signal card",
     "site.signal.title": "How a recommendation reads",

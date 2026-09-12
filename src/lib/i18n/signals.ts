@@ -169,6 +169,29 @@ export const signals: Area = {
     "refuse.plan.stopAboveEntry": "الوقف أعلى من الدخول",
     "refuse.regime.hostile": "حالة السوق معادية",
 
+    // ── التوكنوميكس ──
+    "token.fullyCirculating": "العرض متداول بالكامل — لا ضغط تخفيف قادم",
+    "token.mostlyCirculating": "معظم العرض متداول",
+    "token.partialCirculating": "جزء معتبر من العرض لم يُطرح بعد",
+    "token.lowCirculating": "نسبة تداول منخفضة — ضغط تخفيف قادم",
+    "token.veryLowCirculating": "نسبة تداول منخفضة جداً — معظم العرض لم يوجد بعد",
+    "token.fdvStretched": "التقييم المخفَّف بالكامل أعلى بكثير من القيمة السوقية",
+    "token.deepDrawdown": "هبوط عميق جداً عن القمة التاريخية",
+    "token.nearAth": "قريب من القمة التاريخية",
+    "token.roomToAth": "مسافة معقولة حتى القمة التاريخية",
+
+    // ── الماكرو ودوران رأس المال ──
+    "macro.altSeason": "موسم ألتكوين — رأس المال يتوزّع خارج البيتكوين",
+    "macro.btcSeason": "موسم بيتكوين — رأس المال يتركّز في البيتكوين",
+    "macro.rotationNeutral": "لا دوران واضح لرأس المال",
+    "macro.dominanceRising": "هيمنة البيتكوين ترتفع",
+    "macro.dominanceFalling": "هيمنة البيتكوين تتراجع",
+
+    "warn.dilutionPressure": "ضغط تخفيف — عرض كبير لم يُطرح بعد وسيصل إلى السوق لاحقاً",
+    "warn.fdvStretched": "معظم قيمة التوكن غير مُصدَرة بعد",
+    "warn.deepDrawdown": "هبوط يتجاوز ٩٠٪ عن القمة — كثير من الأصول لا يتعافى منه",
+    "warn.btcSeason": "الهيمنة لصالح البيتكوين — شراء ألتكوين هنا سباحة ضد التيار",
+
     // ── سقوط الفكرة ──
     "thesis.structureReversed": "انقلبت البنية السعرية إلى هابطة",
     "thesis.chochBearish": "تغيّر طابع هبوطي — السيطرة انتقلت للبائعين",
@@ -350,6 +373,29 @@ export const signals: Area = {
     "refuse.portfolio.sectorConcentration": "Too concentrated in the sector",
     "refuse.plan.stopAboveEntry": "Stop sits above entry",
     "refuse.regime.hostile": "Market regime is hostile",
+
+    // ── Tokenomics ──
+    "token.fullyCirculating": "Supply fully circulating — no dilution ahead",
+    "token.mostlyCirculating": "Most of the supply is circulating",
+    "token.partialCirculating": "A meaningful share of supply is not yet issued",
+    "token.lowCirculating": "Low circulating share — dilution ahead",
+    "token.veryLowCirculating": "Very low circulating share — most supply does not exist yet",
+    "token.fdvStretched": "Fully diluted valuation far above market cap",
+    "token.deepDrawdown": "Very deep drawdown from the all-time high",
+    "token.nearAth": "Close to the all-time high",
+    "token.roomToAth": "Reasonable room back to the all-time high",
+
+    // ── Macro and capital rotation ──
+    "macro.altSeason": "Alt season — capital spreading out of Bitcoin",
+    "macro.btcSeason": "Bitcoin season — capital concentrating into Bitcoin",
+    "macro.rotationNeutral": "No clear capital rotation",
+    "macro.dominanceRising": "Bitcoin dominance rising",
+    "macro.dominanceFalling": "Bitcoin dominance falling",
+
+    "warn.dilutionPressure": "Dilution pressure — a large supply is yet to reach the market",
+    "warn.fdvStretched": "Most of the token's value has not been issued yet",
+    "warn.deepDrawdown": "Down more than 90% from its high — many assets never recover",
+    "warn.btcSeason": "Dominance favours Bitcoin — buying alts here fights the flow",
 
     // ── Thesis invalidation ──
     "thesis.structureReversed": "Structure has turned over to a downtrend",

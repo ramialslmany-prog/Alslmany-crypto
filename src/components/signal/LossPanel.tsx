@@ -34,7 +34,7 @@ export function LossPanel({
     <section
       className={cn(
         "border-b border-rule p-4",
-        understated ? "bg-bear-wash/40" : "bg-bull-wash/20",
+        understated ? "bg-bear/[0.08]" : "bg-bull/[0.06]",
         className,
       )}
     >

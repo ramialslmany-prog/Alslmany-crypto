@@ -6,6 +6,9 @@ import { findDivergences, readDivergences } from "../src/lib/analysis/divergence
 import { buildVolumeProfile, readVolumeProfile } from "../src/lib/analysis/volume-profile";
 import { estimateSlippage, readLiquidity } from "../src/lib/analysis/liquidity";
 import { computeRealisticLoss, measureGapRisk, sizeForRealisticLoss } from "../src/lib/engine/loss-model";
+import { readTokenomics } from "../src/lib/analysis/tokenomics";
+import { macroFor, readMacro } from "../src/lib/analysis/macro";
+import type { CoinMarket } from "../src/lib/market/types";
 import { describe, equal, near, ok } from "./_harness";
 
 const bar = (t: number, o: number, h: number, l: number, c: number, v = 100): Candle => ({
@@ -236,5 +239,82 @@ export async function run() {
     );
     near(sizeForRealisticLoss(1, 1, 25), 25, 1e-6, "the cap still binds");
     equal(sizeForRealisticLoss(0, 1, 25), 0, "a zero loss estimate buys nothing rather than infinity");
+  });
+
+  await describe("tokenomics — supply still to arrive is future selling", () => {
+    const base = { marketCap: 1e9, fullyDiluted: null, athChangePct: -50, rank: 20 };
+
+    const mature = readTokenomics({ ...base, circulating: 1e9, maxSupply: 1e9, totalSupply: 1e9 });
+    equal(mature.dilutionRisk, "none", "a fully circulating token carries no dilution risk");
+    equal(mature.sizeMultiplier, 1, "and is not sized down for it");
+    ok(mature.score > 0, "it scores positively", `${mature.score}`);
+
+    const overhang = readTokenomics({ ...base, circulating: 1.5e8, maxSupply: 1e9, totalSupply: 1e9 });
+    equal(overhang.dilutionRisk, "severe", "15% circulating is severe dilution risk");
+    ok(overhang.score < 0, "it scores against the trade", `${overhang.score}`);
+    ok(overhang.warnings.includes("warn.dilutionPressure"), "and warns explicitly");
+    ok(overhang.sizeMultiplier < 0.6, "and halves the position", `${overhang.sizeMultiplier}`);
+    near(overhang.circulatingPct, 15, 0.01, "the circulating share is reported");
+
+    ok(
+      overhang.sizeMultiplier < mature.sizeMultiplier,
+      "an unissued supply overhang always sizes smaller than a mature float",
+    );
+
+    // A hard cap is respected over the minted total when both are present.
+    const capped = readTokenomics({ ...base, circulating: 5e8, maxSupply: 1e9, totalSupply: 6e8 });
+    near(capped.circulatingPct, 50, 0.01, "dilution is measured against the cap, not what is minted");
+
+    equal(readTokenomics(null).available, false, "no supply data reports unavailable");
+    equal(readTokenomics(null).score, 0, "and claims nothing");
+    equal(
+      readTokenomics({ ...base, circulating: 0, maxSupply: 1e9, totalSupply: 1e9 }).available,
+      false,
+      "a zero circulating supply is treated as unknown, not as total dilution",
+    );
+  });
+
+  await describe("macro — rotation between Bitcoin and the rest", () => {
+    const coin = (symbol: string, changePct7d: number): CoinMarket => ({
+      id: symbol.toLowerCase(), symbol, name: symbol, image: null, price: 10,
+      marketCap: 1e9, rank: 5, volume24h: 1e8, changePct1h: 0, changePct24h: 0,
+      changePct7d, high24h: 11, low24h: 9, ath: 20, athChangePct: -50,
+      circulating: 1e8, sparkline: [],
+    });
+
+    // Bitcoin up 2%, almost every alt beating it.
+    const altSeason = readMacro({
+      markets: [coin("BTC", 2), ...Array.from({ length: 12 }, (_, i) => coin(`A${i}`, 8))],
+      btcDominance: 50,
+    });
+    equal(altSeason.phase, "alt-season", "alts broadly outperforming is an alt season");
+    ok(altSeason.score > 0, "which favours holding alts", `${altSeason.score}`);
+
+    // Bitcoin up 10%, almost nothing keeping up.
+    const btcSeason = readMacro({
+      markets: [coin("BTC", 10), ...Array.from({ length: 12 }, (_, i) => coin(`A${i}`, 1))],
+      btcDominance: 58,
+    });
+    equal(btcSeason.phase, "btc-season", "alts broadly lagging is a Bitcoin season");
+    ok(btcSeason.score < 0, "which argues against buying alts", `${btcSeason.score}`);
+    ok(btcSeason.warnings.includes("warn.btcSeason"), "and warns about fighting the flow");
+
+    // Rising dominance deepens the read.
+    const withTrend = readMacro({
+      markets: [coin("BTC", 10), ...Array.from({ length: 12 }, (_, i) => coin(`A${i}`, 1))],
+      btcDominance: 58, dominanceChange: 3,
+    });
+    ok(withTrend.score < btcSeason.score, "a rising dominance trend makes it worse");
+
+    // Bitcoin cannot swim against its own dominance.
+    equal(macroFor("BTC", btcSeason).score, 0, "rotation does not apply to Bitcoin itself");
+    ok(macroFor("SOL", btcSeason).score < 0, "but it does apply to an alt");
+
+    equal(readMacro({ markets: [], btcDominance: null }).available, false, "an empty market list reports unavailable");
+    equal(
+      readMacro({ markets: [coin("BTC", 2), coin("A", 3)], btcDominance: 50 }).available,
+      false,
+      "too few alts to measure reports unavailable rather than guessing",
+    );
   });
 }

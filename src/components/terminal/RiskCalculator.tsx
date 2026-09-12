@@ -60,7 +60,7 @@ export function RiskCalculator() {
           <Input label={t("term.calc.stop")} value={stop} onChange={setStop} prefix="$" />
           <Input label={t("term.calc.target")} value={target} onChange={setTarget} prefix="$" />
           {!valid && (
-            <p className="border-s-2 border-bear/60 bg-bear-wash px-3 py-2 text-xs text-bear-soft">
+            <p className="border-s-2 border-bear/60 bg-bear/10 px-3 py-2 text-xs text-bear-soft">
               {t("term.calc.invalid")}
             </p>
           )}

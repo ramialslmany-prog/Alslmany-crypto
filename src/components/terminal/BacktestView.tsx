@@ -71,7 +71,7 @@ export function BacktestView() {
                   aria-pressed={timeframe === tf}
                   className={cn(
                     "btn btn-sm font-mono",
-                    timeframe === tf && "border-amber/70 bg-amber-wash text-amber-soft",
+                    timeframe === tf && "border-amber/70 bg-amber/10 text-amber-soft",
                   )}
                 >
                   {tf}
@@ -116,7 +116,7 @@ export function BacktestView() {
         ) : (
           <>
             {run.marketProxy && (
-              <div className="flex items-start gap-3 border border-amber/30 bg-amber-wash px-4 py-3">
+              <div className="flex items-start gap-3 border border-amber/30 bg-amber/10 px-4 py-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber" aria-hidden />
                 <p className="text-xs leading-relaxed text-ink-muted">{t("term.backtest.proxy")}</p>
               </div>

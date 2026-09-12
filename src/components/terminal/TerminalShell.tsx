@@ -153,7 +153,7 @@ function Nav({ pathname, onNavigate }: { pathname: string; onNavigate: () => voi
                     className={cn(
                       "flex items-center gap-2.5 rounded-sm px-2 py-2 text-sm transition-colors duration-200",
                       active
-                        ? "bg-amber-wash text-amber-soft"
+                        ? "bg-amber/10 text-amber-soft"
                         : "text-ink-muted hover:bg-ground-850 hover:text-ink",
                     )}
                   >
