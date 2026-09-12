@@ -8,6 +8,7 @@ import { fmtPrice, fmtPctPlain } from "@/lib/format";
 import { Num } from "@/components/ui/Num";
 import { Tag, type TagTone } from "@/components/ui/Tag";
 import { Meter } from "@/components/ui/Meter";
+import { LossPanel } from "./LossPanel";
 import type { Recommendation, Verdict } from "@/lib/engine/recommendation";
 
 /**
@@ -81,6 +82,10 @@ export function SignalCard({
           <p className="mt-1 text-xs text-ink-faint">{t("term.invalidation")}</p>
         </div>
       )}
+
+      {/* The real cost of being wrong sits immediately under the plan, before
+          any of the gauges that describe the upside. */}
+      {rec.realisticLoss && plan && <LossPanel loss={rec.realisticLoss} compact={compact} />}
 
       <div className="grid grid-cols-3 gap-4 border-b border-rule p-4">
         <Meter label={t("term.score")} value={rec.score} showValue tone="amber" />

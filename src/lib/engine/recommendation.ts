@@ -5,6 +5,12 @@ import {
 } from "@/lib/analysis/indicators";
 import { readStructure, type StructureRead, type TrendLabel } from "@/lib/analysis/structure";
 import { classifyRegime, type MarketRegime, type RegimeRead } from "@/lib/analysis/regime";
+import { analyzeDerivatives, type DerivativesAnalysis } from "@/lib/analysis/derivatives";
+import { readDivergences, type DivergenceRead } from "@/lib/analysis/divergence";
+import { readVolumeProfile, type VolumeProfileRead } from "@/lib/analysis/volume-profile";
+import type { DerivativesRead } from "@/lib/market/derivatives";
+import type { LiquidityRead } from "@/lib/analysis/liquidity";
+import { computeRealisticLoss, measureGapRisk, sizeForRealisticLoss, type RealisticLoss } from "./loss-model";
 import {
   DEFAULT_RISK, buildPlan, effectiveRisk, type TradePlan,
 } from "./risk";
@@ -94,6 +100,16 @@ export type Recommendation = {
 
   regime: RegimeRead;
   structure: StructureRead;
+  /** Leverage positioning — null when the asset has no perpetual market. */
+  derivatives: DerivativesAnalysis;
+  /** Price/momentum disagreement, the earliest reversal warning available. */
+  divergence: DivergenceRead;
+  /** Where the market agreed on value. */
+  volumeProfile: VolumeProfileRead;
+  /** What being wrong actually costs, once the book and tail risk are counted. */
+  realisticLoss: RealisticLoss | null;
+  /** Depth behind the stop, when an order book was supplied. */
+  liquidity: LiquidityRead | null;
   /** Provenance of the candles this was computed from. */
   dataSource: string;
   degraded: boolean;
@@ -435,6 +451,10 @@ export function recommend(input: {
   settings?: Partial<EngineSettings>;
   /** Correlation of this asset's returns against Bitcoin, if known. */
   btcCorrelation?: number | null;
+  /** Perpetual-market positioning, when the asset has one. */
+  derivatives?: DerivativesRead | null;
+  /** Order-book depth, used to price the real cost of being stopped out. */
+  liquidity?: LiquidityRead | null;
 }): Recommendation | null {
   const settings = { ...DEFAULT_SETTINGS, ...input.settings };
   const { entry, stack, market } = input;
@@ -460,6 +480,15 @@ export function recommend(input: {
   const structure = readStructure(candles);
   const regime = classifyRegime(candles);
 
+  // ── Professional dimensions ──
+  // Each is independently optional. A missing one contributes nothing rather
+  // than a neutral value, because "unknown" and "balanced" are different
+  // claims and only one of them is true.
+  const derivatives = analyzeDerivatives(input.derivatives ?? null);
+  const divergence = readDivergences(candles);
+  const volumeProfile = readVolumeProfile(candles);
+  const liquidity = input.liquidity ?? null;
+
   // Pick the horizon the evidence actually supports, rather than forcing every
   // setup into one house style.
   const horizons: Horizon[] = ["scalp", "swing", "position"];
@@ -469,7 +498,18 @@ export function recommend(input: {
   // Prefer swing unless another horizon is clearly better — stability beats
   // relabelling the same setup every refresh.
   const chosen = best.value - swing.value > 8 ? best : swing;
-  const composite = chosen.value;
+
+  // The technical confluence is the base; the professional dimensions adjust
+  // it. They are capped so that positioning and profile can temper a technical
+  // read but never manufacture one on their own.
+  const adjustment = Math.max(
+    -35,
+    Math.min(
+      25,
+      derivatives.score * 0.5 + divergence.score * 0.6 + volumeProfile.score * 0.5,
+    ),
+  );
+  const composite = Math.max(-100, Math.min(100, chosen.value + adjustment));
 
   const daily = reads.find((r) => r.timeframe === "1d");
   const fourHour = reads.find((r) => r.timeframe === "4h");
@@ -502,10 +542,17 @@ export function recommend(input: {
     warnings.push("warn.btcCorrelated");
   }
   if (market.breadth !== null && market.breadth <= 30) warnings.push("warn.narrowBreadth");
+  warnings.push(...derivatives.warnings, ...divergence.warnings);
+  if (liquidity && liquidity.score < 40) warnings.push("warn.thinLiquidity");
 
   // ── Plan ──
-  const risk = effectiveRisk(settings.riskPerTradePct, market.riskBudget, entry.tier, confidence);
-  const plan = buildPlan({
+  // Crowded leverage shrinks the risk budget mechanically. A reader who has
+  // just been told the trade is crowded will still take full size otherwise.
+  const risk =
+    effectiveRisk(settings.riskPerTradePct, market.riskBudget, entry.tier, confidence) *
+    derivatives.sizeMultiplier;
+
+  let plan = buildPlan({
     price,
     candles,
     structure,
@@ -513,6 +560,41 @@ export function recommend(input: {
     minRewardRisk: settings.minRewardRisk,
     maxPositionPct: settings.maxPositionPct,
   });
+
+  // ── What being wrong actually costs ──
+  // Standard sizing divides the risk budget by the stop distance, which
+  // assumes a perfect fill. Re-sizing against the realistic loss means the
+  // stated risk survives contact with a real order book and a real tail.
+  const gapRisk = measureGapRisk(candles);
+  let realisticLoss: RealisticLoss | null = null;
+
+  if (plan) {
+    realisticLoss = computeRealisticLoss({
+      entry: plan.reference,
+      stop: plan.stop,
+      positionSizePct: plan.positionSizePct,
+      intendedAccountRiskPct: plan.riskPerTradePct,
+      liquidity,
+      gapRisk,
+    });
+
+    const honestSize = sizeForRealisticLoss(
+      realisticLoss.realisticPct,
+      plan.riskPerTradePct,
+      settings.maxPositionPct,
+    );
+    if (honestSize > 0 && honestSize < plan.positionSizePct) {
+      plan = { ...plan, positionSizePct: honestSize };
+      realisticLoss = computeRealisticLoss({
+        entry: plan.reference,
+        stop: plan.stop,
+        positionSizePct: honestSize,
+        intendedAccountRiskPct: plan.riskPerTradePct,
+        liquidity,
+        gapRisk,
+      });
+    }
+  }
 
   // ── Verdict ──
   // The higher timeframe holds a veto. A strong 1h setup inside a broken daily
@@ -537,6 +619,14 @@ export function recommend(input: {
 
   // Nothing is worth full size in a shock.
   if (market.label === "volatile" && verdict === "enter") verdict = "accumulate";
+
+  // Buying into an extreme funding squeeze is the single most reliable way
+  // retail gets liquidated. Demote it regardless of how good the chart looks.
+  if (derivatives.squeezeRisk === "extreme" && verdict === "enter") verdict = "accumulate";
+
+  // A confirmed reversal divergence across two independent oscillators is a
+  // warning the technical score has not caught up with yet.
+  if (divergence.confirmed && divergence.score < 0 && verdict === "enter") verdict = "accumulate";
 
   let grade: Grade = "C";
   if (verdict === "enter" && score >= 68 && confidence >= 65 && (plan?.rewardRisk ?? 0) >= 2.4) {
@@ -567,9 +657,14 @@ export function recommend(input: {
     bullish: allFactors.filter((f) => f.direction === "bullish").sort((a, b) => b.weight - a.weight),
     bearish: allFactors.filter((f) => f.direction === "bearish").sort((a, b) => a.weight - b.weight),
     scenarios: scenarios(composite, structure, plan),
-    warnings,
+    warnings: [...new Set(warnings)],
     regime,
     structure,
+    derivatives,
+    divergence,
+    volumeProfile,
+    realisticLoss,
+    liquidity,
     dataSource: anchor.source,
     degraded: anchor.source === "synthetic",
   };

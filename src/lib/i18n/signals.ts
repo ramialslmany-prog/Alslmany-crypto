@@ -87,6 +87,57 @@ export const signals: Area = {
     "location.atSupport": "عند دعم مُختبَر",
     "location.underResistance": "أسفل مقاومة مباشرة",
 
+    // ── المشتقات ──
+    "deriv.fundingExtremeLong": "تمويل مرتفع جداً — ازدحام شديد في صفقات الشراء بالرافعة",
+    "deriv.fundingHighLong": "تمويل مرتفع — المشترون بالرافعة يدفعون بكثافة",
+    "deriv.fundingElevatedLong": "تمويل فوق المعتاد",
+    "deriv.fundingNegative": "تمويل سالب — البائعون يدفعون، وقود لضغط صعودي",
+    "deriv.fundingMildNegative": "تمويل سالب طفيف",
+    "deriv.fundingNeutral": "تمويل متوازن",
+    "deriv.oiRising": "الفائدة المفتوحة ترتفع — أموال جديدة تدخل",
+    "deriv.oiRisingCrowded": "فائدة مفتوحة ترتفع فوق تمويل ساخن — رافعة فوق رافعة",
+    "deriv.oiFalling": "الفائدة المفتوحة تنخفض — تصفية الرافعة الزائدة",
+    "deriv.accountsCrowdedLong": "غالبية الحسابات في صفقات شراء",
+    "deriv.accountsCrowdedShort": "غالبية الحسابات في صفقات بيع",
+
+    // ── الدايفرجنس ──
+    "div.regular-bearish": "تباعد هبوطي — السعر يصعد والزخم يضعف",
+    "div.regular-bullish": "تباعد صعودي — السعر يهبط والزخم يتحسّن",
+    "div.hidden-bullish": "تباعد مخفي صعودي — استمرار الاتجاه",
+    "div.hidden-bearish": "تباعد مخفي هبوطي — استمرار الاتجاه",
+
+    // ── ملف الحجم ──
+    "vp.poc": "نقطة التحكّم",
+    "vp.valueArea": "منطقة القيمة",
+    "vp.above": "فوق منطقة القيمة",
+    "vp.inside": "داخل منطقة القيمة",
+    "vp.below": "تحت منطقة القيمة",
+    "vp.hvn": "عقدة حجم مرتفع",
+    "vp.lvn": "عقدة حجم منخفض",
+
+    // ── السيولة والخسارة الحقيقية ──
+    "liq.spread": "الفارق السعري",
+    "liq.depth": "العمق ضمن ١٪",
+    "liq.exitCost": "كلفة الخروج",
+    "liq.score": "جودة السيولة",
+    "loss.planned": "الخسارة المخطّطة",
+    "loss.slippage": "الانزلاق السعري",
+    "loss.gap": "خطر القفزة",
+    "loss.fees": "الرسوم",
+    "loss.realistic": "الخسارة الواقعية",
+    "loss.ofAccount": "من المحفظة",
+    "loss.driver.slippage": "الخروج يكلّف انزلاقاً ملموساً",
+    "loss.driver.thinBook": "دفتر الأوامر لا يستوعب الخروج",
+    "loss.driver.lowLiquidity": "سيولة ضعيفة — الوقف قد لا يُنفَّذ عند سعره",
+    "loss.driver.gapRisk": "تاريخ قفزات تتجاوز الوقف",
+    "loss.driver.unknownLiquidity": "عمق السوق غير معروف — قُدِّر تحفّظاً",
+
+    "loss.understated": "الخسارة الواقعية أكبر من المخطّطة بـ {multiple} ضعفاً — قُلِّل الحجم أو وسّع الوقف إلى مستوى أعمق سيولة.",
+
+    "warn.crowdedLongs": "ازدحام في صفقات الشراء بالرافعة — خطر تصفية متسلسلة ضدّك",
+    "warn.bearishDivergence": "تباعد هبوطي بين السعر والزخم — إنذار انعكاس مبكر",
+    "warn.thinLiquidity": "سيولة ضعيفة — قد لا يُنفَّذ وقف الخسارة عند سعره المحدّد",
+
     "warn.extremeVolatility": "تقلّب استثنائي — قلّل الحجم وتوقّع تنفيذاً سيئاً",
     "warn.bearMarket": "السوق العام هابط — الصفقات الصاعدة تعمل ضد التيار",
     "warn.memeAsset": "عملة ميم — مدفوعة بالمزاج، واحتمال الخسارة الكاملة قائم",
@@ -200,6 +251,57 @@ export const signals: Area = {
     "location.upperRange": "Upper half of the range",
     "location.atSupport": "At a tested support",
     "location.underResistance": "Directly under resistance",
+
+    // ── Derivatives ──
+    "deriv.fundingExtremeLong": "Extreme funding — leveraged longs are heavily crowded",
+    "deriv.fundingHighLong": "High funding — longs are paying heavily to stay in",
+    "deriv.fundingElevatedLong": "Funding above its normal range",
+    "deriv.fundingNegative": "Negative funding — shorts are paying, fuel for a squeeze up",
+    "deriv.fundingMildNegative": "Mildly negative funding",
+    "deriv.fundingNeutral": "Balanced funding",
+    "deriv.oiRising": "Open interest rising — new money entering",
+    "deriv.oiRisingCrowded": "Open interest rising into hot funding — leverage on leverage",
+    "deriv.oiFalling": "Open interest falling — leverage being flushed",
+    "deriv.accountsCrowdedLong": "Most accounts are positioned long",
+    "deriv.accountsCrowdedShort": "Most accounts are positioned short",
+
+    // ── Divergence ──
+    "div.regular-bearish": "Bearish divergence — price higher, momentum weaker",
+    "div.regular-bullish": "Bullish divergence — price lower, momentum stronger",
+    "div.hidden-bullish": "Hidden bullish divergence — trend continuation",
+    "div.hidden-bearish": "Hidden bearish divergence — trend continuation",
+
+    // ── Volume profile ──
+    "vp.poc": "Point of control",
+    "vp.valueArea": "Value area",
+    "vp.above": "Above the value area",
+    "vp.inside": "Inside the value area",
+    "vp.below": "Below the value area",
+    "vp.hvn": "High-volume node",
+    "vp.lvn": "Low-volume node",
+
+    // ── Liquidity and the real loss ──
+    "liq.spread": "Spread",
+    "liq.depth": "Depth within 1%",
+    "liq.exitCost": "Exit cost",
+    "liq.score": "Liquidity quality",
+    "loss.planned": "Planned loss",
+    "loss.slippage": "Slippage",
+    "loss.gap": "Gap risk",
+    "loss.fees": "Fees",
+    "loss.realistic": "Realistic loss",
+    "loss.ofAccount": "of account",
+    "loss.driver.slippage": "Exiting costs meaningful slippage",
+    "loss.driver.thinBook": "The book cannot absorb the exit",
+    "loss.driver.lowLiquidity": "Thin liquidity — the stop may not fill at its price",
+    "loss.driver.gapRisk": "History of moves that jump past the stop",
+    "loss.driver.unknownLiquidity": "Book depth unknown — estimated conservatively",
+
+    "loss.understated": "The realistic loss is {multiple}× the planned one — size down, or move the stop to a level with real depth behind it.",
+
+    "warn.crowdedLongs": "Leveraged longs are crowded — risk of a cascade against you",
+    "warn.bearishDivergence": "Price and momentum disagree — early reversal warning",
+    "warn.thinLiquidity": "Thin liquidity — your stop may not fill at the price you set",
 
     "warn.extremeVolatility": "Extreme volatility — size down and expect poor fills",
     "warn.bearMarket": "The broad market is falling — a long here fights the tide",

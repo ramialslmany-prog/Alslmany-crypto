@@ -1,6 +1,9 @@
 import "server-only";
 import { mapLimit } from "@/lib/utils";
 import { loadSentiment, loadStack, loadGlobal } from "@/lib/market/feed";
+import { fetchDerivatives } from "@/lib/market/derivatives";
+import { loadLiquidity } from "@/lib/market/liquidity";
+import { cached } from "@/lib/market/cache";
 import { scanUniverse, type UniverseEntry } from "@/lib/market/universe";
 import { closes, correlation } from "@/lib/analysis/indicators";
 import { classifyMarket, computeBreadth, type MarketRegime } from "@/lib/analysis/regime";
@@ -56,12 +59,22 @@ export async function scanMarket(options: {
   // ── 2. Every asset's stack, fetched with a concurrency ceiling ──
   const loaded = await mapLimit(universe, CONCURRENCY, async (entry) => {
     try {
-      const stack = await loadStack(entry.symbol, STACK);
-      return { entry, stack, error: null as string | null };
+      // Derivatives come along for the ride; the order book does not. Depth is
+      // a per-asset request that would multiply the scan's call count for
+      // information only the accepted candidates end up needing, so it is
+      // fetched in the deep dive instead.
+      const [stack, derivatives] = await Promise.all([
+        loadStack(entry.symbol, STACK),
+        cached(`deriv:${entry.symbol}`, 120_000, () => fetchDerivatives(entry.symbol))
+          .then((r) => r.value)
+          .catch(() => null),
+      ]);
+      return { entry, stack, derivatives, error: null as string | null };
     } catch (err) {
       return {
         entry,
         stack: {} as Partial<Record<Timeframe, Series | null>>,
+        derivatives: null,
         error: err instanceof Error ? err.message : "unavailable",
       };
     }
@@ -84,7 +97,7 @@ export async function scanMarket(options: {
   const skipped: { symbol: string; reason: string }[] = [];
   const recommendations: Recommendation[] = [];
 
-  for (const { entry, stack, error } of loaded) {
+  for (const { entry, stack, derivatives, error } of loaded) {
     if (error) {
       skipped.push({ symbol: entry.symbol, reason: error });
       continue;
@@ -95,7 +108,7 @@ export async function scanMarket(options: {
         ? correlation(closes(own), closes(btcDaily))
         : null;
 
-    const rec = recommend({ entry, stack, market, btcCorrelation });
+    const rec = recommend({ entry, stack, market, btcCorrelation, derivatives });
     if (rec) recommendations.push(rec);
     else skipped.push({ symbol: entry.symbol, reason: "insufficient higher-timeframe data" });
   }
@@ -118,11 +131,19 @@ export async function analyzeSymbol(entry: UniverseEntry): Promise<{
   recommendation: Recommendation | null;
   market: MarketRegime;
 }> {
-  const [btcStack, ownStack, sentiment, global] = await Promise.all([
+  const [btcStack, ownStack, sentiment, global, derivatives, liquidity] = await Promise.all([
     loadStack("BTC", STACK),
     loadStack(entry.symbol, STACK),
     loadSentiment().catch(() => null),
     loadGlobal().catch(() => null),
+    // Both are optional: many assets have no perpetual market, and a blocked
+    // depth endpoint must degrade the analysis rather than fail it.
+    cached(`deriv:${entry.symbol}`, 120_000, () => fetchDerivatives(entry.symbol))
+      .then((r) => r.value)
+      .catch(() => null),
+    cached(`liquidity:${entry.symbol}`, 45_000, () => loadLiquidity(entry.symbol))
+      .then((r) => r.value)
+      .catch(() => null),
   ]);
 
   const btcAnchor = btcStack["1d"] ?? btcStack["4h"];
@@ -142,7 +163,14 @@ export async function analyzeSymbol(entry: UniverseEntry): Promise<{
     btcDaily && own && entry.symbol !== "BTC" ? correlation(closes(own), closes(btcDaily)) : null;
 
   return {
-    recommendation: recommend({ entry, stack: ownStack, market, btcCorrelation }),
+    recommendation: recommend({
+      entry,
+      stack: ownStack,
+      market,
+      btcCorrelation,
+      derivatives,
+      liquidity,
+    }),
     market,
   };
 }

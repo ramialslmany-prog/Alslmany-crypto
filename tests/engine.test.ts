@@ -6,6 +6,8 @@ import {
   DEFAULT_RISK, blendedRewardRisk, buildPlan, deriveStop, effectiveRisk, positionSize,
 } from "../src/lib/engine/risk";
 import { rankRecommendations, recommend } from "../src/lib/engine/recommendation";
+import { readLiquidity, type OrderBook } from "../src/lib/analysis/liquidity";
+import type { DerivativesRead } from "../src/lib/market/derivatives";
 import { describe, equal, isNull, near, ok } from "./_harness";
 
 /** A trending series with light noise, so indicators behave realistically. */
@@ -227,6 +229,72 @@ export async function run() {
       (rec.plan?.riskPerTradePct ?? 9) < (tier1.plan?.riskPerTradePct ?? 0),
       "and risks less of the account than a tier 1 name",
     );
+  });
+
+  await describe("engine — crowded leverage is priced in", () => {
+    const healthy = stackOf(() => ramp(300, 100, 0.005));
+    const base = recommend({ entry: ENTRY, stack: healthy, market: bullMarket })!;
+
+    const squeezed: DerivativesRead = {
+      symbol: "TEST",
+      funding: { ratePct: 0.3, annualizedPct: 328, averagePct: 0.28, nextFundingAt: null },
+      openInterest: { amount: 100, notional: 1e6, changePct: 25 },
+      positioning: { longAccountPct: 82, shortAccountPct: 18, ratio: 4.5 },
+      fetchedAt: 0,
+    };
+    const crowded = recommend({
+      entry: ENTRY, stack: healthy, market: bullMarket, derivatives: squeezed,
+    })!;
+
+    equal(crowded.derivatives.squeezeRisk, "extreme", "extreme funding is detected");
+    ok(crowded.warnings.includes("warn.crowdedLongs"), "and warned about");
+    ok(crowded.score < base.score, "the same chart scores lower when longs are crowded", `${crowded.score} vs ${base.score}`);
+    ok(crowded.verdict !== "enter", "and it is never a full-size entry", crowded.verdict);
+    ok(
+      (crowded.plan?.riskPerTradePct ?? 9) < (base.plan?.riskPerTradePct ?? 0),
+      "crowding shrinks the risk actually taken, not just the wording",
+    );
+
+    // No perpetual market must read as unknown, not as balanced.
+    equal(base.derivatives.available, false, "no derivatives data reports unavailable");
+    equal(base.derivatives.score, 0, "and contributes nothing to the score");
+  });
+
+  await describe("engine — the loss it quotes is the loss you would take", () => {
+    const stack = stackOf(() => ramp(300, 100, 0.005));
+    const deep: OrderBook = {
+      symbol: "TEST", fetchedAt: 0,
+      bids: Array.from({ length: 200 }, (_, i) => ({ price: 480 - i * 0.05, quantity: 400 })),
+      asks: Array.from({ length: 200 }, (_, i) => ({ price: 480.05 + i * 0.05, quantity: 400 })),
+    };
+    const thin: OrderBook = {
+      symbol: "TEST", fetchedAt: 0,
+      bids: [{ price: 480, quantity: 0.4 }, { price: 460, quantity: 0.4 }, { price: 430, quantity: 0.4 }],
+      asks: [{ price: 500, quantity: 0.4 }],
+    };
+
+    const onDeep = recommend({ entry: ENTRY, stack, market: bullMarket, liquidity: readLiquidity(deep) })!;
+    const onThin = recommend({ entry: ENTRY, stack, market: bullMarket, liquidity: readLiquidity(thin) })!;
+
+    ok(onDeep.realisticLoss !== null, "a realistic loss is computed");
+    ok(
+      onDeep.realisticLoss!.realisticPct > onDeep.realisticLoss!.plannedPct,
+      "and always exceeds the planned loss — fees and slippage are never free",
+    );
+    ok(onThin.warnings.includes("warn.thinLiquidity"), "a thin book is warned about");
+    ok(
+      onThin.realisticLoss!.realisticPct > onDeep.realisticLoss!.realisticPct,
+      "and costs more to be wrong on",
+      `${onThin.realisticLoss!.realisticPct}% vs ${onDeep.realisticLoss!.realisticPct}%`,
+    );
+    ok(
+      (onThin.plan?.positionSizePct ?? 99) <= (onDeep.plan?.positionSizePct ?? 0),
+      "so the position taken on it is smaller",
+    );
+
+    // Unknown depth must never be treated as free depth.
+    const unknown = recommend({ entry: ENTRY, stack, market: bullMarket })!;
+    ok(unknown.realisticLoss!.slippagePct > 0, "unknown liquidity still carries an assumed cost");
   });
 
   await describe("engine — ranking", () => {
