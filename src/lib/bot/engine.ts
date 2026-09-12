@@ -2,6 +2,8 @@ import type { Candle } from "@/lib/market/types";
 import type { Recommendation } from "@/lib/engine/recommendation";
 import { hashString } from "@/lib/utils";
 import { PaperBroker, rMultipleOf, type Broker } from "./broker";
+import { captureThesis, checkThesis, shouldRun, trailMultiple } from "./thesis";
+import type { RegimeLabel } from "@/lib/analysis/regime";
 import {
   DEFAULT_BOT_CONFIG,
   type BotConfig,
@@ -24,6 +26,15 @@ export type Quote = {
   bar: Candle;
   /** ATR on the managing timeframe, for the trailing stop. */
   atr: number;
+  /**
+   * A fresh read on the same asset, when one is available.
+   *
+   * Without it the bot can only ask "has price hit my stop?". With it, it can
+   * ask the far more useful question: "is the reason I entered still true?"
+   */
+  analysis?: Recommendation | null;
+  /** The wider market's regime at this tick. */
+  marketLabel?: RegimeLabel;
 };
 
 function positionId(symbol: string, at: number): string {
@@ -79,6 +90,33 @@ export function canOpen(
   if (inSector >= config.maxPerSector) return { ok: false, reason: "portfolio.sectorConcentration" };
 
   if (rec.plan.stop >= rec.price) return { ok: false, reason: "plan.stopAboveEntry" };
+
+  // ── The professional gates ──
+
+  // Entering a crowded leveraged tape is the most reliable way to be caught in
+  // a cascade. The chart can look perfect and still be a trap.
+  const squeezeRank = { none: 0, elevated: 1, high: 2, extreme: 3 } as const;
+  if (squeezeRank[rec.derivatives.squeezeRisk] > squeezeRank[config.maxSqueezeRisk]) {
+    return { ok: false, reason: "deriv.squeezeRisk" };
+  }
+
+  // What you cannot exit, you cannot risk-manage. A stop on a book that cannot
+  // fill it is a number on a screen, not a limit on the loss.
+  if (rec.liquidity && rec.liquidity.score < config.minLiquidityScore) {
+    return { ok: false, reason: "liquidity.tooThin" };
+  }
+
+  // If the honest loss overshoots the intended risk even after re-sizing, the
+  // trade cannot be taken at a size that respects the risk budget.
+  if (config.rejectUnderstatedRisk && rec.realisticLoss?.understated) {
+    return { ok: false, reason: "loss.understated" };
+  }
+
+  // Two independent oscillators calling a reversal is not something to buy into.
+  if (rec.divergence.confirmed && rec.divergence.score < 0) {
+    return { ok: false, reason: "divergence.bearish" };
+  }
+
   return { ok: true };
 }
 
@@ -124,6 +162,7 @@ export async function openPosition(
       warnings: rec.warnings,
       marketRegime: rec.regime.label,
       plannedRewardRisk: plan.rewardRisk,
+      snapshot: captureThesis(rec, rec.regime.label),
     },
     fills: [fill],
     highWater: entry,
@@ -212,10 +251,85 @@ export async function stepPosition(
     return { position: next, events };
   }
 
+  // ── 1b. Has the reason for the trade disappeared? ──
+  // Checked before targets so a broken thesis exits now rather than waiting to
+  // be filled at a level the market is no longer heading toward.
+  if (config.thesisExitEnabled && quote.analysis && next.thesis.snapshot) {
+    const check = checkThesis(
+      next.thesis.snapshot,
+      quote.analysis,
+      quote.marketLabel ?? next.thesis.snapshot.marketLabel,
+    );
+
+    if (check.severity !== "intact") {
+      // Named distinctly: `events` is already the PositionEvent list this
+      // function returns, and shadowing it silently returned the wrong one.
+      const thesisLog = [
+        ...(next.thesisEvents ?? []),
+        { at: bar.t, severity: check.severity, reasons: check.reasons },
+      ];
+
+      if (check.severity === "broken") {
+        const fill = await broker.sell(next, bar.c, next.remaining, "thesis", bar.t);
+        next = recompute({
+          ...next,
+          fills: [...next.fills, fill],
+          remaining: 0,
+          status: "closed",
+          closedAt: bar.t,
+          exitReason: "thesis",
+          thesisEvents: thesisLog,
+        });
+        push("closed", fill.price, `thesis broken — ${check.reasons.join(", ")}`, "thesis", fill.rMultiple);
+        return { position: next, events };
+      }
+
+      // Weakening: take half off and let the rest prove itself. Only once —
+      // a position cannot be scaled out of repeatedly for the same reason.
+      const alreadyScaled = (next.thesisEvents ?? []).some((e) => e.severity === "weakening");
+      if (!alreadyScaled) {
+        const fraction = Math.min(check.releaseFraction, next.remaining);
+        if (fraction > 0) {
+          const fill = await broker.sell(next, bar.c, fraction, "weakened", bar.t);
+          const remaining = Number((next.remaining - fraction).toFixed(6));
+          next = recompute({
+            ...next,
+            fills: [...next.fills, fill],
+            remaining,
+            thesisEvents: thesisLog,
+          });
+          push("partial", fill.price, `thesis weakening — ${check.reasons.join(", ")}`, "weakened", fill.rMultiple);
+          if (remaining <= 0) {
+            next = { ...next, status: "closed", closedAt: bar.t, exitReason: "weakened" };
+            return { position: next, events };
+          }
+        }
+      } else {
+        next = { ...next, thesisEvents: thesisLog };
+      }
+    }
+  }
+
   // ── 2. Targets, in order ──
   while (next.targetsHit < next.targets.length) {
     const target = next.targets[next.targetsHit];
     if (bar.h < target.price) break;
+
+    // Runner mode: in a confirmed trend the final tranche is released from its
+    // cap and trailed instead. Closing every winner at a fixed third target
+    // guarantees the bot never captures a large rise — and large rises are
+    // where a trend strategy's entire profit comes from.
+    const isFinalTarget = next.targetsHit === next.targets.length - 1;
+    if (
+      isFinalTarget &&
+      config.runnerEnabled &&
+      quote.analysis &&
+      shouldRun(quote.analysis)
+    ) {
+      next = { ...next, targetsHit: next.targetsHit + 1, running: true };
+      push("stop-moved", target.price, "final target released — trailing the trend");
+      break;
+    }
 
     const fraction = Math.min(target.allocationPct / 100, next.remaining);
     if (fraction <= 0) break;
@@ -249,8 +363,14 @@ export async function stepPosition(
   }
 
   // ── 4. Trail behind the high-water mark ──
-  if (next.targetsHit >= config.trailAfterTargets && quote.atr > 0) {
-    const trailed = next.highWater - quote.atr * config.trailAtrMultiple;
+  // The multiple adapts: a confirmed trend earns more room so the move can
+  // actually be captured, while chop is trailed tightly because there is no
+  // move to capture and the only question is how much profit survives.
+  if ((next.targetsHit >= config.trailAfterTargets || next.running) && quote.atr > 0) {
+    const multiple = quote.analysis
+      ? trailMultiple(quote.analysis, config.trailAtrMultiple)
+      : config.trailAtrMultiple;
+    const trailed = next.highWater - quote.atr * multiple;
     // A stop may only ever move in our favour. Widening a stop to "give the
     // trade room" is the single most reliable way to turn a small loss into
     // an account-ending one, so it is not expressible here.
@@ -263,7 +383,8 @@ export async function stepPosition(
   // ── 5. Cut a thesis that has gone stale ──
   const ageHours = (bar.t - next.openedAt) / 3_600_000;
   const currentR = rMultipleOf(next.entry, next.initialStop, bar.c);
-  if (ageHours >= config.maxHoldHours && currentR < config.staleBelowR) {
+  // A running position is working by definition; age is not a reason to cut it.
+  if (!next.running && ageHours >= config.maxHoldHours && currentR < config.staleBelowR) {
     const fill = await broker.sell(next, bar.c, next.remaining, "time", bar.t);
     next = recompute({
       ...next,

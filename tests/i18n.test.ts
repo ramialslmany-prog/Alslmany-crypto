@@ -1,8 +1,9 @@
 import { dictionaries, translate } from "../src/lib/i18n";
 import type { Lang } from "../src/lib/i18n/types";
 import { classifyMarket, classifyRegime } from "../src/lib/analysis/regime";
-import { recommend } from "../src/lib/engine/recommendation";
+import { recommend, type Recommendation } from "../src/lib/engine/recommendation";
 import { canOpen } from "../src/lib/bot/engine";
+import { computeStats } from "../src/lib/bot/ledger";
 import { emptyState } from "../src/lib/bot/types";
 import type { Candle, Series, Timeframe } from "../src/lib/market/types";
 import type { UniverseEntry } from "../src/lib/market/universe";
@@ -46,6 +47,32 @@ const ENTRY: UniverseEntry = {
   symbol: "TEST", id: "test", name: "Test", nameAr: "اختبار",
   sector: "smart-contract", tier: 1,
 };
+
+/** A minimal but complete Recommendation, used to trip each entry gate. */
+function baseRec(): Recommendation {
+  return {
+    symbol: "TEST", name: "Test", nameAr: "اختبار", sector: "smart-contract", tier: 1,
+    generatedAt: 0, price: 100, verdict: "enter", grade: "A", score: 75, confidence: 70,
+    horizon: "swing",
+    plan: {
+      entryLow: 99, entryHigh: 100, reference: 100, stop: 90, stopDistancePct: 10,
+      targets: [{ price: 120, rMultiple: 2, allocationPct: 100, basis: "level:2" }],
+      rewardRisk: 2, positionSizePct: 10, riskPerTradePct: 1,
+      invalidationKey: "invalidation.structure", invalidationPrice: 90,
+    },
+    timeframes: [], bullish: [], bearish: [], scenarios: [], warnings: [],
+    regime: { label: "bull" } as unknown as Recommendation["regime"],
+    structure: {} as unknown as Recommendation["structure"],
+    derivatives: {
+      available: false, score: 0, evidence: [], squeezeRisk: "none",
+      warnings: [], sizeMultiplier: 1,
+    },
+    divergence: { divergences: [], score: 0, confirmed: false, warnings: [] },
+    volumeProfile: { profile: null, score: 0, detail: "" },
+    realisticLoss: null, liquidity: null,
+    dataSource: "binance", degraded: false,
+  } as Recommendation;
+}
 
 /** Every key the running engines emit across a spread of market conditions. */
 function harvestKeys(): Set<string> {
@@ -101,10 +128,54 @@ function harvestKeys(): Set<string> {
     }
   }
 
-  // Exit reasons are emitted by the bot rather than the analysis engines.
-  for (const reason of ["target", "stop", "breakeven", "trailing", "time", "regime", "manual"]) {
+  // Exit reasons come from the bot. Derived from the ledger's own reason map
+  // rather than hand-listed, so adding an exit kind cannot silently escape
+  // translation — which is exactly how "thesis" and "weakened" would have.
+  for (const reason of Object.keys(computeStats([]).byReason)) {
     keys.add(`exit.${reason}`);
   }
+
+  // Every refusal the entry gate can produce. Each fixture trips one gate.
+  const gateFixtures: Partial<Recommendation>[] = [
+    { verdict: "watch" },
+    { grade: "C" },
+    { confidence: 5 },
+    { degraded: true },
+    {
+      derivatives: {
+        available: true, score: -20, evidence: [], squeezeRisk: "extreme",
+        warnings: [], sizeMultiplier: 0.35,
+      },
+    },
+    {
+      divergence: { divergences: [], score: -20, confirmed: true, warnings: [] },
+    },
+  ];
+  for (const over of gateFixtures) {
+    const rec = { ...baseRec(), ...over } as Recommendation;
+    const gate = canOpen(emptyState(0), rec);
+    if (!gate.ok) keys.add(`refuse.${gate.reason}`);
+  }
+  // These two are reached through fields the fixture above cannot express
+  // cleanly; they are real refusals and must be translated.
+  keys.add("refuse.liquidity.tooThin");
+  keys.add("refuse.loss.understated");
+  keys.add("refuse.plan.stopAboveEntry");
+  keys.add("refuse.portfolio.full");
+  keys.add("refuse.portfolio.sectorConcentration");
+  keys.add("refuse.position.alreadyOpen");
+  keys.add("refuse.plan.missing");
+  keys.add("refuse.reward.tooThin");
+  keys.add("refuse.regime.hostile");
+
+  // Thesis-invalidation reasons, emitted when a position is closed early.
+  for (const reason of [
+    "structureReversed", "chochBearish", "verdictFlipped", "divergenceAppeared",
+    "squeezeBuilt", "marketTurned", "convictionLost", "volatilitySpiked",
+  ]) {
+    keys.add(`thesis.${reason}`);
+  }
+
   return keys;
 }
 

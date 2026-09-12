@@ -5,6 +5,7 @@ import { canOpen, closePosition, considerEntries, manage, openPosition, stepPosi
 import { computeStats } from "../src/lib/bot/ledger";
 import { backtest, resample } from "../src/lib/bot/backtest";
 import { DEFAULT_BOT_CONFIG, emptyState, type Position } from "../src/lib/bot/types";
+import { fmtR } from "../src/lib/format";
 import { describe, equal, isNull, near, ok } from "./_harness";
 
 const bar = (t: number, o: number, h: number, l: number, c: number): Candle => ({ t, o, h, l, c, v: 100 });
@@ -28,9 +29,22 @@ function makeRec(over: Partial<Recommendation> = {}): Recommendation {
       invalidationKey: "invalidation.structure", invalidationPrice: 90,
     },
     timeframes: [], bullish: [], bearish: [], scenarios: [], warnings: [],
-    // Only the fields the bot actually reads are stubbed here.
-    regime: { label: "bull" } as unknown as Recommendation["regime"],
-    structure: {} as unknown as Recommendation["structure"],
+    // Stubbed to the shape the bot actually reads. The Layer 8 dimensions are
+    // present and neutral so a fixture never accidentally trips a gate it was
+    // not written to test.
+    regime: {
+      label: "bull",
+      volatility: { label: "normal", atrPct: 2, percentile: 50, annualized: 40 },
+    } as unknown as Recommendation["regime"],
+    structure: { trend: "up", lastBreak: null, levels: [] } as unknown as Recommendation["structure"],
+    derivatives: {
+      available: false, score: 0, evidence: [], squeezeRisk: "none",
+      warnings: [], sizeMultiplier: 1,
+    },
+    divergence: { divergences: [], score: 0, confirmed: false, warnings: [] },
+    volumeProfile: { profile: null, score: 0, detail: "" },
+    realisticLoss: null,
+    liquidity: null,
     dataSource: "binance", degraded: false,
     ...over,
   } as Recommendation;
@@ -174,6 +188,163 @@ export async function run() {
 
     const held = { ...empty, positions: [{ ...({} as Position), symbol: "TEST", sector: "defi", status: "open" }] as Position[] };
     equal(canOpen(held, makeRec()).ok, false, "the same symbol is never doubled up");
+  });
+
+  await describe("the professional entry gates", async () => {
+    const empty = emptyState(0);
+
+    const crowded = makeRec({
+      derivatives: {
+        available: true, score: -18, evidence: [], squeezeRisk: "high",
+        warnings: ["warn.crowdedLongs"], sizeMultiplier: 0.55,
+      },
+    });
+    equal(canOpen(empty, crowded).ok, false, "a crowded leveraged tape is refused");
+
+    const thin = makeRec({
+      liquidity: {
+        symbol: "TEST", spreadPct: 0.5, depth1PctNotional: 500, depth2PctNotional: 900,
+        exit1k: { notional: 1000, averagePrice: 98, bestPrice: 100, slippagePct: 2, exceedsBook: false, fillableNotional: 1000 },
+        exit10k: { notional: 10000, averagePrice: 92, bestPrice: 100, slippagePct: 8, exceedsBook: true, fillableNotional: 3000 },
+        score: 18, fetchedAt: 0,
+      },
+    });
+    equal(canOpen(empty, thin).ok, false, "a book that cannot fill a stop is refused");
+
+    const understated = makeRec({
+      realisticLoss: {
+        plannedPct: 1, slippagePct: 3, gapPct: 6, feesPct: 0.2,
+        realisticPct: 10.2, accountPct: 4, severityMultiple: 10.2,
+        understated: true, drivers: ["loss.driver.thinBook"],
+      },
+    });
+    equal(canOpen(empty, understated).ok, false, "a plan that understates its own risk is refused");
+
+    const diverging = makeRec({
+      divergence: {
+        divergences: [], score: -18, confirmed: true, warnings: ["warn.bearishDivergence"],
+      },
+    });
+    equal(canOpen(empty, diverging).ok, false, "a confirmed reversal divergence is refused");
+
+    // The gates must not become a blanket refusal.
+    ok(canOpen(empty, makeRec()).ok, "a clean setup still passes every gate");
+  });
+
+  await describe("exit — the reason disappearing beats waiting for the stop", async () => {
+    const position = await openTest();
+
+    // Structure has flipped and the engine now says avoid.
+    const broken = makeRec({
+      verdict: "avoid",
+      structure: { trend: "down", lastBreak: null, levels: [] } as unknown as Recommendation["structure"],
+    });
+    const r = await stepPosition(
+      position,
+      { ...quote(bar(1, 100, 102, 97, 98)), analysis: broken, marketLabel: "bear" },
+      DEFAULT_BOT_CONFIG,
+      clean,
+    );
+    equal(r.position.status, "closed", "the position closes");
+    equal(r.position.exitReason, "thesis", "because the thesis broke, not because the stop hit");
+    ok(r.position.realizedR > -1, "taking less than a full 1R — the entire point", fmtR(r.position.realizedR));
+    ok((r.position.thesisEvents?.length ?? 0) > 0, "and the reasons are recorded for the journal");
+
+    // An intact thesis must leave the position completely alone.
+    const intact = makeRec();
+    const held = await stepPosition(
+      position,
+      { ...quote(bar(1, 100, 103, 99, 102)), analysis: intact, marketLabel: "bull" },
+      DEFAULT_BOT_CONFIG,
+      clean,
+    );
+    equal(held.position.status, "open", "an intact thesis is left alone");
+
+    // Without an analysis the bot falls back to pure price management.
+    const priceOnly = await stepPosition(position, quote(bar(1, 100, 103, 99, 102)), DEFAULT_BOT_CONFIG, clean);
+    equal(priceOnly.position.status, "open", "no analysis means no thesis exit, not a crash");
+
+    // The gate can be switched off.
+    const off = await stepPosition(
+      position,
+      { ...quote(bar(1, 100, 102, 97, 98)), analysis: broken, marketLabel: "bear" },
+      { ...DEFAULT_BOT_CONFIG, thesisExitEnabled: false },
+      clean,
+    );
+    equal(off.position.status, "open", "with thesis exits disabled the position is held");
+  });
+
+  await describe("exit — a weakening thesis scales out once, not repeatedly", async () => {
+    let p = await openTest();
+    // Two soft signals: a new divergence and the market turning.
+    const weakening = makeRec({
+      divergence: { divergences: [], score: -20, confirmed: true, warnings: [] },
+    });
+    const q = { ...quote(bar(1, 100, 104, 99, 103)), analysis: weakening, marketLabel: "bear" as const };
+
+    const first = await stepPosition(p, q, DEFAULT_BOT_CONFIG, clean);
+    p = first.position;
+    ok(p.remaining < 1, "half the position is released", `${(p.remaining * 100).toFixed(0)}% left`);
+    equal(p.status, "open", "and the rest is held");
+
+    const second = await stepPosition(p, { ...q, bar: bar(2, 103, 105, 102, 104) }, DEFAULT_BOT_CONFIG, clean);
+    near(second.position.remaining, p.remaining, 1e-9, "the same weakening does not scale out again");
+  });
+
+  await describe("runner mode — capturing a large rise", async () => {
+    let p = await openTest();
+    const strongTrend = makeRec({
+      timeframes: [
+        { timeframe: "4h", score: 60, trend: "up", rsi: 62, adx: 34, macdHistogram: 1, atrPct: 2, factors: [] },
+        { timeframe: "1d", score: 55, trend: "up", rsi: 60, adx: 30, macdHistogram: 1, atrPct: 2, factors: [] },
+      ] as unknown as Recommendation["timeframes"],
+    });
+    const trendQuote = (b: Candle) => ({ ...quote(b, 3), analysis: strongTrend, marketLabel: "bull" as const });
+
+    // Walk through all three targets.
+    p = (await stepPosition(p, trendQuote(bar(1, 100, 111, 99, 110)), DEFAULT_BOT_CONFIG, clean)).position;
+    p = (await stepPosition(p, trendQuote(bar(2, 110, 121, 108, 120)), DEFAULT_BOT_CONFIG, clean)).position;
+    const atFinal = await stepPosition(p, trendQuote(bar(3, 120, 141, 118, 140)), DEFAULT_BOT_CONFIG, clean);
+    p = atFinal.position;
+
+    equal(p.status, "open", "the final target does NOT close the position in a strong trend");
+    equal(p.running, true, "it is released to run instead");
+    ok(p.remaining > 0, "with the runner still held", `${(p.remaining * 100).toFixed(0)}%`);
+
+    // And it keeps capturing upside far beyond the third target.
+    p = (await stepPosition(p, trendQuote(bar(4, 140, 200, 138, 195)), DEFAULT_BOT_CONFIG, clean)).position;
+    equal(p.status, "open", "still running through a large rise");
+    ok(p.stop > 100, "with the stop trailed well above entry", `${p.stop.toFixed(2)}`);
+
+    // The trend breaks and the trail takes it out, far above the third target.
+    const exit = await stepPosition(p, trendQuote(bar(5, 195, 196, p.stop - 5, p.stop - 4)), DEFAULT_BOT_CONFIG, clean);
+    equal(exit.position.status, "closed", "the trail eventually closes it");
+
+    // The measure that matters is not an arbitrary R threshold but the same
+    // bars traded with the cap left on. That is exactly what the feature buys.
+    const cappedConfig = { ...DEFAULT_BOT_CONFIG, runnerEnabled: false };
+    let c = await openTest();
+    c = (await stepPosition(c, trendQuote(bar(1, 100, 111, 99, 110)), cappedConfig, clean)).position;
+    c = (await stepPosition(c, trendQuote(bar(2, 110, 121, 108, 120)), cappedConfig, clean)).position;
+    c = (await stepPosition(c, trendQuote(bar(3, 120, 141, 118, 140)), cappedConfig, clean)).position;
+    equal(c.status, "closed", "with the cap on, the third target closes the trade");
+    ok(
+      exit.position.realizedR > c.realizedR,
+      "running the trend beats capping it on identical bars",
+      `${fmtR(exit.position.realizedR)} vs ${fmtR(c.realizedR)}`,
+    );
+
+    // In chop the runner is never released — the cap still applies.
+    let q2 = await openTest();
+    const choppy = makeRec({
+      structure: { trend: "range", lastBreak: null, levels: [] } as unknown as Recommendation["structure"],
+    });
+    const chopQuote = (b: Candle) => ({ ...quote(b, 3), analysis: choppy, marketLabel: "range" as const });
+    q2 = (await stepPosition(q2, chopQuote(bar(1, 100, 111, 99, 110)), DEFAULT_BOT_CONFIG, clean)).position;
+    q2 = (await stepPosition(q2, chopQuote(bar(2, 110, 121, 108, 120)), DEFAULT_BOT_CONFIG, clean)).position;
+    const capped = await stepPosition(q2, chopQuote(bar(3, 120, 141, 118, 140)), DEFAULT_BOT_CONFIG, clean);
+    equal(capped.position.status, "closed", "a range-bound winner still closes at the final target");
+    equal(capped.position.running, undefined, "and was never released to run");
   });
 
   await describe("considerEntries respects guards as it fills", async () => {

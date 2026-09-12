@@ -1,6 +1,7 @@
 import type { Sector } from "@/lib/market/universe";
 import type { Factor, Grade, Horizon } from "@/lib/engine/recommendation";
 import type { Target } from "@/lib/engine/risk";
+import type { ThesisSnapshot } from "./thesis";
 
 /**
  * The trading bot's domain.
@@ -18,7 +19,11 @@ export type ExitReason =
   | "trailing"
   | "time"
   | "regime"
-  | "manual";
+  | "manual"
+  /** The reason for entering disappeared before the stop was reached. */
+  | "thesis"
+  /** The edge eroded; part of the position was released early. */
+  | "weakened";
 
 export type FillReason = ExitReason | "entry";
 
@@ -45,6 +50,8 @@ export type Thesis = {
   marketRegime: string;
   /** Reward-to-risk the plan promised when it was taken. */
   plannedRewardRisk: number;
+  /** The state of the world at entry, for invalidation checks. */
+  snapshot?: ThesisSnapshot;
 };
 
 export type Position = {
@@ -70,6 +77,13 @@ export type Position = {
   fills: Fill[];
   /** Best price seen since entry, for the trailing stop. */
   highWater: number;
+  /**
+   * True once the final tranche has been released from its target cap and is
+   * being trailed instead — how a large rise is actually captured.
+   */
+  running?: boolean;
+  /** Thesis checks that fired, kept for the journal. */
+  thesisEvents?: { at: number; severity: string; reasons: string[] }[];
   lastPrice: number;
   lastCheckedAt: number;
   status: "open" | "closed";
@@ -116,6 +130,18 @@ export type BotConfig = {
   maxHoldHours: number;
   /** A stale position is only cut if it is below this R. */
   staleBelowR: number;
+
+  // ── Layer 9: the professional gates ──
+  /** Refuse entries where leveraged longs are this crowded or worse. */
+  maxSqueezeRisk: "none" | "elevated" | "high" | "extreme";
+  /** Refuse entries whose book cannot support an honest stop. */
+  minLiquidityScore: number;
+  /** Refuse entries where the realistic loss overshoots the intended risk. */
+  rejectUnderstatedRisk: boolean;
+  /** Exit early when the reason for entering disappears. */
+  thesisExitEnabled: boolean;
+  /** Release the final tranche from its cap in a confirmed trend. */
+  runnerEnabled: boolean;
 };
 
 export const DEFAULT_BOT_CONFIG: BotConfig = {
@@ -130,7 +156,18 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   trailAtrMultiple: 2,
   maxHoldHours: 24 * 10,
   staleBelowR: 0.35,
+  // Elevated crowding is tolerable; high is not. Entering a high-funding tape
+  // is the most reliable way retail gets caught in a cascade.
+  maxSqueezeRisk: "elevated",
+  // Below 40 the book cannot be trusted to fill a stop near its price, which
+  // makes the whole risk model a fiction.
+  minLiquidityScore: 40,
+  rejectUnderstatedRisk: true,
+  thesisExitEnabled: true,
+  runnerEnabled: true,
 };
+
+export type { ThesisSnapshot };
 
 export type LedgerStats = {
   trades: number;

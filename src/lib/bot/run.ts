@@ -1,7 +1,8 @@
 import "server-only";
 import { loadSeries } from "@/lib/market/feed";
 import { atr, last } from "@/lib/analysis/indicators";
-import { scanMarket } from "@/lib/engine/scan";
+import { scanMarket, analyzeSymbol } from "@/lib/engine/scan";
+import { lookupSymbol } from "@/lib/market/universe";
 import { notifyTick } from "@/lib/notify/telegram";
 import { PaperBroker } from "./broker";
 import { closePosition, considerEntries, manage, type Quote } from "./engine";
@@ -46,7 +47,32 @@ export async function runTick(config: BotConfig = DEFAULT_BOT_CONFIG): Promise<T
       if (!bar) continue;
       // Never manage a real position against demo prices.
       if (series.data.source === "synthetic") continue;
-      quotes.push({ symbol, bar, atr: last(atr(candles, 14)) ?? bar.c * 0.02 });
+
+      // A fresh read on the asset we are holding. Without it the bot can only
+      // ask "has price hit my stop?"; with it, it can ask whether the reason
+      // for being in the trade is still true — which is where most of the
+      // improvement in average loss comes from.
+      const entry = lookupSymbol(symbol);
+      let analysis = null;
+      let marketLabel;
+      if (entry) {
+        try {
+          const read = await analyzeSymbol(entry);
+          analysis = read.recommendation;
+          marketLabel = read.market.label;
+        } catch {
+          // Analysis is an enhancement, never a prerequisite. Without it the
+          // position falls back to pure price management rather than stalling.
+        }
+      }
+
+      quotes.push({
+        symbol,
+        bar,
+        atr: last(atr(candles, 14)) ?? bar.c * 0.02,
+        analysis,
+        marketLabel,
+      });
     } catch {
       // No bar, no action — the position is left exactly as it was.
     }

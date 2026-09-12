@@ -12,6 +12,7 @@ import type { ExitReason, LedgerStats, Position } from "./types";
 
 const EMPTY_REASONS: Record<ExitReason, number> = {
   target: 0, stop: 0, breakeven: 0, trailing: 0, time: 0, regime: 0, manual: 0,
+  thesis: 0, weakened: 0,
 };
 
 export function computeStats(closed: Position[]): LedgerStats {

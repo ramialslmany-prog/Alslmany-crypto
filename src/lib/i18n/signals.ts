@@ -169,6 +169,23 @@ export const signals: Area = {
     "refuse.plan.stopAboveEntry": "الوقف أعلى من الدخول",
     "refuse.regime.hostile": "حالة السوق معادية",
 
+    // ── سقوط الفكرة ──
+    "thesis.structureReversed": "انقلبت البنية السعرية إلى هابطة",
+    "thesis.chochBearish": "تغيّر طابع هبوطي — السيطرة انتقلت للبائعين",
+    "thesis.verdictFlipped": "المحرّك نفسه صار يقول تجنّب أو تخفيف",
+    "thesis.divergenceAppeared": "ظهر تباعد هبوطي لم يكن موجوداً عند الدخول",
+    "thesis.squeezeBuilt": "تراكم ازدحام الرافعة ضدّنا بعد الدخول",
+    "thesis.marketTurned": "السوق العام انقلب إلى هابط",
+    "thesis.convictionLost": "تراجعت قوة الإشارة بشكل جوهري",
+    "thesis.volatilitySpiked": "قفز التقلّب — الوقف لم يعد موثوقاً",
+
+    "refuse.deriv.squeezeRisk": "ازدحام مفرط في صفقات الشراء بالرافعة",
+    "refuse.liquidity.tooThin": "سيولة لا تكفي لتنفيذ الوقف",
+    "refuse.loss.understated": "الخطة تُقلّل من خطرها الحقيقي",
+    "refuse.divergence.bearish": "تباعد هبوطي مؤكّد",
+
+    "exit.thesis": "سقوط الفكرة",
+    "exit.weakened": "ضعف الفكرة — خروج جزئي",
     "exit.target": "بلوغ الهدف",
     "exit.stop": "وقف الخسارة",
     "exit.breakeven": "نقطة التعادل",
@@ -334,6 +351,23 @@ export const signals: Area = {
     "refuse.plan.stopAboveEntry": "Stop sits above entry",
     "refuse.regime.hostile": "Market regime is hostile",
 
+    // ── Thesis invalidation ──
+    "thesis.structureReversed": "Structure has turned over to a downtrend",
+    "thesis.chochBearish": "Bearish change of character — sellers took control",
+    "thesis.verdictFlipped": "The engine itself now says avoid or reduce",
+    "thesis.divergenceAppeared": "A bearish divergence appeared that was not there at entry",
+    "thesis.squeezeBuilt": "Leverage has crowded in against us since entry",
+    "thesis.marketTurned": "The wider market turned bearish",
+    "thesis.convictionLost": "Signal strength has drained materially",
+    "thesis.volatilitySpiked": "Volatility spiked — the stop is no longer reliable",
+
+    "refuse.deriv.squeezeRisk": "Leveraged longs are too crowded",
+    "refuse.liquidity.tooThin": "Not enough liquidity to fill the stop",
+    "refuse.loss.understated": "The plan understates its own risk",
+    "refuse.divergence.bearish": "Confirmed bearish divergence",
+
+    "exit.thesis": "Thesis broken",
+    "exit.weakened": "Thesis weakening — partial exit",
     "exit.target": "Target hit",
     "exit.stop": "Stopped out",
     "exit.breakeven": "Breakeven",
