@@ -159,7 +159,7 @@ npm test         # just the suite
 377 assertions run against compiled output, covering the indicators, market
 structure, regime classification, the recommendation engine and the bot.
 
-The suite is not decoration — it has caught nine real defects during this build,
+The suite is not decoration — it has caught twelve real defects during this build,
 each of which would have shipped silently. Among them: a percentile function that
 reported a calm market as a volatility shock on floating-point noise; a
 backtester that skipped every bar and reported "0 trades" as though it were a
