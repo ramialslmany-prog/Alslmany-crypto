@@ -286,3 +286,40 @@ class _Route:
 
     def __getattr__(self, name):
         return getattr(self._route, name)
+
+
+def test_an_empty_secret_is_reported_as_absent_not_as_configured():
+    """`.env.example` ships every secret with an empty value, so the documented
+    `cp .env.example .env` is the ordinary path into this state.
+
+    `cron_secret` is the one that mattered: `require_operator` tests the secret
+    for truthiness and so left the state-changing routes OPEN on `""`, while
+    `safe_summary` asked `is not None` and announced them as protected. The
+    readiness screen contradicted the guard, in the direction that reads safe.
+    """
+    settings = Settings(ai_api_key="", cron_secret="   ", telegram_bot_token="")
+
+    assert settings.cron_secret is None
+    summary = settings.safe_summary()
+    assert summary["bot_endpoint_protected"] is False
+    assert summary["ai_configured"] is False
+    assert summary["alerts_configured"] is False
+
+
+async def test_the_guard_and_the_readiness_flag_agree_on_every_secret_value():
+    """The property behind the test above: whatever the configured value, what
+    /api/ready claims and what the guard does must not diverge."""
+    from app.api.deps import require_operator
+
+    for value in (None, "", "   ", "a-real-secret"):
+        settings = Settings(cron_secret=value)
+        claimed = settings.safe_summary()["bot_endpoint_protected"]
+
+        enforced = True
+        try:
+            await require_operator(settings=settings, x_cron_secret="wrong")
+            enforced = False
+        except Exception:
+            pass
+
+        assert claimed == enforced, f"cron_secret={value!r}: claimed {claimed}, enforced {enforced}"

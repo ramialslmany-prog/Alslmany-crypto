@@ -193,7 +193,7 @@ app/
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   417 tests, no network required
+tests/                   427 tests, no network required
 ```
 
 ### Three decisions worth knowing

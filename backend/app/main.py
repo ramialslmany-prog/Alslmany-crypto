@@ -8,6 +8,7 @@ cold cache and a new connection pool.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -35,7 +36,32 @@ from app.services.market_service import MarketService
 
 logger = get_logger(__name__)
 
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+def _find_frontend() -> Path | None:
+    """Locate the static site, whatever the install looks like.
+
+    Resolving it only as parents[2] assumes `app` is being imported from the
+    source tree. A plain `pip install ./backend` puts the package in
+    site-packages instead, where that expression points at a directory that
+    does not exist — so the mount below was skipped and the whole site served
+    404 while every /api route kept working. Silent, and exactly the shape of
+    failure a deployment hits first.
+
+    FRONTEND_DIR wins when set, so an image is free to put the site anywhere.
+    """
+    override = os.environ.get("FRONTEND_DIR")
+    candidates = (
+        [Path(override)]
+        if override
+        else [
+            Path(__file__).resolve().parents[2] / "frontend",
+            Path.cwd() / "frontend",
+        ]
+    )
+    return next((c for c in candidates if (c / "index.html").is_file()), None)
+
+
+FRONTEND_DIR = _find_frontend()
 
 
 @asynccontextmanager
@@ -126,8 +152,15 @@ def create_app() -> FastAPI:
     # middleware counts HTTP requests, which a long-lived socket is not.
     app.include_router(live.router)
 
-    if FRONTEND_DIR.is_dir():
+    if FRONTEND_DIR is not None:
         app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    else:
+        # Loud: a deployment that serves no site should say so at boot rather
+        # than answer 404 at the root and leave the reason to be guessed.
+        logger.warning(
+            "frontend not found; serving the API only",
+            extra={"hint": "set FRONTEND_DIR to the directory holding index.html"},
+        )
 
     return app
 

@@ -108,6 +108,28 @@ class Settings(BaseSettings):
     # ---- http -----------------------------------------------------------
     cors_origins: str = "*"
 
+    @field_validator(
+        "ai_api_key",
+        "market_data_api_key",
+        "telegram_bot_token",
+        "telegram_chat_id",
+        "cron_secret",
+        mode="before",
+    )
+    @classmethod
+    def _blank_secret_is_absent(cls, v: object) -> object:
+        """An empty value is an unset value, not a configured empty one.
+
+        `.env.example` ships these keys with nothing after the `=`, so the
+        documented `cp .env.example .env` produced `""` rather than None — and
+        every readiness flag written as `is not None` then reported a secret
+        that does not exist. For `cron_secret` the two halves actively
+        contradicted each other: `/api/ready` announced the state-changing
+        routes as protected while `require_operator`, which tests the secret
+        for truthiness, was leaving them open.
+        """
+        return None if isinstance(v, str) and not v.strip() else v
+
     @field_validator("symbols", "market_data_providers", "cors_origins")
     @classmethod
     def _reject_blank(cls, v: str) -> str:
