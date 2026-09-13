@@ -25,6 +25,8 @@ from app.analysis.trend import classify_trend
 from app.analysis.volatility import bollinger, classify_volatility
 from app.analysis.volume import analyse_volume
 from app.risk.sizing import TradePlan, build_plan
+from app.signals.confluence import Confluence, assess
+from app.signals.confluence import apply as apply_confluence
 from app.signals.factors import (
     score_liquidity,
     score_momentum,
@@ -58,6 +60,10 @@ class Analysis:
     stochastic: Any
     bollinger: Any
     bars: int
+    # Kept so the signal can read the timeframe above without fetching it. The
+    # closed series is what every reading above was computed from, so a higher
+    # timeframe derived from it cannot see anything they could not.
+    series: Series | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +129,7 @@ def analyse(series: Series, symbol: str, timeframe: str) -> Analysis | None:
         stochastic=stochastic(closed.high, closed.low, closed.close),
         bollinger=bollinger(closed.close),
         bars=len(closed),
+        series=closed,
     )
 
 
@@ -192,10 +199,23 @@ def build_signal(
     ]
     score = combine(factors)
 
+    # The timeframe above, read AFTER the seven dimensions rather than among
+    # them: the specification fixes those weights at 100, and quietly adding an
+    # eighth would make the published breakdown a fiction. It can only subtract.
+    confluence = assess(
+        analysis.series if analysis.series is not None else _no_series(),
+        analysis.timeframe,
+        direction,
+    )
+    confidence = apply_confluence(score.confidence, confluence)
+
     warnings = _warnings(analysis, plan)
+    if confluence.agreement in ("against", "strongly-against"):
+        warnings = (*warnings, f"against-{confluence.higher_timeframe}-trend")
+
     qualifies = (
         score.direction is not Direction.NO_TRADE
-        and Decimal(str(score.confidence)) >= min_confidence
+        and Decimal(str(confidence)) >= min_confidence
         and plan is not None
         and plan.reward_risk >= min_reward_risk
         and analysis.volatility.is_tradeable
@@ -205,14 +225,14 @@ def build_signal(
         symbol=analysis.symbol,
         timeframe=analysis.timeframe,
         signal=score.direction.value if qualifies else Direction.NO_TRADE.value,
-        confidence=score.confidence,
+        confidence=confidence,
         score=abs(score.bias),
         entry=plan.entry if plan and qualifies else None,
         stop_loss=plan.stop if plan and qualifies else None,
         take_profit=plan.take_profit if plan and qualifies else None,
         risk_reward=plan.reward_risk if plan else None,
         risk_level=_risk_level(analysis, score),
-        reason=_reason(score, analysis, qualifies),
+        reason=_reason(score, analysis, qualifies, confluence),
         invalidation=plan.invalidation if plan else "No plan: no invalidation level.",
         decision="TRADE" if qualifies else "NO_TRADE",
         evidence={
@@ -222,6 +242,10 @@ def build_signal(
             "detected": list(analysis.structure.detected),
             "bars_analysed": analysis.bars,
             "available_weight": score.available_weight,
+            # Reported whether or not it changed anything, so "no penalty" and
+            # "not checked" can be told apart.
+            "confluence": confluence.to_dict(),
+            "confidence_before_confluence": round(score.confidence, 2),
         },
         plan=plan if qualifies else None,
         warnings=warnings,
@@ -262,16 +286,29 @@ def _risk_level(analysis: Analysis, score: Score) -> str:
     return "MEDIUM"
 
 
-def _reason(score: Score, analysis: Analysis, qualifies: bool) -> str:
+def _reason(score: Score, analysis: Analysis, qualifies: bool, confluence: Confluence) -> str:
     """A sentence built from what was measured.
 
     Deliberately assembled from the factor reasons rather than written freely,
     so the prose cannot drift from the numbers it claims to describe.
+
+    `confidence` here is the FINAL number — after the higher-timeframe
+    multiplier — because that is the number the gate compared against the floor.
+    Quoting the pre-multiplier score would print "confidence 82 is below the 75
+    floor", which is the exact species of self-contradiction a card on this
+    dashboard was once caught committing.
     """
+    confidence = apply_confluence(score.confidence, confluence)
+
     if not qualifies:
         parts = []
-        if score.confidence < 75:
-            parts.append(f"confidence {score.confidence:.0f} is below the 75 floor")
+        if confidence < 75:
+            reason = f"confidence {confidence:.0f} is below the 75 floor"
+            if confluence.multiplier < 1.0:
+                reason += (
+                    f" (cut from {score.confidence:.0f} by the {confluence.higher_timeframe} trend)"
+                )
+            parts.append(reason)
         if not analysis.volatility.is_tradeable:
             parts.append("volatility is extreme")
         supporting = score.bullish_reasons if score.bias > 0 else score.bearish_reasons
@@ -284,6 +321,10 @@ def _reason(score: Score, analysis: Analysis, qualifies: bool) -> str:
     against = score.bearish_reasons if score.bias > 0 else score.bullish_reasons
 
     sentence = f"{side}: {', '.join(supporting[:4])}."
+    if confluence.agreement == "aligned":
+        sentence += f" The {confluence.higher_timeframe} trend runs with it."
+    elif confluence.multiplier < 1.0:
+        sentence += f" Taken against the {confluence.higher_timeframe} trend."
     if against:
         # The counter-evidence is published beside the supporting evidence, even
         # when the verdict is positive. Showing only the agreeing side is
@@ -307,3 +348,12 @@ def _warnings(analysis: Analysis, plan: TradePlan | None) -> tuple[str, ...]:
     if analysis.bars < 200:
         out.append("limited-history")
     return tuple(out)
+
+
+def _no_series() -> Series:
+    """An empty series, for an `Analysis` built before this field existed.
+
+    `assess` reports "unavailable" for it and applies no penalty, which is the
+    correct reading: nothing was checked, so nothing is docked.
+    """
+    return Series(open=[], high=[], low=[], close=[], volume=[], times=[], closed=[])

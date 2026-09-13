@@ -354,6 +354,30 @@ function renderFactors(factors) {
 /* Confidence is shown to one decimal. Rounded to whole numbers, a 74.55 reads
    as "75% conf" on a card whose own reason says "confidence 75 is below the 75
    floor" — the screen contradicting itself in two adjacent lines. */
+/** The timeframe above, shown beside the score rather than folded into it.
+    A number that was cut has to say so, or the breakdown stops adding up. */
+function renderConfluence(ev) {
+  const c = ev.confluence;
+  if (!c) return "";
+
+  const before = ev.confidence_before_confluence;
+  const cut = c.multiplier < 1;
+
+  const label = {
+    aligned: "with the trend above",
+    against: "against the trend above",
+    "strongly-against": "against a strong trend above",
+    undecided: "the trend above is undecided",
+    unavailable: "not checked",
+  }[c.agreement] || c.agreement;
+
+  return `<p class="confluence ${cut ? "cut" : ""}">
+    <span class="tag">${esc(c.higher_timeframe || "—")}</span>
+    ${esc(label)}${c.higher_trend ? ` · ${esc(c.higher_trend.replace(/_/g, " "))}` : ""}
+    ${cut ? `<span class="muted"> — confidence cut from ${esc(before)} to ${esc(Math.round(before * c.multiplier * 100) / 100)}</span>` : ""}
+  </p>`;
+}
+
 function renderSignalCard(s) {
   const isTrade = s.decision === "TRADE";
   const sideTag = s.signal === "LONG" ? "long" : s.signal === "SHORT" ? "short" : "";
@@ -386,6 +410,7 @@ function renderSignalCard(s) {
       <p class="card-reason">${esc(s.reason)}</p>
       ${isTrade ? `<p class="muted" style="margin:6px 0 0">Invalidation: ${esc(s.invalidation)}</p>` : ""}
       ${warnings}
+      ${renderConfluence(ev)}
       <details class="evidence">
         <summary>Evidence · ${(ev.detected || []).length} patterns detected</summary>
         ${renderFactors(ev.factors)}

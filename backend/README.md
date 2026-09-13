@@ -171,9 +171,11 @@ app/
   services/              fetch-and-store orchestration
   analysis/              series, trend, momentum, volatility, volume, levels,
                          structure (BOS/CHoCH, FVG, order blocks, sweeps),
-                         correlation (returns-based, with portfolio heat)
+                         correlation (returns-based, with portfolio heat),
+                         resample (clock-aligned higher-timeframe candles)
   signals/               factors.py (the seven dimensions) · scoring.py
-                         (conviction x consensus x coverage) · analyzer.py
+                         (conviction x consensus x coverage) · analyzer.py ·
+                         confluence.py (the timeframe above; subtracts only)
   risk/                  sizing.py (quantity from stop distance) · manager.py
                          (collects EVERY breached rule, not the first)
   paper/                 broker (adverse slippage both ways) · engine ·
@@ -184,7 +186,7 @@ app/
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   332 tests, no network required
+tests/                   351 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -279,6 +281,15 @@ therefore assumed correlated at 0.9, never independent.
 **The news dimension is silent.** No feed is connected, so scoring runs on six
 of seven dimensions and `coverage` tops out at 0.95. The dimension is reserved
 and never fabricated.
+
+**The higher-timeframe check can only subtract.** Conflict cuts confidence;
+alignment does not raise it, and it can never turn a NO_TRADE into a TRADE. It
+is applied as a multiplier rather than an eighth weighted factor because the
+specification fixes the seven weights at 100, and quietly adding to them would
+make the published breakdown a fiction. On the synthetic fixtures in this repo
+it changes nothing measurable — they are clean single-direction trends where the
+two timeframes always agree — so it is a guard for a case those fixtures do not
+contain, not a measured improvement.
 
 **The confidence score is an assumption until the ledger tests it.** It is
 built to separate strength, agreement and coverage — but whether it actually
