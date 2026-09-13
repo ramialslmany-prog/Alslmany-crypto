@@ -65,7 +65,14 @@ class UtcDateTime(TypeDecorator):
     impl = DateTime
     cache_ok = True
 
-    def __init__(self) -> None:
+    def __init__(self, timezone: bool = True) -> None:
+        # The keyword is accepted, and ignored, on purpose. Alembic's
+        # autogenerate renders this column as `UtcDateTime(timezone=True)`
+        # because that is what the underlying impl reports, and a type that
+        # cannot be reconstructed from its own rendered form breaks every
+        # generated migration. Timezone awareness is not optional here, so the
+        # argument cannot turn it off.
+        del timezone
         super().__init__(timezone=True)
 
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:

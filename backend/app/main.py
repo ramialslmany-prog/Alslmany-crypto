@@ -20,6 +20,7 @@ from app.api.routes import health, market
 from app.config import Settings, get_settings
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import configure_logging, get_logger
+from app.core.rate_limit import RateLimitMiddleware
 from app.database.repositories import CoinRepository
 from app.database.session import (
     create_all,
@@ -89,6 +90,9 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         openapi_url="/openapi.json",
     )
+
+    # Outermost: a throttled request should cost as little as possible.
+    app.add_middleware(RateLimitMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

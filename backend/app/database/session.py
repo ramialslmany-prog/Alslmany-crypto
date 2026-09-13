@@ -84,6 +84,12 @@ async def create_all(settings: Settings) -> None:
     Alembic instead, so that a column change is reviewable as a diff rather
     than being applied implicitly at startup.
     """
+    # `Base.metadata` is populated as a side effect of importing the model
+    # modules. Without this line it is EMPTY unless something else happened to
+    # import them first, and create_all() silently creates nothing at all —
+    # succeeding loudly while doing nothing, which is the worst way to fail.
+    import app.database.models  # noqa: F401
+
     engine = get_engine() if _engine is not None else init_engine(settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

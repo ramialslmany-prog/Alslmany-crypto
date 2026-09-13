@@ -26,9 +26,29 @@ from app.market_data.timeframes import BINANCE_INTERVALS, Timeframe
 
 BASE_URL = "https://api.binance.com"
 
-# Binance caps klines at 1000 and depth at 5000 per request.
+# Binance caps klines at 1000 per request.
 MAX_KLINES = 1000
-MAX_DEPTH = 5000
+
+# /depth does NOT accept an arbitrary limit. It accepts only these values and
+# rejects anything else with HTTP 400. Passing the caller's number straight
+# through means a perfectly reasonable request like depth=25 fails against the
+# primary venue every time, silently pushing all order-book traffic onto the
+# fallback — or to a 503 when the fallback is also down.
+DEPTH_TIERS = (5, 10, 20, 50, 100, 500, 1000, 5000)
+MAX_DEPTH = DEPTH_TIERS[-1]
+
+
+def depth_tier(requested: int) -> int:
+    """The smallest allowed depth that still satisfies the request.
+
+    Rounding UP rather than to the nearest tier matters: returning fewer levels
+    than asked for would quietly truncate the book, and a liquidity calculation
+    reading that would understate available depth.
+    """
+    for tier in DEPTH_TIERS:
+        if requested <= tier:
+            return tier
+    return MAX_DEPTH
 
 
 class BinanceProvider:
@@ -138,7 +158,7 @@ class BinanceProvider:
     async def get_order_book(self, symbol: str, depth: int = 20) -> OrderBook:
         payload = await self._http.get_json(
             "/api/v3/depth",
-            {"symbol": _normalise(symbol), "limit": min(max(1, depth), MAX_DEPTH)},
+            {"symbol": _normalise(symbol), "limit": depth_tier(max(1, depth))},
         )
         if not isinstance(payload, dict):
             raise MalformedUpstreamResponse(

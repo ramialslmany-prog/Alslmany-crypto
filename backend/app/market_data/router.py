@@ -27,6 +27,7 @@ from app.market_data.binance import BinanceProvider
 from app.market_data.cache import TtlCache
 from app.market_data.okx import OkxProvider
 from app.market_data.schemas import Candle, OrderBook, Provenance, Sourced, Ticker
+from app.market_data.single_flight import SingleFlight
 from app.market_data.timeframes import Timeframe
 
 logger = get_logger(__name__)
@@ -78,6 +79,8 @@ class MarketDataRouter:
         self._tickers: TtlCache[tuple[Ticker, str]] = TtlCache(settings.ticker_cache_seconds)
         self._candles: TtlCache[tuple[list[Candle], str]] = TtlCache(settings.candle_cache_seconds)
         self._books: TtlCache[tuple[OrderBook, str]] = TtlCache(settings.orderbook_cache_seconds)
+        # Concurrent misses for the same key share one upstream call.
+        self._flight: SingleFlight = SingleFlight()
 
     @property
     def provider_names(self) -> list[str]:
@@ -164,6 +167,12 @@ class MarketDataRouter:
                 ),
             )
 
+        # Only one caller per key walks the providers; the rest await it.
+        return await self._flight.do(
+            f"{what}|{key}", lambda: self._fetch_uncached(cache, key, allow_stale, call, what)
+        )
+
+    async def _fetch_uncached(self, cache, key, allow_stale, call, what):
         tried: list[str] = []
         errors: dict[str, str] = {}
 
