@@ -2,28 +2,28 @@
 #
 # The guarantee, enforced where it can actually run.
 #
-# GitHub Actions is the right home for this — but Actions is an account-level
+# GitHub Actions is the right home for this, but Actions is an account-level
 # service, and when it is unavailable the workflow file guarantees nothing at
 # all. A check that silently stops running is worse than no check, because the
-# repository still *looks* verified. This hook keeps the same four steps
-# attached to the same moment (the push), independent of any hosted service.
+# repository still *looks* verified. This hook keeps the same steps attached to
+# the same moment — the push — independent of any hosted service.
 #
-# Installed by `npm install` via the prepare script (core.hooksPath=.githooks).
-# To push past it deliberately: git push --no-verify
+# Install with:  ./setup.sh   (or: git config core.hooksPath .githooks)
+# Push past it:  git push --no-verify   (or SKIP_VERIFY=1)
 
 if [ "$SKIP_VERIFY" = "1" ]; then
   echo "pre-push: skipped (SKIP_VERIFY=1)"
   exit 0
 fi
 
-echo "pre-push: typecheck · lint · test · build"
+echo "pre-push: lint · format · tests"
 
-if ! npm run verify; then
+if ! sh backend/verify.sh; then
   echo ""
   echo "pre-push: verification failed — push aborted."
   echo "Fix the failure above, or push deliberately with --no-verify."
   exit 1
 fi
 
-echo "pre-push: all four green."
+echo "pre-push: green."
 exit 0

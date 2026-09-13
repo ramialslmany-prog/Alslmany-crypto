@@ -1,9 +1,9 @@
 name: CI
 
-# Runs the same four steps as `npm run verify` and the pre-push hook.
-# One definition of "verified" lives in package.json; this workflow calls it
-# rather than restating it, so the hosted check and the local check cannot
-# drift apart and quietly disagree about what passing means.
+# Runs the same checks as `backend/verify.sh` and the pre-push hook.
+# One definition of "verified" lives in that script; this workflow calls it
+# rather than restating the steps, so the hosted check and the local gate
+# cannot drift apart and quietly disagree about what passing means.
 
 on:
   push:
@@ -17,30 +17,19 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck · Lint · Test · Build
+    name: Lint · Format · Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      # From the lockfile, so CI cannot pass on a dependency tree the
-      # repository does not pin.
-      - run: npm ci
-
       - run: pip install -e "backend[dev]"
 
-      # Runs the Next.js app and the FastAPI backend through the same script
-      # the pre-push hook uses.
-      - run: npm run verify
-        env:
-          NEXT_TELEMETRY_DISABLED: "1"
+      # verify.sh falls back to the ambient interpreter when there is no
+      # backend/.venv, which is exactly the situation on a runner.
+      - run: ./backend/verify.sh
