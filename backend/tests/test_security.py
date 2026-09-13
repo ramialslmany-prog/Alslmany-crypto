@@ -183,7 +183,22 @@ def test_every_dynamic_value_in_the_page_passes_through_the_escaper():
 
     # Free text from the server — reasons, warnings, symbols, exit reasons — is
     # the input that could ever carry markup, and each is escaped at its site.
-    for field in ("s.reason", "s.symbol", "s.invalidation", "o.finding", "g.key"):
+    for field in (
+        "s.reason",
+        "s.symbol",
+        "s.invalidation",
+        "o.finding",
+        "g.key",
+        # The plan, from stage 17. Prices and sizes are server-formatted
+        # STRINGS rather than numbers the page recomputes, so they reach the
+        # DOM the same way a reason does and need the same treatment.
+        "size.quantity",
+        "plan.entry_display",
+        "plan.stop_display",
+        "t.price_display",
+        "p.size.cap_note",
+        "p.cost_note",
+    ):
         assert f"esc({field})" in app_js, f"{field} reaches the DOM unescaped"
 
 

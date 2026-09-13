@@ -355,3 +355,75 @@ tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
    that carry the accent — with the word beside them, never colour alone. */
 .refusals .tag.account { color: var(--accent); border-color: var(--warn-rule); }
 .refusals p { margin: 0; }
+
+/* ---------- the trade as money (stage 17) ---------- */
+
+/* The order ticket. Given its own ground so it reads as an instruction rather
+   than as one more row in the list of numbers below it. */
+.ticket {
+  margin: 0 0 10px; padding: 9px 11px; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--rule);
+  font-size: 12px; line-height: 1.7;
+}
+.ticket strong { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* `min-width: 0` resets the global 760px floor that the wide scrolling tables
+   need and a table inside a 395px card does not. Without it the ladder renders
+   at 760px and the card clips it — losing the "pays" column, which is the one
+   the table exists for. `.factors` above carries the same reset for the same
+   reason. */
+.ladder {
+  width: 100%; min-width: 0; table-layout: fixed;
+  border-collapse: collapse; margin-top: 10px; font-size: 11px;
+}
+.ladder caption {
+  caption-side: top; text-align: start; padding-bottom: 5px;
+  font-size: 11px; color: var(--ink-faint);
+}
+.ladder td:first-child, .ladder th:first-child { width: 22%; }
+.ladder th {
+  text-align: left; font-weight: 500; color: var(--ink-faint);
+  padding: 4px 6px; border-bottom: 1px solid var(--rule);
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+}
+.ladder td {
+  padding: 4px 6px; border-bottom: 1px solid var(--rule-soft);
+  font-variant-numeric: tabular-nums;
+}
+.ladder td:first-child { color: var(--ink-faint); }
+.ladder tr:last-child td { border-bottom: 0; }
+/* `.muted` is a 12px rule and would enlarge these cells; the colour is what is
+   wanted here, not the size. */
+.ladder td.muted { font-size: 11px; }
+
+.cap-note {
+  margin: 9px 0 0; padding: 7px 9px; border-radius: 6px;
+  background: var(--warn-bg); border: 1px solid var(--warn-rule);
+  color: #ffe6b0; font-size: 11px; line-height: 1.5;
+}
+.cost-note { margin: 8px 0 0; line-height: 1.5; }
+
+/* ---------- open position: where price sits ---------- */
+
+.progress { margin: 0 0 12px; }
+.progress .track {
+  position: relative; display: block; height: 8px; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--rule); overflow: hidden;
+}
+.progress .fill { position: absolute; top: 0; bottom: 0; }
+.progress .fill.up { background: var(--up); }
+.progress .fill.down { background: var(--down); }
+/* Overflow is hidden on the track, so a marker at 0% or 100% would be clipped
+   to half its width. Translating by its own half-width keeps it centred on the
+   point it marks at both ends. */
+.progress .mark {
+  position: absolute; top: -1px; bottom: -1px; width: 2px;
+  transform: translateX(-1px);
+}
+.progress .mark.entry { background: var(--ink-faint); }
+.progress .mark.now { background: var(--ink); width: 3px; transform: translateX(-1.5px); }
+.progress .ends {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 5px; font-size: 10px; letter-spacing: .03em;
+  font-variant-numeric: tabular-nums;
+}

@@ -193,7 +193,7 @@ app/
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   401 tests, no network required
+tests/                   417 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -310,6 +310,17 @@ make the published breakdown a fiction. On the synthetic fixtures in this repo
 it changes nothing measurable — they are clean single-direction trends where the
 two timeframes always agree — so it is a guard for a case those fixtures do not
 contain, not a measured improvement.
+
+**Two reward-to-risk numbers, and the gate checks the larger one.** The exit is
+staged: half the position leaves at 1R, three tenths at 2R, the last fifth at
+3R. So the plan pays a blended **1.7R**, while `reward_risk` — the distance to
+the final target over the stop distance — reads **3.0R**. The entry gate
+compares the 1.5 floor against the 3.0 figure. Both numbers are true about
+different things, and which one the floor ought to test is a strategy decision
+rather than a bug to quietly patch, so the gate is unchanged and the card now
+prints both: "1.70 as staged · 3.00 to last target". The blended figure falls
+below 1.7 whenever a target was clamped to a real level, which is exactly when
+the difference matters most.
 
 **The confidence score is an assumption until the ledger tests it.** It is
 built to separate strength, agreement and coverage — but whether it actually

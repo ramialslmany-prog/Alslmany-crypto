@@ -102,6 +102,12 @@ class Signal:
             "decision": self.decision,
             "evidence": self.evidence,
             "warnings": list(self.warnings),
+            # The plan was computed and then dropped on the floor. Entry, stop
+            # and one target are four prices; what a trader has to know before
+            # acting is the SIZE, what being wrong costs in money, and that the
+            # exit is staged in three parts rather than taken all at once. All
+            # of it already existed here — it simply never reached the screen.
+            "plan": self.plan.to_dict() if self.plan is not None else None,
         }
 
 

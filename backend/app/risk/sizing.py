@@ -44,6 +44,17 @@ class PositionSize:
     def is_valid(self) -> bool:
         return self.quantity > 0
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "quantity": format_quantity(self.quantity),
+            "notional": str(self.notional),
+            "risk_amount": str(self.risk_amount),
+            "risk_pct_of_balance": str(self.risk_pct_of_balance),
+            "stop_distance_pct": str(self.stop_distance_pct),
+            "capped": self.capped,
+            "cap_note": self.cap_note,
+        }
+
     @property
     def cap_note(self) -> str | None:
         """Why the position is smaller than requested, in one line."""
@@ -138,11 +149,30 @@ def format_price(value: Decimal) -> str:
     return f"{value.quantize(Decimal(1).scaleb(-places)):f}"
 
 
+def format_quantity(value: Decimal) -> str:
+    """A size a human can act on.
+
+    Sizing quantises to eight places because a satoshi-scale asset needs them,
+    which leaves a four-unit position reading "4.00000000". Trailing zeros are
+    dropped so the number carries only the precision it actually has.
+    """
+    text = f"{value.quantize(Decimal('0.00000001')):f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 @dataclass(frozen=True, slots=True)
 class Target:
     price: Decimal
     r_multiple: Decimal
     allocation_pct: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "price": str(self.price),
+            "price_display": format_price(self.price),
+            "r_multiple": str(self.r_multiple),
+            "allocation_pct": self.allocation_pct,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +203,96 @@ class TradePlan:
         fees = self.size.notional * TAKER_FEE_PCT / 100 * 2
         slippage = self.size.notional * SLIPPAGE_PCT / 100 * 2
         return (planned + fees + slippage).quantize(Decimal("0.01"))
+
+    def ladder(self) -> list[dict[str, object]]:
+        """The staged exit, priced.
+
+        A target expressed only as a price and an R-multiple is a number the
+        reader has to convert before it means anything. What a trader actually
+        wants to know at each rung is: how much of the position leaves here,
+        what does that slice pay, and what is banked by the time it fills.
+
+        The slice profit is the allocated FRACTION of the position, not the
+        whole of it — the commonest way a staged plan is read wrong is to price
+        every target as though the full size exited there, which triples the
+        apparent reward of a 50/30/20 ladder.
+        """
+        quantity = self.size.quantity
+        rows: list[dict[str, object]] = []
+        banked = Decimal(0)
+
+        for target in self.targets:
+            slice_qty = quantity * Decimal(target.allocation_pct) / 100
+            profit = (slice_qty * abs(target.price - self.entry)).quantize(Decimal("0.01"))
+            banked += profit
+            row = target.to_dict()
+            row["quantity"] = format_quantity(slice_qty)
+            row["profit"] = str(profit)
+            row["banked"] = str(banked)
+            row["distance_pct"] = str(
+                (abs(target.price - self.entry) / self.entry * 100).quantize(Decimal("0.01"))
+                if self.entry > 0
+                else Decimal(0)
+            )
+            rows.append(row)
+
+        return rows
+
+    @property
+    def blended_reward_risk(self) -> Decimal:
+        """What the ladder actually pays, weighted by what exits where.
+
+        `reward_risk` is the distance to the FINAL target over the stop
+        distance — the reward of holding the whole position to the end. This
+        plan does not do that: it sells half at 1R and another three tenths at
+        2R, so only a fifth of the position ever sees the final target.
+
+        For the standard 50/30/20 ladder at 1R/2R/3R that is 1.7R against a
+        headline of 3.0R. Both numbers are true about different things, and
+        showing only the larger one describes a trade the plan will not take.
+        It moves below 1.7 whenever a target was clamped to a real level, which
+        is exactly when the reader most needs to see it.
+        """
+        distance = abs(self.entry - self.stop)
+        if distance <= 0:
+            return Decimal(0)
+        total = sum(
+            (abs(t.price - self.entry) / distance) * Decimal(t.allocation_pct) / 100
+            for t in self.targets
+        )
+        return Decimal(total).quantize(Decimal("0.01"))
+
+    def to_dict(self) -> dict[str, object]:
+        """The plan as money, for a screen that has to show it.
+
+        `realistic_loss` rather than the planned loss is the number beside the
+        reward here, and the two are deliberately not symmetrical: the loss
+        carries fees and adverse fills on both legs, the ladder's profits do
+        not. Costs on the way out are real but they are charged per slice at
+        prices not yet known, and inventing them would be worse than naming
+        the asymmetry.
+        """
+        ladder = self.ladder()
+        return {
+            "direction": self.direction,
+            "entry": str(self.entry),
+            "entry_display": format_price(self.entry),
+            "stop": str(self.stop),
+            "stop_display": format_price(self.stop),
+            "reward_risk": str(self.reward_risk),
+            "blended_reward_risk": str(self.blended_reward_risk),
+            "invalidation": self.invalidation,
+            "size": self.size.to_dict(),
+            "targets": ladder,
+            "max_profit": ladder[-1]["banked"] if ladder else "0",
+            "planned_loss": str(self.size.risk_amount),
+            "realistic_loss": str(self.realistic_loss),
+            "cost_note": (
+                "The loss includes taker fees and adverse fills on both legs. "
+                "The target profits do not: exit costs land at prices that are "
+                "not known yet."
+            ),
+        }
 
 
 def build_plan(

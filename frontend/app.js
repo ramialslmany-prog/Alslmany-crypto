@@ -378,19 +378,81 @@ function renderConfluence(ev) {
   </p>`;
 }
 
+/* The order ticket: the trade as an instruction, not as four prices.
+   "Entry 108500 · Stop 107800 · TP 110600 · R:R 3.0" is everything except what
+   a trader actually has to decide — how much to buy and what it costs to be
+   wrong. Both were computed all along and neither left the server. */
+function renderTicket(plan, symbol) {
+  if (!plan) return "";
+  const size = plan.size || {};
+  const verb = plan.direction === "LONG" ? "Buy" : "Sell short";
+  const base = esc(symbol.replace(/USDT$/, ""));
+
+  return `<p class="ticket">
+    <strong>${verb} ${esc(size.quantity)} ${base}</strong> at ${esc(plan.entry_display)}
+    <span class="muted">(${fmtMoney(size.notional)})</span><br />
+    Risk <strong class="down">${fmtMoney(plan.realistic_loss)}</strong> if ${esc(plan.stop_display)} is hit
+    · make <strong class="up">${fmtMoney(plan.max_profit)}</strong> if the plan runs in full.
+  </p>`;
+}
+
+/* The exit is staged in three parts. Shown as one "take profit" price, the
+   screen describes a trade the bot does not take: only a fifth of the position
+   ever reaches the final target, so the headline 3.0R pays 1.7R. */
+function renderLadder(plan) {
+  if (!plan || !(plan.targets || []).length) return "";
+
+  /* Four columns, not six. The first version carried R and a running total as
+     columns of their own and overflowed a card this narrow — clipping "pays",
+     which is the one column the table exists for. R rides along with the exit
+     label, and the running total is the ticket's closing clause already. */
+  const rows = plan.targets.map((t, i) => `<tr>
+    <td>T${i + 1} <span class="muted">${esc(t.r_multiple)}R</span></td>
+    <td class="num">${esc(t.price_display)}</td>
+    <td class="num">${esc(t.allocation_pct)}%</td>
+    <td class="num up">+${fmtMoney(t.profit)}</td>
+  </tr>`).join("");
+
+  return `<table class="ladder">
+    <caption>Exit is staged &mdash; each rung sells only its own slice</caption>
+    <thead><tr>
+      <th scope="col">Exit</th>
+      <th scope="col" class="num">Price</th>
+      <th scope="col" class="num">Sells</th>
+      <th scope="col" class="num">Pays</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 function renderSignalCard(s) {
   const isTrade = s.decision === "TRADE";
   const sideTag = s.signal === "LONG" ? "long" : s.signal === "SHORT" ? "short" : "";
   const ev = s.evidence || {};
+  const p = s.plan;
+
+  /* Two reward-to-risk numbers, both true about different things. The blended
+     one is what this ladder pays; the headline one is what holding everything
+     to the last target would pay, and it is the number the entry gate checks. */
+  const ratios = p
+    ? `<div class="kv"><dt>Reward / risk</dt><dd>
+         ${esc(p.blended_reward_risk)}<span class="muted"> as staged · ${esc(p.reward_risk)} to last target</span>
+       </dd></div>`
+    : `<div class="kv"><dt>Reward / risk</dt><dd>${esc(s.risk_reward ?? "—")}</dd></div>`;
 
   const plan = isTrade
-    ? `<dl class="kv-list">
+    ? `${renderTicket(p, s.symbol)}
+       <dl class="kv-list">
         <div class="kv"><dt>Entry</dt><dd>${fmtPrice(s.entry)}</dd></div>
-        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(s.stop_loss)}</dd></div>
-        <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(s.take_profit)}</dd></div>
-        <div class="kv"><dt>Reward / risk</dt><dd>${esc(s.risk_reward ?? "—")}</dd></div>
+        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(s.stop_loss)}${
+          p ? ` <span class="muted">−${esc(p.size.stop_distance_pct)}%</span>` : ""
+        }</dd></div>
+        ${ratios}
         <div class="kv"><dt>Risk level</dt><dd>${esc(s.risk_level)}</dd></div>
-      </dl>`
+       </dl>
+       ${renderLadder(p)}
+       ${p && p.size.cap_note ? `<p class="cap-note">${esc(p.size.cap_note)}</p>` : ""}
+       ${p ? `<p class="muted cost-note">${esc(p.cost_note)}</p>` : ""}`
     : `<p class="muted" style="margin:0">No entry, stop or target is shown for a NO_TRADE. Publishing levels beside a decision not to trade invites taking it anyway.</p>`;
 
   const warnings = (s.warnings || []).length
@@ -420,6 +482,52 @@ function renderSignalCard(s) {
   </article>`;
 }
 
+/* Where price actually sits between the stop and the target.
+
+   Eight numbers in a list tell a trader the levels; none of them answers the
+   only question being asked while a position is open, which is "how close am I
+   to either end". The bar is that answer, and the two distances beside it are
+   the same answer for anyone who cannot see it. */
+function renderProgress(t) {
+  const entry = Number(t.entry);
+  const stop = Number(t.stop_loss);
+  const target = Number(t.take_profit);
+  const now = Number(t.current_price);
+  if (![entry, stop, target, now].every(Number.isFinite)) return "";
+
+  const span = t.direction === "LONG" ? target - stop : stop - target;
+  if (!(span > 0)) return "";
+
+  const at = (price) => {
+    const raw = t.direction === "LONG" ? (price - stop) / span : (stop - price) / span;
+    return Math.max(0, Math.min(1, raw)) * 100;
+  };
+
+  const entryPct = at(entry);
+  const nowPct = at(now);
+  /* The fill runs from entry to the current price, not from the stop: it is
+     the distance TRAVELLED that matters, and colouring the whole left-hand
+     side green would show profit on a position that is down. */
+  const left = Math.min(entryPct, nowPct);
+  const width = Math.abs(nowPct - entryPct);
+  const winning = t.direction === "LONG" ? now >= entry : now <= entry;
+
+  const away = (price) => (Math.abs(now - price) / now * 100).toFixed(2);
+
+  return `<div class="progress" role="img"
+      aria-label="Price is ${away(stop)} percent from the stop and ${away(target)} percent from the target.">
+    <span class="track">
+      <i class="fill ${winning ? "up" : "down"}" style="left:${left}%;width:${width}%"></i>
+      <i class="mark entry" style="left:${entryPct}%"></i>
+      <i class="mark now" style="left:${nowPct}%"></i>
+    </span>
+    <span class="ends">
+      <span class="down">Stop &middot; ${away(stop)}% away</span>
+      <span class="up">${away(target)}% away &middot; Target</span>
+    </span>
+  </div>`;
+}
+
 function renderPositionCard(t) {
   const pnl = signed(t.unrealised_pnl);
   const r = signed(t.unrealised_r, "R");
@@ -435,6 +543,7 @@ function renderPositionCard(t) {
       <!-- A dl, not loose dt/dd in divs. Outside a list they are invalid and a
            screen reader reads eight labels and eight numbers with nothing
            joining them. -->
+      ${renderProgress(t)}
       <dl class="kv-list">
         <div class="kv"><dt>Entry</dt><dd>${fmtPrice(t.entry)}</dd></div>
         <div class="kv"><dt>Current</dt><dd>${fmtPrice(t.current_price)}</dd></div>
