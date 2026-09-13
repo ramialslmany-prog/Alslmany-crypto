@@ -88,6 +88,15 @@ pre-push hook and CI both call.
 | GET | `/api/analytics/insights` | Observations. Always `applied: false`. |
 | GET | `/api/analytics/benchmark` | Strategy versus holding, per symbol. |
 | GET | `/api/backtest/{symbol}` | Historical replay. `?timeframe=1h&bars=500` |
+| WS | `/ws` | Live prices and account state, pushed every 5s. |
+
+The WebSocket sits outside `/api` on purpose: it is not a REST resource, and
+the rate-limit middleware counts HTTP requests, which a long-lived socket is
+not. One broadcaster serves every connected client, so a hundred open tabs cost
+the venue what one costs, and it stops entirely when the last client leaves.
+Per-connection queues are two frames deep and drop the OLDEST update when they
+fill — a client behind by two ticks wants the current price, not the one from
+ten seconds ago.
 
 Every `/api` route except health and readiness carries a per-client budget,
 sized by how much upstream work it causes — `overview` fans out to every symbol
@@ -172,8 +181,10 @@ app/
   backtest/              window.py (no-look-ahead, structurally) · engine.py
   analytics/             breakdown (Wilson intervals) · insights (inert by
                          construction) · benchmark (versus holding)
+  api/live.py            WebSocket feed: one broadcaster, many consumers,
+                         asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   324 tests, no network required
+tests/                   332 tests, no network required
 ```
 
 ### Three decisions worth knowing

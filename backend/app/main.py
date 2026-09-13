@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api import live
 from app.api.routes import analytics, backtest, bot, health, market, signals
 from app.config import Settings, get_settings
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
@@ -111,6 +112,9 @@ def create_app() -> FastAPI:
     app.include_router(bot.router, prefix="/api")
     app.include_router(backtest.router, prefix="/api")
     app.include_router(analytics.router, prefix="/api")
+    # Not under /api: a WebSocket is not a REST resource, and the rate-limit
+    # middleware counts HTTP requests, which a long-lived socket is not.
+    app.include_router(live.router)
 
     if FRONTEND_DIR.is_dir():
         app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

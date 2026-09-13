@@ -41,7 +41,16 @@ include = ["app*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+  # Our own deprecated usage is a test failure, deliberately.
+  "error::DeprecationWarning",
+  # These two fire while IMPORTING starlette's TestClient, from a dependency's
+  # lazy-import shim and from starlette's own httpx notice. Neither is
+  # reachable from this codebase, and both are named exactly so the rule above
+  # keeps its teeth for everything else.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 100

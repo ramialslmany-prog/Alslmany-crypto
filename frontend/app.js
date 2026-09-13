@@ -22,6 +22,13 @@ const state = {
   view: "portfolio",
   symbols: [],
   history: [],
+  // Live-feed state. `live` is true only while a socket is actually delivering
+  // frames — not merely while one is open — because a socket that connected
+  // and then went silent is the case that looks fine and is not.
+  live: false,
+  lastFrameAt: 0,
+  socket: null,
+  reconnectDelay: 1000,
 };
 
 /* ---------- plumbing ---------- */
@@ -683,10 +690,13 @@ async function loadOverview() {
       const tags = [];
       if (row.meta.stale) tags.push('<span class="tag stale">stale</span>');
       if (row.meta.fallback_used) tags.push('<span class="tag">fallback</span>');
-      return `<tr>
+      // The symbol and field hooks let the live feed update a row in place.
+      // Rebuilding the table on every tick would destroy focus and scroll
+      // position several times a minute.
+      return `<tr data-symbol="${esc(t.symbol)}">
         <td class="sym">${esc(t.symbol)}</td>
-        <td class="num price">${fmtPrice(t.price)}</td>
-        <td class="num ${change.cls}">${change.text}</td>
+        <td class="num price" data-field="price">${fmtPrice(t.price)}</td>
+        <td class="num ${change.cls}" data-field="change">${change.text}</td>
         <td class="num price">${fmtPrice(t.high_24h)}</td>
         <td class="num price">${fmtPrice(t.low_24h)}</td>
         <td class="num">${fmtCompact(t.volume_24h)}</td>
@@ -928,6 +938,120 @@ function renderBacktest(r) {
   el("bt-results").hidden = false;
 }
 
+/* ---------- live feed ---------- */
+
+// Polling stays as the fallback, and the two must never run together: a socket
+// delivering every five seconds plus a poll every twenty is upstream load for
+// no added freshness.
+const POLL_MS = 20000;
+// A socket that has delivered nothing for this long is treated as dead even if
+// the browser still calls it open — half-open TCP connections are the normal
+// way a live feed lies about being alive.
+const SILENCE_MS = 20000;
+const MAX_RECONNECT_MS = 30000;
+
+function connectLive() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  let socket;
+  try {
+    socket = new WebSocket(`${protocol}//${location.host}/ws`);
+  } catch {
+    return; // the polling fallback is already running
+  }
+  state.socket = socket;
+
+  socket.addEventListener("message", (event) => {
+    let frame;
+    try {
+      frame = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    state.live = true;
+    state.lastFrameAt = Date.now();
+    state.reconnectDelay = 1000;
+    applyLiveFrame(frame);
+  });
+
+  socket.addEventListener("close", () => {
+    state.live = false;
+    state.socket = null;
+    // Exponential backoff with a ceiling. A tab left open on a dead server
+    // should not hammer it, and should still recover on its own when it
+    // returns.
+    setTimeout(connectLive, state.reconnectDelay);
+    state.reconnectDelay = Math.min(state.reconnectDelay * 2, MAX_RECONNECT_MS);
+  });
+
+  socket.addEventListener("error", () => socket.close());
+}
+
+function applyLiveFrame(frame) {
+  if (frame.kind === "error") {
+    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").className = "badge badge-bad";
+    return;
+  }
+  if (frame.kind !== "tick") return;
+
+  const stale = frame.prices.filter((p) => p.stale).length;
+  const down = (frame.unavailable || []).length;
+
+  if (frame.feed_healthy) {
+    el("feed-state").textContent = "LIVE";
+    el("feed-state").className = "badge badge-ok";
+    setNotice(null);
+  } else if (frame.prices.length) {
+    el("feed-state").textContent = stale ? "LIVE · STALE" : "LIVE · PARTIAL";
+    el("feed-state").className = "badge badge-bad";
+  } else {
+    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").className = "badge badge-bad";
+  }
+  if (down) {
+    setNotice("warn", `${down} of ${down + frame.prices.length} symbols unavailable`,
+      frame.unavailable.map((u) => `${esc(u.symbol)} (${esc(u.code)})`).join(", ") +
+      "<br />No price is shown for these, because none could be obtained.");
+  }
+
+  // Prices are written into the rows already on screen rather than rebuilding
+  // the table: re-rendering on every tick would destroy focus and scroll
+  // position five times a minute.
+  for (const quote of frame.prices) {
+    const row = document.querySelector(`#overview-body tr[data-symbol="${CSS.escape(quote.symbol)}"]`);
+    if (!row) continue;
+    const cell = row.querySelector("[data-field=price]");
+    if (cell) cell.textContent = fmtPrice(quote.price);
+    const change = row.querySelector("[data-field=change]");
+    if (change) {
+      const moved = signed(quote.change_24h_pct, "%");
+      change.textContent = moved.text;
+      change.className = `num ${moved.cls}`;
+    }
+  }
+
+  el("updated").textContent = `updated ${new Date(frame.at).toLocaleTimeString()}`;
+
+  const account = frame.account;
+  if (account && state.view === "portfolio") {
+    renderHalt(account.halt, null);
+  }
+}
+
+/** The fallback. It runs only while the socket is NOT delivering, so the two
+    never double up on the same upstream. */
+function startPollingFallback() {
+  setInterval(() => {
+    const silent = Date.now() - state.lastFrameAt > SILENCE_MS;
+    if (state.live && !silent) return;
+    state.live = false;
+
+    loadOverview();
+    if (state.view === "portfolio") loadPortfolio();
+    if (state.view === "positions") loadPositions();
+  }, POLL_MS);
+}
+
 /* ---------- routing ---------- */
 
 const LOADERS = {
@@ -983,12 +1107,8 @@ async function boot() {
   await loadOverview();   // the feed badge should be right from the first paint
   show("portfolio");
 
-  // Polling is the Stage 7 mechanism; a WebSocket push replaces it later.
-  setInterval(() => {
-    loadOverview();
-    if (state.view === "portfolio") loadPortfolio();
-    if (state.view === "positions") loadPositions();
-  }, 20000);
+  connectLive();
+  startPollingFallback();
 }
 
 boot();
