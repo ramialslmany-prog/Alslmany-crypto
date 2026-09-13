@@ -1,30 +1,36 @@
 /*
- * Market-data screen.
+ * Alslmany paper-trading desk.
  *
- * One rule governs everything here: never render a number the API did not
- * return. When the feed is down the screen says so and shows nothing in the
- * price column — it does not show the last value it happened to remember, and
- * it does not show a zero. A dash is information; a stale price pretending to
- * be live is not.
+ * Two rules run through every function here.
+ *
+ * Never render a number the API did not return. When the feed is down the
+ * screen says so and shows a dash — not the last value it remembers, not a
+ * zero. A dash is information; a stale price passing for live is not.
+ *
+ * Never state a conclusion without its evidence. Every signal card can be
+ * expanded into the seven weighted dimensions that produced its score, with
+ * the ones that had nothing to say marked unavailable rather than counted as
+ * neutral.
  */
 
 const API = "/api";
 
-const el = {
-  body: document.getElementById("overview-body"),
-  notice: document.getElementById("notice"),
-  feedState: document.getElementById("feed-state"),
-  updated: document.getElementById("updated"),
-  refresh: document.getElementById("refresh"),
-  symbol: document.getElementById("symbol"),
-  timeframe: document.getElementById("timeframe"),
-  chartWrap: document.getElementById("chart-wrap"),
-  chartMeta: document.getElementById("chart-meta"),
+const el = (id) => document.getElementById(id);
+const tooltip = () => el("tooltip");
+
+const state = {
+  view: "portfolio",
+  symbols: [],
+  history: [],
 };
 
-/** Fetch JSON, turning a structured API error into a real Error. */
-async function getJson(path) {
-  const response = await fetch(`${API}${path}`, { headers: { Accept: "application/json" } });
+/* ---------- plumbing ---------- */
+
+async function getJson(path, options = {}) {
+  const response = await fetch(`${API}${path}`, {
+    headers: { Accept: "application/json" },
+    ...options,
+  });
   let payload = null;
   try {
     payload = await response.json();
@@ -32,210 +38,232 @@ async function getJson(path) {
     throw new Error(`${response.status} — the server did not return JSON`);
   }
   if (!response.ok) {
-    const err = payload?.error;
-    const error = new Error(err?.message || `Request failed (${response.status})`);
-    error.code = err?.code;
+    const error = new Error(payload?.error?.message || `Request failed (${response.status})`);
+    error.code = payload?.error?.code;
     throw error;
   }
   return payload;
 }
 
-function setNotice(kind, title, body) {
-  if (!kind) {
-    el.notice.hidden = true;
-    el.notice.innerHTML = "";
-    return;
-  }
-  el.notice.hidden = false;
-  el.notice.className = `notice ${kind === "warn" ? "warn" : ""}`;
-  el.notice.innerHTML = `<h3>${escapeHtml(title)}</h3><div>${body}</div>`;
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) => (
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
 }
 
-/* Prices arrive as strings to preserve precision; format for display only,
-   and never parse them back into the value we store or send. */
-function fmtPrice(value) {
-  if (value === null || value === undefined) return "—";
+/* Prices arrive as strings to preserve precision. Parse for DISPLAY only —
+   never parse one back into a value that is sent or stored. */
+function num(value) {
+  if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-  const decimals = n >= 1000 ? 2 : n >= 1 ? 4 : 6;
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtPrice(value) {
+  const n = num(value);
+  if (n === null) return "—";
+  const decimals = Math.abs(n) >= 1000 ? 2 : Math.abs(n) >= 1 ? 4 : 6;
+  return n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function fmtMoney(value) {
+  const n = num(value);
+  if (n === null) return "—";
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtCompact(value) {
-  if (value === null || value === undefined) return "—";
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
+  const n = num(value);
+  if (n === null) return "—";
   return n.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 2 });
 }
 
-function fmtPct(value) {
-  if (value === null || value === undefined) return { text: "—", cls: "" };
-  const n = Number(value);
-  if (!Number.isFinite(n)) return { text: "—", cls: "" };
-
-  // Colour and sign follow what is DISPLAYED, not the underlying value. A
-  // change of -0.001% rounds to "0.00" — rendering that as a red "-0.00%"
-  // reports a loss the number does not show, which is exactly the kind of
-  // small dishonesty that makes a trading screen untrustworthy.
-  const shown = n.toFixed(2);
+/* Colour and sign follow what is DISPLAYED, never the underlying value.
+   A change of -0.001% rounds to "0.00"; rendering that as a red "-0.00%"
+   reports a loss the digits do not show. */
+function signed(value, suffix = "", decimals = 2) {
+  const n = num(value);
+  if (n === null) return { text: "—", cls: "" };
+  const shown = n.toFixed(decimals);
   const rounded = Number(shown);
-  if (rounded === 0) return { text: "0.00%", cls: "" };
-  return { text: `${rounded > 0 ? "+" : ""}${shown}%`, cls: rounded > 0 ? "up" : "down" };
+  if (rounded === 0) return { text: `${Math.abs(Number(shown)).toFixed(decimals)}${suffix}`, cls: "" };
+  return { text: `${rounded > 0 ? "+" : ""}${shown}${suffix}`, cls: rounded > 0 ? "up" : "down" };
 }
 
-// --- overview --------------------------------------------------------------
-
-async function loadOverview() {
-  try {
-    const payload = await getJson("/market/overview");
-    renderOverview(payload);
-    return payload;
-  } catch (error) {
-    el.feedState.textContent = "FEED DOWN";
-    el.feedState.className = "badge badge-bad";
-    el.body.innerHTML = `<tr><td colspan="7" class="empty">No market data.</td></tr>`;
-    setNotice(
-      "bad",
-      "Market data is unavailable",
-      `${escapeHtml(error.message)}${error.code ? ` <code>(${escapeHtml(error.code)})</code>` : ""}
-       <br />No prices are shown, because none could be obtained.`,
-    );
-    return null;
+function setNotice(kind, title, body) {
+  const node = el("notice");
+  if (!kind) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
   }
+  node.hidden = false;
+  node.className = `notice ${kind === "warn" ? "warn" : ""}`;
+  node.innerHTML = `<h3>${esc(title)}</h3><div>${body}</div>`;
 }
 
-function renderOverview(payload) {
-  const { data = [], failures = [], summary = {} } = payload;
-
-  const staleCount = summary.stale ?? 0;
-
-  if (summary.feed_healthy) {
-    el.feedState.textContent = "FEED LIVE";
-    el.feedState.className = "badge badge-ok";
-    setNotice(null);
-  } else if (failures.length === 0 && staleCount > 0) {
-    // Every symbol answered, but from cache after the providers failed. The
-    // prices below are real prices — they are just not current ones, and the
-    // screen has to say so rather than let them pass for live.
-    el.feedState.textContent = "FEED STALE";
-    el.feedState.className = "badge badge-bad";
-    setNotice(
-      "warn",
-      `Showing last known prices for ${staleCount} of ${summary.tracked} symbols`,
-      `The market data providers are not responding. These values were real when
-       they were fetched, but they are not current. Rows marked
-       <span class="tag stale">stale</span> below should not be treated as live.`,
-    );
-  } else if (data.length > 0) {
-    el.feedState.textContent = "FEED PARTIAL";
-    el.feedState.className = "badge badge-bad";
-    setNotice(
-      "warn",
-      `${failures.length} of ${summary.tracked} symbols could not be quoted`,
-      `The rows below are real. The missing ones are listed as unavailable rather
-       than filled in.`,
-    );
-  } else {
-    el.feedState.textContent = "FEED DOWN";
-    el.feedState.className = "badge badge-bad";
-    setNotice(
-      "bad",
-      "No symbol could be quoted",
-      `Every configured provider failed. The platform reports this instead of
-       showing prices it does not have.`,
-    );
-  }
-
-  const rows = [];
-
-  for (const row of data) {
-    const t = row.ticker;
-    const meta = row.meta;
-    const change = fmtPct(t.change_24h_pct);
-    const tags = [];
-    if (meta.stale) tags.push('<span class="tag stale">stale</span>');
-    if (meta.fallback_used) tags.push('<span class="tag">fallback</span>');
-
-    rows.push(`
-      <tr>
-        <td class="sym">${escapeHtml(t.symbol)}</td>
-        <td class="num price">${fmtPrice(t.price)}</td>
-        <td class="num ${change.cls}">${change.text}</td>
-        <td class="num price">${fmtPrice(t.high_24h)}</td>
-        <td class="num price">${fmtPrice(t.low_24h)}</td>
-        <td class="num">${fmtCompact(t.volume_24h)}</td>
-        <td>${escapeHtml(meta.source)} ${tags.join(" ")}</td>
-      </tr>`);
-  }
-
-  for (const failure of failures) {
-    rows.push(`
-      <tr class="row-failed">
-        <td class="sym">${escapeHtml(failure.symbol)}</td>
-        <td colspan="6" class="reason">unavailable — ${escapeHtml(failure.code)}</td>
-      </tr>`);
-  }
-
-  el.body.innerHTML =
-    rows.join("") || `<tr><td colspan="7" class="empty">No symbols configured.</td></tr>`;
-  el.updated.textContent = `updated ${new Date().toLocaleTimeString()}`;
+function showTooltip(event, html) {
+  const node = tooltip();
+  node.innerHTML = html;
+  node.hidden = false;
+  const pad = 14;
+  const rect = node.getBoundingClientRect();
+  let x = event.clientX + pad;
+  let y = event.clientY + pad;
+  if (x + rect.width > window.innerWidth - 8) x = event.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight - 8) y = event.clientY - rect.height - pad;
+  node.style.left = `${Math.max(8, x)}px`;
+  node.style.top = `${Math.max(8, y)}px`;
 }
 
-// --- candles ---------------------------------------------------------------
-
-async function loadCandles() {
-  const symbol = el.symbol.value;
-  const timeframe = el.timeframe.value;
-  if (!symbol) return;
-
-  el.chartWrap.innerHTML = `<p class="empty">Loading…</p>`;
-  el.chartMeta.textContent = "";
-
-  try {
-    const payload = await getJson(
-      `/market/${encodeURIComponent(symbol)}/candles?timeframe=${timeframe}&limit=120`,
-    );
-    const candles = payload.data ?? [];
-    if (candles.length === 0) {
-      el.chartWrap.innerHTML = `<p class="empty">No candles returned.</p>`;
-      return;
-    }
-    el.chartWrap.innerHTML = renderCandles(candles);
-    const m = payload.meta;
-    const forming = candles.filter((c) => !c.closed).length;
-    el.chartMeta.textContent =
-      `${candles.length} bars · ${symbol} ${timeframe} · source ${m.source}` +
-      `${m.cached ? " · cached" : ""}${m.stale ? " · STALE" : ""}` +
-      `${forming ? ` · ${forming} still forming` : ""}`;
-  } catch (error) {
-    el.chartWrap.innerHTML =
-      `<p class="empty">Unavailable — ${escapeHtml(error.message)}</p>`;
-  }
+function hideTooltip() {
+  tooltip().hidden = true;
 }
 
-/** A dependency-free candlestick chart. */
+/* ---------- charts ---------- */
+
+/** Equity curve. One series, so the panel title names it and no legend box is needed. */
+function renderEquity(points, starting) {
+  if (points.length === 0) {
+    return `<p class="empty">No closed trades yet. The curve appears once the bot has taken and settled a position.</p>`;
+  }
+
+  const W = 1000;
+  const H = 260;
+  const pad = { top: 14, right: 66, bottom: 26, left: 10 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const values = [starting, ...points.map((p) => num(p.balance))];
+  let max = Math.max(...values);
+  let min = Math.min(...values);
+  if (max === min) { max += 1; min -= 1; }
+  const span = max - min;
+
+  const x = (i) => pad.left + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+  const y = (v) => pad.top + (1 - (v - min) / span) * plotH;
+
+  const grid = [];
+  const labels = [];
+  for (let i = 0; i <= 4; i++) {
+    const value = min + (span * i) / 4;
+    const yy = y(value);
+    // Solid hairlines, one shade off the surface. Never dashed.
+    grid.push(`<line x1="${pad.left}" y1="${yy.toFixed(1)}" x2="${pad.left + plotW}" y2="${yy.toFixed(1)}" stroke="#262d3a" stroke-width="1" />`);
+    labels.push(`<text x="${pad.left + plotW + 8}" y="${(yy + 3.5).toFixed(1)}" fill="#7d8697" font-size="10" font-family="ui-monospace, monospace">${fmtCompact(value)}</text>`);
+  }
+
+  const startY = y(starting);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(num(p.balance)).toFixed(1)}`).join(" ");
+  const last = num(points[points.length - 1].balance);
+  const stroke = last >= starting ? "#3ecf8e" : "#f2555a";
+
+  const hits = points.map((p, i) => {
+    const balance = num(p.balance);
+    const change = balance - starting;
+    return `<circle class="pt" cx="${x(i).toFixed(1)}" cy="${y(balance).toFixed(1)}" r="10" fill="transparent"
+      data-tip="${esc(`<div class='t-title'>${new Date(p.at).toLocaleString()}</div><div class='t-value'>Balance ${fmtMoney(balance)}</div><div class='t-value'>${change >= 0 ? "+" : ""}${fmtMoney(change)} from start</div>`)}" />`;
+  });
+
+  const dots = points.map((p, i) =>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(num(p.balance)).toFixed(1)}" r="3" fill="${stroke}" stroke="#141820" stroke-width="2" />`
+  );
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Equity curve: balance after each of ${points.length} closed trades, starting from ${fmtMoney(starting)} and ending at ${fmtMoney(last)}.">
+    ${grid.join("")}
+    <line x1="${pad.left}" y1="${startY.toFixed(1)}" x2="${pad.left + plotW}" y2="${startY.toFixed(1)}" stroke="#f0b429" stroke-width="1" opacity="0.5" />
+    <text x="${pad.left + 4}" y="${(startY - 5).toFixed(1)}" fill="#f0b429" font-size="9" opacity="0.8">start ${fmtCompact(starting)}</text>
+    <path d="${path}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" />
+    ${dots.join("")}
+    ${labels.join("")}
+    ${hits.join("")}
+  </svg>`;
+}
+
+/** Win / loss / breakeven. Status colours, each with a word beside it. */
+function renderOutcomes(perf) {
+  const total = perf.total_trades;
+  if (!total) return `<p class="empty">No closed trades yet.</p>`;
+
+  const rows = [
+    { label: "Wins", value: perf.wins, colour: "#3ecf8e" },
+    { label: "Losses", value: perf.losses, colour: "#f2555a" },
+    { label: "Breakeven", value: perf.breakeven, colour: "#7d8697" },
+  ].filter((r) => r.value > 0);
+
+  const W = 480;
+  const barH = 26;
+  const gap = 10;
+  const labelW = 92;
+  const valueW = 58;
+  const plotW = W - labelW - valueW;
+  const max = Math.max(...rows.map((r) => r.value));
+  const H = rows.length * (barH + gap);
+
+  const bars = rows.map((r, i) => {
+    const w = Math.max(3, (r.value / max) * plotW);
+    const y = i * (barH + gap);
+    const pct = ((r.value / total) * 100).toFixed(0);
+    return `
+      <text x="0" y="${y + barH / 2 + 4}" fill="#a4adbd" font-size="12">${r.label}</text>
+      <rect class="pt" x="${labelW}" y="${y + 5}" width="${w.toFixed(1)}" height="${barH - 10}" rx="4" fill="${r.colour}"
+        data-tip="${esc(`<div class='t-title'>${r.label}</div><div class='t-value'>${r.value} of ${total} · ${pct}%</div>`)}" />
+      <text x="${labelW + w + 8}" y="${y + barH / 2 + 4}" fill="#e8ecf2" font-size="12" font-family="ui-monospace, monospace">${r.value}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Outcome distribution: ${rows.map((r) => `${r.value} ${r.label}`).join(", ")} of ${total} closed trades.">${bars.join("")}</svg>`;
+}
+
+/** Net result per symbol. Sign is polarity, so the two status hues apply. */
+function renderBySymbol(trades) {
+  if (trades.length === 0) return `<p class="empty">No closed trades yet.</p>`;
+
+  const totals = new Map();
+  for (const t of trades) {
+    const pnl = num(t.pnl) ?? 0;
+    totals.set(t.symbol, (totals.get(t.symbol) ?? 0) + pnl);
+  }
+  const rows = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+
+  const W = 480;
+  const barH = 24;
+  const gap = 9;
+  const labelW = 92;
+  const H = rows.length * (barH + gap);
+  const plotW = W - labelW - 70;
+  const max = Math.max(...rows.map(([, v]) => Math.abs(v)), 1);
+  const zero = labelW + plotW / 2;
+
+  const bars = rows.map(([symbol, value], i) => {
+    const y = i * (barH + gap);
+    const w = Math.max(2, (Math.abs(value) / max) * (plotW / 2));
+    const x = value >= 0 ? zero : zero - w;
+    const colour = value >= 0 ? "#3ecf8e" : "#f2555a";
+    const shown = `${value >= 0 ? "+" : "−"}${fmtMoney(Math.abs(value))}`;
+    return `
+      <text x="0" y="${y + barH / 2 + 4}" fill="#a4adbd" font-size="11">${esc(symbol)}</text>
+      <rect class="pt" x="${x.toFixed(1)}" y="${y + 5}" width="${w.toFixed(1)}" height="${barH - 10}" rx="3" fill="${colour}"
+        data-tip="${esc(`<div class='t-title'>${symbol}</div><div class='t-value'>${shown}</div>`)}" />
+      <text x="${labelW + plotW + 8}" y="${y + barH / 2 + 4}" fill="${value >= 0 ? "#3ecf8e" : "#f2555a"}" font-size="11" font-family="ui-monospace, monospace">${shown}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Net result by symbol across ${trades.length} closed trades.">
+    <line x1="${zero}" y1="0" x2="${zero}" y2="${H}" stroke="#262d3a" stroke-width="1" />
+    ${bars.join("")}
+  </svg>`;
+}
+
+/** Dependency-free candlesticks. A forming bar is drawn hollow. */
 function renderCandles(candles) {
   const W = 1000;
-  const H = 340;
-  const pad = { top: 12, right: 60, bottom: 22, left: 8 };
+  const H = 320;
+  const pad = { top: 12, right: 62, bottom: 22, left: 8 };
 
-  const highs = candles.map((c) => Number(c.high));
-  const lows = candles.map((c) => Number(c.low));
-  let max = Math.max(...highs);
-  let min = Math.min(...lows);
+  let max = Math.max(...candles.map((c) => num(c.high)));
+  let min = Math.min(...candles.map((c) => num(c.low)));
   if (!Number.isFinite(max) || !Number.isFinite(min)) {
     return `<p class="empty">Candle data was not numeric.</p>`;
   }
-  // A flat series would divide by zero; give it a nominal band instead.
   if (max === min) { max += 1; min -= 1; }
   const span = max - min;
 
@@ -243,76 +271,418 @@ function renderCandles(candles) {
   const plotH = H - pad.top - pad.bottom;
   const step = plotW / candles.length;
   const bodyW = Math.max(1, Math.min(10, step * 0.62));
-  const y = (v) => pad.top + (1 - (Number(v) - min) / span) * plotH;
+  const y = (v) => pad.top + (1 - (num(v) - min) / span) * plotH;
 
-  const gridlines = [];
+  const grid = [];
   const labels = [];
   for (let i = 0; i <= 4; i++) {
     const value = min + (span * i) / 4;
     const yy = y(value);
-    gridlines.push(
-      `<line x1="${pad.left}" y1="${yy.toFixed(1)}" x2="${pad.left + plotW}" y2="${yy.toFixed(1)}" stroke="#262d3a" stroke-width="1" />`,
-    );
-    labels.push(
-      `<text x="${pad.left + plotW + 6}" y="${(yy + 3.5).toFixed(1)}" fill="#7d8697" font-size="10" font-family="ui-monospace, monospace">${fmtPrice(value)}</text>`,
-    );
+    grid.push(`<line x1="${pad.left}" y1="${yy.toFixed(1)}" x2="${pad.left + plotW}" y2="${yy.toFixed(1)}" stroke="#262d3a" stroke-width="1" />`);
+    labels.push(`<text x="${pad.left + plotW + 6}" y="${(yy + 3.5).toFixed(1)}" fill="#7d8697" font-size="10" font-family="ui-monospace, monospace">${fmtPrice(value)}</text>`);
   }
 
   const bars = candles.map((c, i) => {
     const x = pad.left + i * step + step / 2;
-    const open = Number(c.open);
-    const close = Number(c.close);
+    const open = num(c.open);
+    const close = num(c.close);
     const rising = close >= open;
     const colour = rising ? "#3ecf8e" : "#f2555a";
     const top = y(Math.max(open, close));
     const bottom = y(Math.min(open, close));
     const height = Math.max(1, bottom - top);
-    // A bar that has not closed is drawn hollow, so an incomplete candle is
-    // never mistaken for a settled one.
     const fill = c.closed ? colour : "none";
+    const tip = `<div class='t-title'>${new Date(c.open_time).toLocaleString()}${c.closed ? "" : " · forming"}</div>
+      <div class='t-value'>O ${fmtPrice(c.open)}</div><div class='t-value'>H ${fmtPrice(c.high)}</div>
+      <div class='t-value'>L ${fmtPrice(c.low)}</div><div class='t-value'>C ${fmtPrice(c.close)}</div>`;
     return (
       `<line x1="${x.toFixed(1)}" y1="${y(c.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(c.low).toFixed(1)}" stroke="${colour}" stroke-width="1" />` +
-      `<rect x="${(x - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${height.toFixed(1)}" fill="${fill}" stroke="${colour}" stroke-width="1" />`
+      `<rect x="${(x - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${height.toFixed(1)}" fill="${fill}" stroke="${colour}" stroke-width="1" />` +
+      `<rect class="pt" x="${(x - step / 2).toFixed(1)}" y="${pad.top}" width="${step.toFixed(1)}" height="${plotH}" fill="transparent" data-tip="${esc(tip)}" />`
     );
   });
 
   const first = new Date(candles[0].open_time).toLocaleString();
   const last = new Date(candles[candles.length - 1].open_time).toLocaleString();
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart, ${candles.length} bars from ${first} to ${last}">
-    ${gridlines.join("")}
-    ${bars.join("")}
-    ${labels.join("")}
-    <text x="${pad.left}" y="${H - 6}" fill="#7d8697" font-size="10">${escapeHtml(first)}</text>
-    <text x="${pad.left + plotW}" y="${H - 6}" fill="#7d8697" font-size="10" text-anchor="end">${escapeHtml(last)}</text>
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart, ${candles.length} bars from ${first} to ${last}.">
+    ${grid.join("")}${bars.join("")}${labels.join("")}
+    <text x="${pad.left}" y="${H - 6}" fill="#7d8697" font-size="10">${esc(first)}</text>
+    <text x="${pad.left + plotW}" y="${H - 6}" fill="#7d8697" font-size="10" text-anchor="end">${esc(last)}</text>
   </svg>`;
 }
 
-// --- boot ------------------------------------------------------------------
+/** Attach hover to any element carrying data-tip. */
+function wireTooltips(root) {
+  root.querySelectorAll("[data-tip]").forEach((node) => {
+    node.addEventListener("mousemove", (e) => showTooltip(e, node.dataset.tip));
+    node.addEventListener("mouseleave", hideTooltip);
+  });
+}
+
+/* ---------- the evidence table ---------- */
+
+function renderFactors(factors) {
+  if (!factors || factors.length === 0) return "";
+  const rows = factors.map((f) => {
+    const pct = Math.min(Math.abs(f.raw), 1) * 45;
+    const positive = f.raw > 0;
+    const colour = positive ? "#3ecf8e" : "#f2555a";
+    const bar = f.available && f.raw !== 0
+      ? `<i style="${positive ? `left:50%;width:${pct}%` : `right:50%;width:${pct}%`};background:${colour}"></i>`
+      : "";
+    return `<tr class="${f.available ? "" : "unavailable"}">
+      <td>${esc(f.dimension.replace(/_/g, " "))}</td>
+      <td class="num">${f.weight}%</td>
+      <td class="bar-cell"><span class="bar"><span class="mid"></span>${bar}</span></td>
+      <td class="num">${f.available ? f.contribution.toFixed(1) : "n/a"}</td>
+    </tr>`;
+  });
+  return `<table class="factors">
+    <thead><tr><th>Dimension</th><th class="num">Weight</th><th>Lean</th><th class="num">Points</th></tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>`;
+}
+
+/* Confidence is shown to one decimal. Rounded to whole numbers, a 74.55 reads
+   as "75% conf" on a card whose own reason says "confidence 75 is below the 75
+   floor" — the screen contradicting itself in two adjacent lines. */
+function renderSignalCard(s) {
+  const isTrade = s.decision === "TRADE";
+  const sideTag = s.signal === "LONG" ? "long" : s.signal === "SHORT" ? "short" : "";
+  const ev = s.evidence || {};
+
+  const plan = isTrade
+    ? `<dl class="kv-list">
+        <div class="kv"><dt>Entry</dt><dd>${fmtPrice(s.entry)}</dd></div>
+        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(s.stop_loss)}</dd></div>
+        <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(s.take_profit)}</dd></div>
+        <div class="kv"><dt>Reward / risk</dt><dd>${s.risk_reward ?? "—"}</dd></div>
+        <div class="kv"><dt>Risk level</dt><dd>${esc(s.risk_level)}</dd></div>
+      </dl>`
+    : `<p class="muted" style="margin:0">No entry, stop or target is shown for a NO_TRADE. Publishing levels beside a decision not to trade invites taking it anyway.</p>`;
+
+  const warnings = (s.warnings || []).length
+    ? `<ul class="warnings">${s.warnings.map((w) => `<li>${esc(w.replace(/-/g, " "))}</li>`).join("")}</ul>`
+    : "";
+
+  return `<article class="card ${isTrade ? "is-trade" : ""}">
+    <header class="card-head">
+      <span class="sym">${esc(s.symbol)}</span>
+      <span>
+        ${sideTag ? `<span class="tag ${sideTag}">${esc(s.signal)}</span>` : `<span class="tag">NO TRADE</span>`}
+        <span class="tag">${Number(s.confidence).toFixed(1)}% conf</span>
+      </span>
+    </header>
+    <div class="card-body">
+      ${plan}
+      <p class="card-reason">${esc(s.reason)}</p>
+      ${isTrade ? `<p class="muted" style="margin:6px 0 0">Invalidation: ${esc(s.invalidation)}</p>` : ""}
+      ${warnings}
+      <details class="evidence">
+        <summary>Evidence · ${(ev.detected || []).length} patterns detected</summary>
+        ${renderFactors(ev.factors)}
+        ${(ev.detected || []).length ? `<p class="muted" style="margin-top:8px">Detected: ${esc((ev.detected || []).join(", "))}</p>` : ""}
+      </details>
+    </div>
+  </article>`;
+}
+
+function renderPositionCard(t) {
+  const pnl = signed(t.unrealised_pnl);
+  const r = signed(t.unrealised_r, "R");
+  return `<article class="card">
+    <header class="card-head">
+      <span class="sym">${esc(t.symbol)}</span>
+      <span>
+        <span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span>
+        <span class="tag">PAPER</span>
+      </span>
+    </header>
+    <div class="card-body">
+      <div class="kv"><dt>Entry</dt><dd>${fmtPrice(t.entry)}</dd></div>
+      <div class="kv"><dt>Current</dt><dd>${fmtPrice(t.current_price)}</dd></div>
+      <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(t.stop_loss)}</dd></div>
+      <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(t.take_profit)}</dd></div>
+      <div class="kv"><dt>Quantity</dt><dd>${esc(t.quantity)}</dd></div>
+      <div class="kv"><dt>Risked</dt><dd>${fmtMoney(t.risk_amount)}</dd></div>
+      <div class="kv"><dt>Unrealised</dt><dd class="${pnl.cls}">${pnl.text} <span class="muted">(${r.text})</span></dd></div>
+      <div class="kv"><dt>Opened</dt><dd>${t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</dd></div>
+      <p class="card-reason">${esc(t.reason)}</p>
+    </div>
+  </article>`;
+}
+
+/* ---------- views ---------- */
+
+async function loadPortfolio() {
+  try {
+    const [p, curve, hist] = await Promise.all([
+      getJson("/bot/portfolio"),
+      getJson("/bot/equity-curve"),
+      getJson("/bot/trades/history?limit=500"),
+    ]);
+
+    const perf = p.performance;
+    const pnl = signed(perf.total_pnl);
+    const today = signed(p.realised_today);
+
+    el("tiles").innerHTML = [
+      { label: "Balance", value: fmtMoney(p.balance), sub: `started at ${fmtMoney(p.starting_balance)}` },
+      { label: "Equity", value: fmtMoney(p.equity), sub: `${p.open_positions} open` },
+      { label: "Total P/L", value: pnl.text, cls: pnl.cls, sub: `${perf.total_trades} trades` },
+      { label: "Today", value: today.text, cls: today.cls, sub: `limit ${p.limits.max_daily_loss_pct}%` },
+      { label: "Win rate", value: `${perf.win_rate}%`, sub: `${perf.wins}W / ${perf.losses}L` },
+      { label: "Profit factor", value: perf.profit_factor ?? "—", sub: perf.profit_factor ? "gross win ÷ gross loss" : "no losses yet" },
+      { label: "Expectancy", value: `${perf.expectancy_r}R`, sub: "per trade, in R" },
+      { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `limit ${p.limits.max_drawdown_pct}%` },
+    ].map((t) => `<div class="tile">
+        <p class="label">${t.label}</p>
+        <p class="value ${t.cls || ""}">${t.value}</p>
+        <p class="sub">${esc(t.sub)}</p>
+      </div>`).join("");
+
+    el("equity").innerHTML = renderEquity(curve.data, num(curve.starting_balance));
+    el("outcomes").innerHTML = renderOutcomes(perf);
+    state.history = hist.data;
+    el("by-symbol").innerHTML = renderBySymbol(hist.data);
+
+    el("limits").innerHTML = [
+      ["Risk per trade", `${p.limits.risk_per_trade_pct}%`],
+      ["Max open trades", p.limits.max_open_trades],
+      ["Max daily loss", `${p.limits.max_daily_loss_pct}%`],
+      ["Max drawdown", `${p.limits.max_drawdown_pct}%`],
+      ["Longest losing streak", perf.longest_losing_streak],
+      ["Fees paid", fmtMoney(perf.total_fees)],
+    ].map(([label, value]) => `<div><div class="label">${label}</div><div class="value">${esc(value)}</div></div>`).join("");
+
+    wireTooltips(document.querySelector('[data-view="portfolio"]'));
+  } catch (error) {
+    el("tiles").innerHTML = `<p class="empty">Portfolio unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+async function loadSignals() {
+  const timeframe = el("sig-tf").value;
+  el("signals").innerHTML = `<p class="empty">Scanning…</p>`;
+  try {
+    const payload = await getJson(`/signals?timeframe=${timeframe}`);
+    const cards = payload.data.map(renderSignalCard);
+    const failed = payload.failures.map((f) =>
+      `<article class="card"><header class="card-head"><span class="sym">${esc(f.symbol)}</span>
+        <span class="tag stale">unavailable</span></header>
+        <div class="card-body"><p class="reason">${esc(f.code)}</p></div></article>`);
+    el("signals").innerHTML = [...cards, ...failed].join("") || `<p class="empty">No symbols configured.</p>`;
+  } catch (error) {
+    el("signals").innerHTML = `<p class="empty">Signals unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+async function runTick() {
+  const button = el("run-tick");
+  button.disabled = true;
+  button.textContent = "Running…";
+  try {
+    const report = await getJson(`/bot/tick?timeframe=${el("sig-tf").value}`, { method: "POST" });
+    const rejected = report.rejected.map((r) =>
+      `<li><strong>${esc(r.symbol)}</strong> — ${esc((r.reasons || []).join(", "))}${
+        r.notes?.length ? `<br><span class="muted">${esc(r.notes.join(" "))}</span>` : ""}</li>`);
+
+    el("tick-body").innerHTML = `
+      <p>Scanned ${report.scanned.length} symbols.
+         Opened <strong>${report.opened.length}</strong>, closed <strong>${report.closed.length}</strong>.</p>
+      ${report.opened.length ? `<p class="up">Opened: ${esc(report.opened.join(", "))}</p>` : ""}
+      ${report.closed.length ? `<p>Closed: ${report.closed.map((c) => `${esc(c.symbol)} ${esc(c.result)} ${esc(c.pnl)} (${esc(c.r)}R)`).join(", ")}</p>` : ""}
+      ${rejected.length ? `<p class="muted">Declined, with reasons:</p><ul>${rejected.join("")}</ul>` : ""}
+      ${report.errors.length ? `<p class="reason">Errors: ${report.errors.map((e) => `${esc(e.symbol)} (${esc(e.code)})`).join(", ")}</p>` : ""}`;
+    el("tick-report").hidden = false;
+
+    await Promise.all([loadSignals(), loadPortfolio()]);
+  } catch (error) {
+    el("tick-body").innerHTML = `<p class="reason">Tick failed — ${esc(error.message)}</p>`;
+    el("tick-report").hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run bot tick";
+  }
+}
+
+async function loadPositions() {
+  try {
+    const payload = await getJson("/bot/trades/open");
+    el("positions").innerHTML = payload.data.length
+      ? payload.data.map(renderPositionCard).join("")
+      : `<p class="empty">No open positions.</p>`;
+  } catch (error) {
+    el("positions").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+async function loadHistory() {
+  const params = new URLSearchParams();
+  for (const [key, id] of [["symbol", "f-symbol"], ["direction", "f-direction"], ["result", "f-result"]]) {
+    const value = el(id).value;
+    if (value) params.set(key, value);
+  }
+  try {
+    const payload = await getJson(`/bot/trades/history?${params}`);
+    el("history-body").innerHTML = payload.data.length
+      ? payload.data.map((t) => {
+          const pnl = signed(t.pnl);
+          const r = signed(t.r_multiple, "R");
+          return `<tr>
+            <td class="sym">${esc(t.symbol)}</td>
+            <td><span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span></td>
+            <td class="num price">${fmtPrice(t.entry)}</td>
+            <td class="num price">${fmtPrice(t.exit_price)}</td>
+            <td class="num ${pnl.cls}">${pnl.text}</td>
+            <td class="num ${r.cls}">${r.text}</td>
+            <td><span class="tag ${t.result === "WIN" ? "win" : t.result === "LOSS" ? "loss" : ""}">${esc(t.result || "—")}</span></td>
+            <td class="muted">${esc((t.exit_reason || "").replace(/_/g, " "))}</td>
+            <td class="num">${Number(t.confidence).toFixed(0)}</td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="9" class="empty">No trades match these filters.</td></tr>`;
+  } catch (error) {
+    el("history-body").innerHTML = `<tr><td colspan="9" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+  }
+}
+
+async function loadOverview() {
+  try {
+    const payload = await getJson("/market/overview");
+    const { data = [], failures = [], summary = {} } = payload;
+    const staleCount = summary.stale ?? 0;
+
+    if (summary.feed_healthy) {
+      el("feed-state").textContent = "FEED LIVE";
+      el("feed-state").className = "badge badge-ok";
+      setNotice(null);
+    } else if (failures.length === 0 && staleCount > 0) {
+      el("feed-state").textContent = "FEED STALE";
+      el("feed-state").className = "badge badge-bad";
+      setNotice("warn", `Showing last known prices for ${staleCount} of ${summary.tracked} symbols`,
+        `The providers are not responding. These values were real when they were fetched, but they are not current.`);
+    } else {
+      el("feed-state").textContent = data.length ? "FEED PARTIAL" : "FEED DOWN";
+      el("feed-state").className = "badge badge-bad";
+      setNotice("bad", data.length ? `${failures.length} of ${summary.tracked} symbols could not be quoted` : "No symbol could be quoted",
+        `Missing symbols are listed as unavailable rather than filled in.`);
+    }
+
+    const rows = data.map((row) => {
+      const t = row.ticker;
+      const change = signed(t.change_24h_pct, "%");
+      const tags = [];
+      if (row.meta.stale) tags.push('<span class="tag stale">stale</span>');
+      if (row.meta.fallback_used) tags.push('<span class="tag">fallback</span>');
+      return `<tr>
+        <td class="sym">${esc(t.symbol)}</td>
+        <td class="num price">${fmtPrice(t.price)}</td>
+        <td class="num ${change.cls}">${change.text}</td>
+        <td class="num price">${fmtPrice(t.high_24h)}</td>
+        <td class="num price">${fmtPrice(t.low_24h)}</td>
+        <td class="num">${fmtCompact(t.volume_24h)}</td>
+        <td>${esc(row.meta.source)} ${tags.join(" ")}</td>
+      </tr>`;
+    });
+
+    for (const f of failures) {
+      rows.push(`<tr class="row-failed"><td class="sym">${esc(f.symbol)}</td>
+        <td colspan="6" class="reason">unavailable — ${esc(f.code)}</td></tr>`);
+    }
+
+    el("overview-body").innerHTML = rows.join("") || `<tr><td colspan="7" class="empty">No symbols configured.</td></tr>`;
+    el("updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
+  } catch (error) {
+    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").className = "badge badge-bad";
+    el("overview-body").innerHTML = `<tr><td colspan="7" class="empty">No market data.</td></tr>`;
+    setNotice("bad", "Market data is unavailable",
+      `${esc(error.message)}<br />No prices are shown, because none could be obtained.`);
+  }
+}
+
+async function loadCandles() {
+  const symbol = el("symbol").value;
+  const timeframe = el("timeframe").value;
+  if (!symbol) return;
+
+  el("chart-wrap").innerHTML = `<p class="empty">Loading…</p>`;
+  el("chart-meta").textContent = "";
+  try {
+    const payload = await getJson(`/market/${encodeURIComponent(symbol)}/candles?timeframe=${timeframe}&limit=120`);
+    const candles = payload.data ?? [];
+    if (candles.length === 0) {
+      el("chart-wrap").innerHTML = `<p class="empty">No candles returned.</p>`;
+      return;
+    }
+    el("chart-wrap").innerHTML = renderCandles(candles);
+    wireTooltips(el("chart-wrap"));
+    const m = payload.meta;
+    const forming = candles.filter((c) => !c.closed).length;
+    el("chart-meta").textContent =
+      `${candles.length} bars · ${symbol} ${timeframe} · source ${m.source}` +
+      `${m.cached ? " · cached" : ""}${m.stale ? " · STALE" : ""}${forming ? ` · ${forming} still forming` : ""}`;
+  } catch (error) {
+    el("chart-wrap").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+/* ---------- routing ---------- */
+
+const LOADERS = {
+  portfolio: loadPortfolio,
+  signals: loadSignals,
+  positions: loadPositions,
+  history: loadHistory,
+  market: async () => { await loadOverview(); await loadCandles(); },
+};
+
+function show(view) {
+  state.view = view;
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const active = tab.dataset.view === view;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".view").forEach((section) => {
+    section.classList.toggle("is-active", section.dataset.view === view);
+  });
+  LOADERS[view]?.();
+}
 
 async function boot() {
   try {
     const coins = await getJson("/market/symbols");
-    el.symbol.innerHTML = coins
-      .map((c) => `<option value="${escapeHtml(c.symbol)}">${escapeHtml(c.symbol)}</option>`)
-      .join("");
+    state.symbols = coins.map((c) => c.symbol);
+    const options = state.symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+    el("symbol").innerHTML = options;
+    el("f-symbol").innerHTML = `<option value="">All symbols</option>${options}`;
   } catch {
-    el.symbol.innerHTML = `<option value="">unavailable</option>`;
+    el("symbol").innerHTML = `<option value="">unavailable</option>`;
   }
 
-  await loadOverview();
-  await loadCandles();
+  document.querySelectorAll(".tab").forEach((tab) =>
+    tab.addEventListener("click", () => show(tab.dataset.view)));
 
-  el.refresh.addEventListener("click", async () => {
-    await loadOverview();
-    await loadCandles();
-  });
-  el.symbol.addEventListener("change", loadCandles);
-  el.timeframe.addEventListener("change", loadCandles);
+  el("run-tick").addEventListener("click", runTick);
+  el("sig-tf").addEventListener("change", loadSignals);
+  el("symbol").addEventListener("change", loadCandles);
+  el("timeframe").addEventListener("change", loadCandles);
+  for (const id of ["f-symbol", "f-direction", "f-result"]) {
+    el(id).addEventListener("change", loadHistory);
+  }
 
-  // Polling is the Stage 1 mechanism; Stage 7 replaces it with the WebSocket
-  // push described in the architecture, at which point this goes away.
-  setInterval(loadOverview, 15000);
+  await loadOverview();   // the feed badge should be right from the first paint
+  show("portfolio");
+
+  // Polling is the Stage 7 mechanism; a WebSocket push replaces it later.
+  setInterval(() => {
+    loadOverview();
+    if (state.view === "portfolio") loadPortfolio();
+    if (state.view === "positions") loadPositions();
+  }, 20000);
 }
 
 boot();

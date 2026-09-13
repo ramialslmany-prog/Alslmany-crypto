@@ -294,3 +294,13 @@ async def test_a_negative_price_is_refused():
         await PaperBroker().place(
             symbol="X", side="buy", quantity=Decimal("1"), price=Decimal("-5")
         )
+
+
+async def test_notional_is_stored_as_a_readable_money_value():
+    """quantity x price carries the full precision of both. A dollar amount with
+    nineteen decimal places is not more precise, it is unreadable."""
+    eng = engine()
+    trade = await eng.open(request(quantity=Decimal("0.01306886")), data_is_live=True)
+
+    assert trade.notional == trade.notional.quantize(Decimal("0.01"))
+    assert len(str(trade.notional).split(".")[-1]) <= 2

@@ -308,3 +308,29 @@ def test_limits_are_configurable_without_touching_the_logic():
 
     assert approve(manager, confidence=Decimal("85")).approved is False
     assert approve(manager, portfolio=portfolio(open_symbols=frozenset({"X"}))).approved is False
+
+
+def test_the_invalidation_sentence_shows_a_readable_price():
+    """Decimal keeps every digit of the arithmetic that produced a value, which
+    is right for storage and wrong for a sentence."""
+    plan = build_plan(
+        direction="LONG",
+        entry=Decimal("121829.51"),
+        stop=Decimal("114177.74098213758276"),
+        balance=Decimal("10000"),
+        risk_pct=Decimal("1"),
+        atr=Decimal("2067.31"),
+    )
+
+    assert "114177.74" in plan.invalidation
+    assert "114177.74098213758276" not in plan.invalidation
+    # And the stored stop matches what the sentence claims.
+    assert plan.stop == Decimal("114177.74098214")
+
+
+def test_format_price_scales_its_precision_to_the_magnitude():
+    from app.risk.sizing import format_price
+
+    assert format_price(Decimal("121829.5134")) == "121829.51"
+    assert format_price(Decimal("2.41376655")) == "2.4138"
+    assert format_price(Decimal("0.000012345678")) == "0.00001235"

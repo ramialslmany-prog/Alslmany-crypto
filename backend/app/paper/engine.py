@@ -106,7 +106,10 @@ class PaperEngine:
             stop_loss=request.stop,
             take_profit=request.take_profit,
             quantity=fill.quantity,
-            notional=fill.notional,
+            # Quantised here rather than at the edge: a money value carrying
+            # nineteen decimal places is not more precise, it is unreadable,
+            # and it leaks the raw multiplication into every response.
+            notional=fill.notional.quantize(Decimal("0.01")),
             risk_amount=request.risk_amount,
             reward_risk=request.reward_risk,
             fees=fill.fee,

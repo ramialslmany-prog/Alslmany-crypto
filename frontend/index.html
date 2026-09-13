@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Market Data · Alslmany Paper Trading</title>
+<title>Alslmany · Paper Trading Desk</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -16,76 +16,188 @@
         <p class="sub">Analysis &amp; paper trading</p>
       </div>
     </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" class="tab is-active" data-view="portfolio" aria-selected="true">Portfolio</button>
+      <button role="tab" class="tab" data-view="signals" aria-selected="false">Signals</button>
+      <button role="tab" class="tab" data-view="positions" aria-selected="false">Open</button>
+      <button role="tab" class="tab" data-view="history" aria-selected="false">History</button>
+      <button role="tab" class="tab" data-view="market" aria-selected="false">Market</button>
+    </nav>
     <div class="topbar-right">
       <span class="badge badge-paper" title="This platform holds no exchange credentials and has no order-placement code path.">
-        PAPER TRADING ONLY
+        PAPER ONLY
       </span>
-      <span id="feed-state" class="badge badge-unknown">CHECKING FEED</span>
+      <span id="feed-state" class="badge badge-unknown">CHECKING</span>
     </div>
   </header>
 
   <main>
-    <!-- Availability is stated here, above the data, never inferred from a
-         blank cell. A screen that renders a price it could not obtain is the
-         failure mode this whole layer exists to prevent. -->
     <section id="notice" class="notice" hidden></section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Market overview</h2>
-        <div class="panel-actions">
-          <span id="updated" class="muted" aria-live="polite"></span>
-          <button id="refresh" type="button">Refresh</button>
+    <!-- ============ PORTFOLIO ============ -->
+    <section class="view is-active" data-view="portfolio">
+      <div class="tiles" id="tiles"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Equity curve</h2>
+          <span class="muted">Balance after each closed trade</span>
+        </div>
+        <div id="equity" class="chart-wrap"><p class="empty">Loading…</p></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h2>Outcome distribution</h2></div>
+          <div id="outcomes" class="chart-wrap"><p class="empty">Loading…</p></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Result by symbol</h2></div>
+          <div id="by-symbol" class="chart-wrap"><p class="empty">Loading…</p></div>
         </div>
       </div>
-      <div class="table-scroll">
-        <table id="overview">
-          <thead>
-            <tr>
-              <th scope="col">Symbol</th>
-              <th scope="col" class="num">Price</th>
-              <th scope="col" class="num">24h</th>
-              <th scope="col" class="num">24h high</th>
-              <th scope="col" class="num">24h low</th>
-              <th scope="col" class="num">24h volume</th>
-              <th scope="col">Source</th>
-            </tr>
-          </thead>
-          <tbody id="overview-body">
-            <tr><td colspan="7" class="empty">Loading…</td></tr>
-          </tbody>
-        </table>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Risk limits</h2>
+          <span class="muted">Compiled in — shown as facts, not toggles</span>
+        </div>
+        <div id="limits" class="limits"></div>
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Candles</h2>
-        <div class="panel-actions">
-          <label for="symbol" class="sr-only">Symbol</label>
-          <select id="symbol"></select>
-          <label for="timeframe" class="sr-only">Timeframe</label>
-          <select id="timeframe">
-            <option value="1m">1m</option>
-            <option value="5m">5m</option>
-            <option value="15m">15m</option>
-            <option value="1h" selected>1h</option>
-            <option value="4h">4h</option>
-            <option value="1d">1D</option>
-          </select>
+    <!-- ============ SIGNALS ============ -->
+    <section class="view" data-view="signals">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>AI signals</h2>
+          <div class="panel-actions">
+            <label for="sig-tf" class="sr-only">Timeframe</label>
+            <select id="sig-tf">
+              <option value="15m">15m</option>
+              <option value="1h" selected>1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
+            <button id="run-tick" type="button" class="primary">Run bot tick</button>
+          </div>
+        </div>
+        <div id="signals" class="cards"><p class="empty">Loading…</p></div>
+      </div>
+      <div id="tick-report" class="panel" hidden>
+        <div class="panel-head"><h2>Last tick</h2></div>
+        <div id="tick-body" class="tick-body"></div>
+      </div>
+    </section>
+
+    <!-- ============ OPEN POSITIONS ============ -->
+    <section class="view" data-view="positions">
+      <div class="panel">
+        <div class="panel-head"><h2>Open positions</h2></div>
+        <div id="positions" class="cards"><p class="empty">Loading…</p></div>
+      </div>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section class="view" data-view="history">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Trade history</h2>
+          <div class="panel-actions">
+            <label for="f-symbol" class="sr-only">Symbol</label>
+            <select id="f-symbol"><option value="">All symbols</option></select>
+            <label for="f-direction" class="sr-only">Direction</label>
+            <select id="f-direction">
+              <option value="">Long &amp; short</option>
+              <option value="LONG">Long</option>
+              <option value="SHORT">Short</option>
+            </select>
+            <label for="f-result" class="sr-only">Result</label>
+            <select id="f-result">
+              <option value="">Wins &amp; losses</option>
+              <option value="WIN">Wins</option>
+              <option value="LOSS">Losses</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table id="history">
+            <thead>
+              <tr>
+                <th scope="col">Symbol</th>
+                <th scope="col">Side</th>
+                <th scope="col" class="num">Entry</th>
+                <th scope="col" class="num">Exit</th>
+                <th scope="col" class="num">P/L</th>
+                <th scope="col" class="num">R</th>
+                <th scope="col">Result</th>
+                <th scope="col">Exit reason</th>
+                <th scope="col" class="num">Conf.</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr><td colspan="9" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div id="chart-wrap" class="chart-wrap">
-        <p class="empty">Select a symbol.</p>
+    </section>
+
+    <!-- ============ MARKET ============ -->
+    <section class="view" data-view="market">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Market overview</h2>
+          <span id="updated" class="muted" aria-live="polite"></span>
+        </div>
+        <div class="table-scroll">
+          <table id="overview">
+            <thead>
+              <tr>
+                <th scope="col">Symbol</th>
+                <th scope="col" class="num">Price</th>
+                <th scope="col" class="num">24h</th>
+                <th scope="col" class="num">24h high</th>
+                <th scope="col" class="num">24h low</th>
+                <th scope="col" class="num">Volume</th>
+                <th scope="col">Source</th>
+              </tr>
+            </thead>
+            <tbody id="overview-body">
+              <tr><td colspan="7" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p id="chart-meta" class="muted meta-line"></p>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Candles</h2>
+          <div class="panel-actions">
+            <label for="symbol" class="sr-only">Symbol</label>
+            <select id="symbol"></select>
+            <label for="timeframe" class="sr-only">Timeframe</label>
+            <select id="timeframe">
+              <option value="15m">15m</option>
+              <option value="1h" selected>1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
+          </div>
+        </div>
+        <div id="chart-wrap" class="chart-wrap"><p class="empty">Select a symbol.</p></div>
+        <p id="chart-meta" class="muted meta-line"></p>
+      </div>
     </section>
   </main>
 
+  <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+
   <footer>
     <p>
-      Stage 1 — market data and storage. Educational research tool, not
-      financial advice. All trades in this system are simulated.
+      Educational research tool, not financial advice. Every trade in this system is
+      simulated against a virtual balance. No exchange credentials are held and no
+      order can be placed.
     </p>
   </footer>
 

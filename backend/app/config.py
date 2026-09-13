@@ -88,6 +88,11 @@ class Settings(BaseSettings):
 
     market_data_api_key: str | None = Field(default=None, repr=False)
 
+    # Guards the bot tick endpoint. Unset means the endpoint is open, which is
+    # acceptable for a local run and is not for a deployment — so the readiness
+    # summary reports whether it is configured.
+    cron_secret: str | None = Field(default=None, repr=False)
+
     # ---- http -----------------------------------------------------------
     cors_origins: str = "*"
 
@@ -155,6 +160,7 @@ class Settings(BaseSettings):
             "max_drawdown_pct": str(self.max_drawdown_pct),
             "ai_provider": self.ai_provider,
             "ai_configured": self.ai_api_key is not None,
+            "bot_endpoint_protected": self.cron_secret is not None,
         }
 
 

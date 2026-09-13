@@ -125,6 +125,19 @@ def _empty(entry: Decimal, stop: Decimal) -> PositionSize:
     )
 
 
+def format_price(value: Decimal) -> str:
+    """A price a human can read.
+
+    Decimal keeps every digit of the arithmetic that produced a value, which is
+    exactly right for storage and wrong for a sentence: an invalidation level
+    printed as 114177.74098213758276 is not more precise to the reader, it is
+    unreadable.
+    """
+    magnitude = abs(value)
+    places = 2 if magnitude >= 1000 else 4 if magnitude >= 1 else 8
+    return f"{value.quantize(Decimal(1).scaleb(-places)):f}"
+
+
 @dataclass(frozen=True, slots=True)
 class Target:
     price: Decimal
@@ -183,6 +196,9 @@ def build_plan(
         return None
 
     is_long = direction == "LONG"
+    # Quantised once, here, so the stop stored on the plan and the stop shown in
+    # the invalidation sentence are the same number.
+    stop = stop.quantize(Decimal("0.00000001"))
     distance = abs(entry - stop)
     if distance <= 0:
         return None
@@ -232,11 +248,11 @@ def build_plan(
         reward_risk=reward_risk,
         size=size,
         invalidation=(
-            f"Close beyond {stop} invalidates the idea"
-            if atr is None
+            f"Close beyond {format_price(stop)} invalidates the idea"
+            if atr is None or atr <= 0
             else (
-                f"Close beyond {stop} (approximately {(distance / atr):.1f} ATR) "
-                "invalidates the idea"
+                f"Close beyond {format_price(stop)} "
+                f"(approximately {(distance / atr):.1f} ATR) invalidates the idea"
             )
         ),
     )

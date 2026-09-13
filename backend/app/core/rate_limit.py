@@ -42,6 +42,12 @@ BUDGETS: dict[str, Budget] = {
     "candles": Budget(limit=60),
     "orderbook": Budget(limit=60),
     "ticker": Budget(limit=120),
+    # A full scan analyses every symbol over 300 bars, so it is the most
+    # expensive thing a single request can ask for.
+    "signals": Budget(limit=20),
+    "analysis": Budget(limit=40),
+    # Opens and closes positions, and fans out across the whole universe.
+    "bot_tick": Budget(limit=10),
     # Served from our own database, so upstream is not touched at all.
     "local": Budget(limit=300),
 }
@@ -50,6 +56,12 @@ DEFAULT_BUDGET = Budget(limit=120)
 
 
 def classify(path: str) -> str:
+    if path.endswith("/bot/tick"):
+        return "bot_tick"
+    if path.endswith("/analysis"):
+        return "analysis"
+    if "/signals" in path:
+        return "signals"
     if path.endswith("/overview"):
         return "overview"
     if path.endswith("/candles"):
