@@ -48,6 +48,10 @@ BUDGETS: dict[str, Budget] = {
     "analysis": Budget(limit=40),
     # Opens and closes positions, and fans out across the whole universe.
     "bot_tick": Budget(limit=10),
+    # The only CPU-bound route: a thousand-bar replay runs the full analyser a
+    # thousand times. Budgeted on the machine's own capacity rather than on any
+    # venue's quota, since it touches upstream exactly once.
+    "backtest": Budget(limit=5),
     # Served from our own database, so upstream is not touched at all.
     "local": Budget(limit=300),
 }
@@ -56,6 +60,8 @@ DEFAULT_BUDGET = Budget(limit=120)
 
 
 def classify(path: str) -> str:
+    if "/backtest" in path:
+        return "backtest"
     if path.endswith("/bot/tick"):
         return "bot_tick"
     if path.endswith("/analysis"):

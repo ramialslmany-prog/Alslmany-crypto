@@ -285,3 +285,53 @@ async def api_cached(tmp_path, monkeypatch):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             yield client, stub, app
     get_settings.cache_clear()
+
+
+async def test_a_backtest_is_labelled_and_reports_its_benchmark(api):
+    client, _ = api
+    r = await client.get("/api/backtest/BTCUSDT?timeframe=1h&bars=260")
+    assert r.status_code == 200
+    body = r.json()
+
+    # The label is the point: a replay and a paper-trading record must never be
+    # read as the same kind of evidence.
+    assert body["kind"] == "BACKTEST"
+    assert "buy_and_hold_pct" in body
+    assert body["meta"]["source"] == "stub"
+    assert body["meta"]["bars_requested"] == 260
+
+
+async def test_a_backtest_larger_than_the_machine_should_serve_is_refused(api):
+    client, _ = api
+    r = await client.get("/api/backtest/BTCUSDT?bars=5000")
+    assert r.status_code == 422
+
+
+async def test_a_backtest_too_short_to_mean_anything_is_refused(api):
+    """Rejected at the edge rather than returning an empty result that reads
+    like a finding. "0 trades" from 20 bars is not a strategy result."""
+    client, _ = api
+    r = await client.get("/api/backtest/BTCUSDT?bars=30")
+    assert r.status_code == 422
+
+
+async def test_a_backtest_does_not_block_the_event_loop(api):
+    """The replay is the one CPU-bound route here, and it is handed to a worker
+    thread for exactly this reason.
+
+    The assertion that carries the weight is `not task.done()`: the health check
+    answers *while the replay is still running*. Were the replay awaited on the
+    loop instead, nothing else could be served until it finished, so the health
+    check could only return after it — and the task would already be done. A
+    timeout alone would not catch that; it would just pass more slowly.
+    """
+    import asyncio
+
+    client, _ = api
+    task = asyncio.create_task(client.get("/api/backtest/BTCUSDT?bars=800"))
+    await asyncio.sleep(0.05)  # let the request reach the worker thread
+    health = await asyncio.wait_for(client.get("/api/health"), timeout=2.0)
+
+    assert health.status_code == 200
+    assert not task.done(), "the replay held the event loop while it ran"
+    assert (await task).status_code == 200

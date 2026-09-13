@@ -629,6 +629,94 @@ async function loadCandles() {
   }
 }
 
+/* ---------- backtest ---------- */
+
+/** The replay is expensive, so it runs on request and never on tab open. */
+async function runBacktest() {
+  const symbol = el("bt-symbol").value;
+  const timeframe = el("bt-tf").value;
+  const bars = el("bt-bars").value;
+  if (!symbol) return;
+
+  const button = el("run-backtest");
+  button.disabled = true;
+  button.textContent = "Replaying…";
+  el("bt-status").hidden = false;
+  el("bt-status").className = "notice info";
+  el("bt-status").innerHTML = `<strong>Replaying ${esc(symbol)} ${esc(timeframe)} over ${esc(bars)} bars…</strong>`;
+
+  try {
+    const r = await getJson(
+      `/backtest/${encodeURIComponent(symbol)}?timeframe=${timeframe}&bars=${bars}`);
+    renderBacktest(r);
+  } catch (error) {
+    el("bt-results").hidden = true;
+    el("bt-status").className = "notice bad";
+    el("bt-status").innerHTML = `<strong>The replay could not run</strong><br />${esc(error.message)}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run replay";
+  }
+}
+
+function renderBacktest(r) {
+  const perf = r.performance;
+  const ret = signed(r.total_return_pct, "%");
+  const hold = signed(r.buy_and_hold_pct, "%");
+  const beat = num(r.total_return_pct) - num(r.buy_and_hold_pct);
+  const vs = signed(beat, "%");
+
+  // The status line carries the caveats FIRST. A caveat printed under a
+  // headline number has already been outranked by it.
+  const caveats = (r.caveats || []).map((c) => `<li>${esc(c)}</li>`).join("");
+  el("bt-status").className = caveats ? "notice warn" : "notice info";
+  el("bt-status").innerHTML =
+    `<strong>Simulated result — ${esc(r.symbol)} ${esc(r.timeframe)}</strong><br />` +
+    `${r.meta.bars_received} bars received of ${r.meta.bars_requested} asked for · ` +
+    `${r.bars_analysed} reached the analyser · ${r.signals_generated} qualified · ` +
+    `${perf.total_trades} trades taken · source ${esc(r.meta.source)}` +
+    (caveats ? `<ul>${caveats}</ul>` : "");
+
+  el("bt-tiles").innerHTML = [
+    { label: "Strategy return", value: ret.text, cls: ret.cls, sub: `from ${fmtMoney(r.starting_balance)} · risk ${r.risk_pct}%/trade` },
+    { label: "Buy and hold", value: hold.text, cls: hold.cls, sub: "same window, no trading" },
+    { label: "Versus holding", value: vs.text, cls: vs.cls, sub: beat >= 0 ? "the strategy added this" : "holding would have won" },
+    { label: "Trades", value: perf.total_trades, sub: `${perf.wins}W / ${perf.losses}L` },
+    { label: "Win rate", value: `${perf.win_rate}%`, sub: `longest losing streak ${perf.longest_losing_streak}` },
+    { label: "Profit factor", value: perf.profit_factor ?? "—", sub: perf.profit_factor ? "gross win ÷ gross loss" : "no losses recorded" },
+    { label: "Expectancy", value: `${perf.expectancy_r}R`, sub: "per trade, in R" },
+    { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `fees paid ${fmtMoney(perf.total_fees)}` },
+  ].map((t) => `<div class="tile">
+      <p class="label">${t.label}</p>
+      <p class="value ${t.cls || ""}">${esc(t.value)}</p>
+      <p class="sub">${esc(t.sub)}</p>
+    </div>`).join("");
+
+  el("bt-equity").innerHTML = renderEquity(r.equity, num(r.starting_balance));
+  wireTooltips(el("bt-equity"));
+
+  el("bt-count").textContent = `${r.trades.length} closed`;
+  el("bt-trades-body").innerHTML = r.trades.length
+    ? r.trades.map((t) => {
+        const pnl = signed(t.pnl);
+        const rr = signed(t.r_multiple, "R");
+        return `<tr>
+          <td class="muted">${t.opened_at ? esc(new Date(t.opened_at).toLocaleString()) : "—"}</td>
+          <td><span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span></td>
+          <td class="num price">${fmtPrice(t.entry)}</td>
+          <td class="num price">${fmtPrice(t.exit)}</td>
+          <td class="num ${pnl.cls}">${pnl.text}</td>
+          <td class="num ${rr.cls}">${rr.text}</td>
+          <td><span class="tag ${t.result === "WIN" ? "win" : t.result === "LOSS" ? "loss" : ""}">${esc(t.result || "—")}</span></td>
+          <td class="muted">${esc((t.exit_reason || "").replace(/_/g, " "))}</td>
+          <td class="num">${Number(t.confidence).toFixed(0)}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="9" class="empty">The strategy took no trade in this window. That is a result, not a failure — it declined every setup on offer.</td></tr>`;
+
+  el("bt-results").hidden = false;
+}
+
 /* ---------- routing ---------- */
 
 const LOADERS = {
@@ -637,6 +725,8 @@ const LOADERS = {
   positions: loadPositions,
   history: loadHistory,
   market: async () => { await loadOverview(); await loadCandles(); },
+  // Deliberately absent: a replay costs real CPU and must be asked for.
+  backtest: () => {},
 };
 
 function show(view) {
@@ -659,14 +749,17 @@ async function boot() {
     const options = state.symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
     el("symbol").innerHTML = options;
     el("f-symbol").innerHTML = `<option value="">All symbols</option>${options}`;
+    el("bt-symbol").innerHTML = options;
   } catch {
     el("symbol").innerHTML = `<option value="">unavailable</option>`;
+    el("bt-symbol").innerHTML = `<option value="">unavailable</option>`;
   }
 
   document.querySelectorAll(".tab").forEach((tab) =>
     tab.addEventListener("click", () => show(tab.dataset.view)));
 
   el("run-tick").addEventListener("click", runTick);
+  el("run-backtest").addEventListener("click", runBacktest);
   el("sig-tf").addEventListener("change", loadSignals);
   el("symbol").addEventListener("change", loadCandles);
   el("timeframe").addEventListener("change", loadCandles);

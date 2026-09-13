@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.analysis.momentum import Macd, Stochastic
 from app.analysis.structure import BreakKind, Structure, StructureState
 from app.analysis.trend import Trend, TrendReading
-from app.analysis.volatility import VolatilityReading
+from app.analysis.volatility import Volatility, VolatilityReading
 from app.analysis.volume import VolumeReading, VolumeState
 from app.signals.scoring import WEIGHTS, Factor
 
@@ -309,9 +309,9 @@ def score_news_risk(
     if not volatility.is_tradeable:
         raw = -1.0
         reasons.append("volatility-extreme")
-    elif volatility.percentile is not None and volatility.percentile > 85:
+    elif volatility.regime is Volatility.HIGH:
         raw = -0.4
-        reasons.append("volatility-elevated")
+        reasons.append("volatility-high")
     else:
         # With no news feed and nothing unusual in volatility, this dimension
         # has nothing to say — which is `available=False`, not `raw=0.0`. The

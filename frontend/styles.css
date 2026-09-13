@@ -89,6 +89,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
   color: #ffd9da; font-size: 13px;
 }
 .notice.warn { border-color: var(--warn-rule); background: var(--warn-bg); color: #ffe6b0; }
+/* A replay that ran is not an error. The base `.notice` is crimson, so a
+   neutral report needs its own ground rather than borrowing the alarm one. */
+.notice.info { border-color: var(--rule); background: var(--panel-2); color: var(--ink); }
+/* Named explicitly so every call site states its state rather than relying
+   on the base rule happening to be the alarming one. */
+.notice.bad { border-color: var(--bad-rule); background: var(--bad-bg); color: #ffd9da; }
+.notice ul { margin: 6px 0 0; padding-inline-start: 18px; }
+.notice li { margin-top: 2px; }
 .notice h3 { margin: 0 0 4px; font-size: 13px; }
 
 .panel {

@@ -269,3 +269,24 @@ def test_a_meaningful_level_still_caps_the_targets():
         resistance=Decimal("108"),  # well beyond half the stop distance
     )
     assert all(t.price <= Decimal("108") for t in plan.targets)
+
+
+def test_event_risk_trusts_the_volatility_regime_not_the_raw_percentile():
+    """`classify_volatility` already combines rank AND magnitude, precisely so a
+    calm market is not called extreme on floating-point noise. Scoring the raw
+    percentile here second-guessed it with rank alone and re-introduced that
+    bug: a strong trend raises its own ATR percentile as it runs, so every
+    textbook trending setup was docked 2 points for trending.
+    """
+    from app.analysis.volatility import Volatility, VolatilityReading
+
+    # High rank, ordinary magnitude — the signature of a healthy trend.
+    trending = VolatilityReading(regime=Volatility.NORMAL, atr=1.0, atr_pct=1.2, percentile=98.0)
+    assert score_news_risk(trending).available is False, (
+        "a normal regime has nothing to say about event risk"
+    )
+
+    genuinely_high = VolatilityReading(
+        regime=Volatility.HIGH, atr=1.0, atr_pct=3.0, percentile=88.0
+    )
+    assert score_news_risk(genuinely_high).raw < 0

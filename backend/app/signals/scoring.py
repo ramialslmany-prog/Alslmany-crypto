@@ -129,7 +129,27 @@ def combine(factors: list[Factor]) -> Score:
         return Score(direction=Direction.NO_TRADE, confidence=0.0, bias=0.0, factors=tuple(factors))
 
     signed = sum(f.contribution for f in factors)
-    bias = signed / available * 100
+
+    # Divide by the weight that actually SPOKE, not by every available weight.
+    # Silence is already excluded from `consensus` on the stated grounds that
+    # counting it as disagreement is as wrong as counting it as assent — and
+    # leaving it in this denominator did exactly that to the lean. It capped a
+    # textbook setup (perfect trend, bullish structure with a break, bullish
+    # MACD, 3R) at 73.0 confidence against a 75 floor, in seven of eight
+    # scenarios, so the bot could never trade. `coverage` below is what accounts
+    # for missing evidence; doing it twice is double-counting it.
+    speaking = [f for f in factors if f.available and f.raw != 0]
+    speaking_weight = sum(f.weight for f in speaking)
+    if speaking_weight <= 0:
+        return Score(
+            direction=Direction.NO_TRADE,
+            confidence=0.0,
+            bias=0.0,
+            factors=tuple(factors),
+            coverage=round(available / sum(WEIGHTS.values()), 4),
+        )
+
+    bias = signed / speaking_weight * 100
 
     if bias > 0:
         direction = Direction.LONG
@@ -140,7 +160,6 @@ def combine(factors: list[Factor]) -> Score:
 
     coverage = available / sum(WEIGHTS.values())
 
-    speaking = [f for f in factors if f.available and f.raw != 0]
     if speaking and direction is not Direction.NO_TRADE:
         wanted = 1 if direction is Direction.LONG else -1
         agreeing = sum(

@@ -22,6 +22,7 @@
       <button role="tab" class="tab" data-view="positions" aria-selected="false">Open</button>
       <button role="tab" class="tab" data-view="history" aria-selected="false">History</button>
       <button role="tab" class="tab" data-view="market" aria-selected="false">Market</button>
+      <button role="tab" class="tab" data-view="backtest" aria-selected="false">Backtest</button>
     </nav>
     <div class="topbar-right">
       <span class="badge badge-paper" title="This platform holds no exchange credentials and has no order-placement code path.">
@@ -187,6 +188,78 @@
         </div>
         <div id="chart-wrap" class="chart-wrap"><p class="empty">Select a symbol.</p></div>
         <p id="chart-meta" class="muted meta-line"></p>
+      </div>
+    </section>
+
+    <!-- ============ BACKTEST ============ -->
+    <section class="view" data-view="backtest">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Historical replay</h2>
+          <div class="panel-actions">
+            <label for="bt-symbol" class="sr-only">Symbol</label>
+            <select id="bt-symbol"></select>
+            <label for="bt-tf" class="sr-only">Timeframe</label>
+            <select id="bt-tf">
+              <option value="15m">15m</option>
+              <option value="1h" selected>1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
+            <label for="bt-bars" class="sr-only">Bars</label>
+            <select id="bt-bars">
+              <option value="300">300 bars</option>
+              <option value="500" selected>500 bars</option>
+              <option value="1000">1000 bars</option>
+            </select>
+            <button id="run-backtest" type="button" class="primary">Run replay</button>
+          </div>
+        </div>
+        <p class="muted meta-line">
+          The replay runs the same analyser, the same risk manager and the same broker the
+          live bot uses. It decides on a bar&rsquo;s close and fills on the <em>next</em> bar&rsquo;s
+          open; when one bar contains both the stop and the target it takes the stop; and it
+          charges fees and adverse slippage on every entry and exit. These make the result
+          worse than a naive backtest, which is the point.
+        </p>
+        <div id="bt-status" class="notice" hidden></div>
+      </div>
+
+      <div id="bt-results" hidden>
+        <div class="tiles" id="bt-tiles"></div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Replay equity curve</h2>
+            <span class="muted">Balance after each closed trade &mdash; simulated</span>
+          </div>
+          <div id="bt-equity" class="chart-wrap"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Replay trades</h2>
+            <span id="bt-count" class="muted"></span>
+          </div>
+          <div class="table-scroll">
+            <table id="bt-trades">
+              <thead>
+                <tr>
+                  <th scope="col">Opened</th>
+                  <th scope="col">Side</th>
+                  <th scope="col" class="num">Entry</th>
+                  <th scope="col" class="num">Exit</th>
+                  <th scope="col" class="num">P/L</th>
+                  <th scope="col" class="num">R</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Exit reason</th>
+                  <th scope="col" class="num">Conf.</th>
+                </tr>
+              </thead>
+              <tbody id="bt-trades-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   </main>
