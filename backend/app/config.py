@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     max_open_trades: int = 5
     max_daily_loss_pct: Decimal = Decimal("3")
     max_drawdown_pct: Decimal = Decimal("10")
+    # The cap `max_open_trades` only appears to provide. Five positions at 1%
+    # each are a 5% bet when they are correlated, and in crypto they usually
+    # are; this bounds the COMBINED loss of a joint adverse move.
+    max_portfolio_heat_pct: Decimal = Decimal("2.5")
 
     # ---- AI provider (Stage 4; keys never reach the frontend) -----------
     ai_provider: str = "anthropic"
@@ -110,7 +114,12 @@ class Settings(BaseSettings):
             raise ValueError("initial_balance_usdt must be positive")
         return v
 
-    @field_validator("risk_per_trade_pct", "max_daily_loss_pct", "max_drawdown_pct")
+    @field_validator(
+        "risk_per_trade_pct",
+        "max_daily_loss_pct",
+        "max_drawdown_pct",
+        "max_portfolio_heat_pct",
+    )
     @classmethod
     def _sane_percentage(cls, v: Decimal) -> Decimal:
         if not (0 < v <= 100):
@@ -158,6 +167,7 @@ class Settings(BaseSettings):
             "max_open_trades": self.max_open_trades,
             "max_daily_loss_pct": str(self.max_daily_loss_pct),
             "max_drawdown_pct": str(self.max_drawdown_pct),
+            "max_portfolio_heat_pct": str(self.max_portfolio_heat_pct),
             "ai_provider": self.ai_provider,
             "ai_configured": self.ai_api_key is not None,
             "bot_endpoint_protected": self.cron_secret is not None,

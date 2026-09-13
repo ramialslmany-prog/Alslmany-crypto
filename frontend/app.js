@@ -400,14 +400,19 @@ function renderPositionCard(t) {
       </span>
     </header>
     <div class="card-body">
-      <div class="kv"><dt>Entry</dt><dd>${fmtPrice(t.entry)}</dd></div>
-      <div class="kv"><dt>Current</dt><dd>${fmtPrice(t.current_price)}</dd></div>
-      <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(t.stop_loss)}</dd></div>
-      <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(t.take_profit)}</dd></div>
-      <div class="kv"><dt>Quantity</dt><dd>${esc(t.quantity)}</dd></div>
-      <div class="kv"><dt>Risked</dt><dd>${fmtMoney(t.risk_amount)}</dd></div>
-      <div class="kv"><dt>Unrealised</dt><dd class="${pnl.cls}">${pnl.text} <span class="muted">(${r.text})</span></dd></div>
-      <div class="kv"><dt>Opened</dt><dd>${t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</dd></div>
+      <!-- A dl, not loose dt/dd in divs. Outside a list they are invalid and a
+           screen reader reads eight labels and eight numbers with nothing
+           joining them. -->
+      <dl class="kv-list">
+        <div class="kv"><dt>Entry</dt><dd>${fmtPrice(t.entry)}</dd></div>
+        <div class="kv"><dt>Current</dt><dd>${fmtPrice(t.current_price)}</dd></div>
+        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(t.stop_loss)}</dd></div>
+        <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(t.take_profit)}</dd></div>
+        <div class="kv"><dt>Quantity</dt><dd>${esc(t.quantity)}</dd></div>
+        <div class="kv"><dt>Risked</dt><dd>${fmtMoney(t.risk_amount)}</dd></div>
+        <div class="kv"><dt>Unrealised</dt><dd class="${pnl.cls}">${pnl.text} <span class="muted">(${r.text})</span></dd></div>
+        <div class="kv"><dt>Opened</dt><dd>${t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</dd></div>
+      </dl>
       <p class="card-reason">${esc(t.reason)}</p>
     </div>
   </article>`;
@@ -462,6 +467,58 @@ async function acknowledgeDrawdown() {
   }
 }
 
+/** Five positions at 1% each are a 5% bet when they move together. The
+    position count says "5 of 5"; only this says what is actually at stake. */
+function renderHeat(heat, limitPct) {
+  if (!heat || num(heat.naive_risk) === 0) {
+    return `<p class="empty">No open positions, so nothing is concentrated.</p>`;
+  }
+
+  const effective = num(heat.effective_pct);
+  const limit = num(limitPct) ?? 2.5;
+  const concentration = num(heat.concentration) ?? 0;
+  const over = effective > limit;
+
+  // The bar is the share of the limit consumed, capped so an over-limit book
+  // still renders inside its track rather than overflowing the panel.
+  const filled = Math.min((effective / limit) * 100, 100);
+
+  const pair = heat.worst_pair
+    ? `<div class="kv"><dt>Most correlated pair</dt><dd>${esc(heat.worst_pair.a)} &amp; ${esc(heat.worst_pair.b)} · ${esc(heat.worst_pair.correlation)}</dd></div>`
+    : "";
+
+  const assumed = (heat.assumed_pairs || []).length
+    ? `<p class="muted assumed">Not measured, so assumed correlated: ${esc(heat.assumed_pairs.join(", "))}.
+       Too little shared history to compute these, and guessing them apart would
+       report a concentrated book as a diversified one.</p>`
+    : "";
+
+  return `
+    <div class="heat-head">
+      <div>
+        <p class="label">At risk together</p>
+        <p class="value ${over ? "down" : ""}">${esc(heat.effective_pct)}%</p>
+        <p class="sub">limit ${esc(limitPct)}% · ${fmtMoney(heat.effective_risk)} of the account</p>
+      </div>
+      <div>
+        <p class="label">Sum of the positions</p>
+        <p class="value">${fmtMoney(heat.naive_risk)}</p>
+        <p class="sub">what they risk if nothing moves together</p>
+      </div>
+    </div>
+    <div class="heat-bar" role="img"
+         aria-label="Combined risk ${esc(heat.effective_pct)} percent of the account against a limit of ${esc(limitPct)} percent.">
+      <span class="fill ${over ? "over" : ""}" style="width:${filled.toFixed(1)}%"></span>
+    </div>
+    <dl class="kv-list">
+      <div class="kv"><dt>Concentration</dt><dd>${esc(heat.concentration)} ${
+        concentration > 0.9 ? "— effectively one position" :
+        concentration > 0.6 ? "— partly the same bet" : "— genuinely spread"}</dd></div>
+      ${pair}
+    </dl>
+    ${assumed}`;
+}
+
 async function loadPortfolio() {
   try {
     const [p, curve, hist] = await Promise.all([
@@ -490,6 +547,7 @@ async function loadPortfolio() {
       </div>`).join("");
 
     renderHalt(p.halt, p.last_drawdown_reset);
+    el("heat").innerHTML = renderHeat(p.heat, p.limits.max_portfolio_heat_pct);
     el("equity").innerHTML = renderEquity(curve.data, num(curve.starting_balance));
     el("outcomes").innerHTML = renderOutcomes(perf);
     state.history = hist.data;
@@ -500,6 +558,7 @@ async function loadPortfolio() {
       ["Max open trades", p.limits.max_open_trades],
       ["Max daily loss", `${esc(p.limits.max_daily_loss_pct)}%`],
       ["Max drawdown", `${esc(p.limits.max_drawdown_pct)}%`],
+      ["Max combined risk", `${esc(p.limits.max_portfolio_heat_pct)}%`],
       ["Longest losing streak", perf.longest_losing_streak],
       ["Fees paid", fmtMoney(perf.total_fees)],
     ].map(([label, value]) => `<div><div class="label">${label}</div><div class="value">${esc(value)}</div></div>`).join("");

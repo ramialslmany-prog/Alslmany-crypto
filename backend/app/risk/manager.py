@@ -28,6 +28,7 @@ class RejectReason(StrEnum):
     CONFIDENCE_TOO_LOW = "confidence_too_low"
     RISK_REWARD_TOO_LOW = "risk_reward_too_low"
     VOLATILITY_EXTREME = "volatility_extreme"
+    PORTFOLIO_HEAT = "portfolio_heat"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,12 @@ class RiskLimits:
     min_reward_risk: Decimal = Decimal("1.5")
     # Below this the fees dominate the outcome and the trade is noise.
     min_notional: Decimal = Decimal("10")
+    # The cap that `max_open_trades` only appears to provide. Five positions at
+    # 1% each look like a 5% worst case; if they are correlated they are one
+    # 5% position. This limits the COMBINED risk of a joint adverse move —
+    # 2.5% allows genuine diversification (five independent 1% bets combine to
+    # about 2.2%) while refusing five copies of the same trade.
+    max_portfolio_heat_pct: Decimal = Decimal("2.5")
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +77,12 @@ class RiskDecision:
     approved: bool
     reasons: tuple[RejectReason, ...] = ()
     notes: tuple[str, ...] = ()
+    # Whether the correlation-aware heat limit actually ran. It is carried here
+    # rather than appended to `notes`, because every note in that tuple
+    # corresponds to a breached rule — a note without a reason would break the
+    # one-to-one relationship a test already enforces, and "this check did not
+    # run" is not a rejection.
+    heat_checked: bool = True
 
     @property
     def primary_reason(self) -> RejectReason | None:
@@ -91,6 +104,7 @@ class RiskManager:
         data_is_live: bool,
         volatility_tradeable: bool = True,
         now: datetime | None = None,
+        projected_heat_pct: Decimal | None = None,
     ) -> RiskDecision:
         """Collect EVERY breached rule, not just the first.
 
@@ -154,6 +168,20 @@ class RiskManager:
             reasons.append(RejectReason.VOLATILITY_EXTREME)
             notes.append("Volatility is extreme; stops would be run by noise.")
 
+        # `projected_heat_pct` is what the book would risk in a joint adverse
+        # move WITH this position added, not what it risks now. Checking the
+        # current heat would approve the trade that breaches the limit and then
+        # refuse the one after it.
+        if projected_heat_pct is not None:
+            if projected_heat_pct > self.limits.max_portfolio_heat_pct:
+                reasons.append(RejectReason.PORTFOLIO_HEAT)
+                notes.append(
+                    f"Opening this would put {projected_heat_pct:.2f}% of the account "
+                    f"at risk in a correlated move; the limit is "
+                    f"{self.limits.max_portfolio_heat_pct}%. Position count is not "
+                    "the constraint here — concentration is."
+                )
+
         if notional <= 0:
             reasons.append(RejectReason.POSITION_TOO_SMALL)
             notes.append("Computed position size is zero.")
@@ -164,7 +192,12 @@ class RiskManager:
             reasons.append(RejectReason.INSUFFICIENT_BALANCE)
             notes.append(f"Position of {notional} exceeds the balance of {portfolio.balance}.")
 
-        return RiskDecision(approved=not reasons, reasons=tuple(reasons), notes=tuple(notes))
+        return RiskDecision(
+            approved=not reasons,
+            reasons=tuple(reasons),
+            notes=tuple(notes),
+            heat_checked=projected_heat_pct is not None,
+        )
 
     def halt_state(
         self, portfolio: PortfolioState, now: datetime | None = None

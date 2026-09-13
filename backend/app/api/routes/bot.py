@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -9,12 +10,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analysis import correlation
+from app.analysis.series import to_series
 from app.api.deps import get_market_service, require_operator, settings_dep
 from app.config import Settings
 from app.core.errors import MarketDataError
 from app.core.logging import get_logger
 from app.database.session import get_session
-from app.market_data.timeframes import parse_timeframe
+from app.market_data.timeframes import Timeframe, parse_timeframe
 from app.paper.broker import PaperBroker
 from app.paper.engine import ExitReason, PaperEngine
 from app.paper.models import PaperTrade
@@ -25,6 +28,11 @@ from app.risk.manager import RiskLimits, RiskManager
 from app.services.market_service import MarketService
 
 logger = get_logger(__name__)
+
+# Matches the bot's own correlation window: roughly two months of hourly
+# bars, long enough to measure and short enough that last quarter's regime
+# does not outvote this week's.
+HEAT_BARS = 240
 router = APIRouter(prefix="/bot", tags=["bot"])
 
 
@@ -34,6 +42,7 @@ def _limits(settings: Settings) -> RiskLimits:
         max_open_trades=settings.max_open_trades,
         max_daily_loss_pct=settings.max_daily_loss_pct,
         max_drawdown_pct=settings.max_drawdown_pct,
+        max_portfolio_heat_pct=settings.max_portfolio_heat_pct,
     )
 
 
@@ -120,9 +129,15 @@ async def portfolio(
     # Only one of them needs a human, so the difference is stated.
     halt = RiskManager(_limits(settings)).halt_state(state)
 
+    # What the open book would lose together. `max_open_trades` bounds the
+    # number of positions; this is the only number that bounds the bet.
+    heat = await _heat_of(market, open_trades, state.equity)
+
     return {
         "paper_trading_only": True,
         "halt": halt,
+        "heat": heat.to_dict(),
+        "heat_limit_pct": str(settings.max_portfolio_heat_pct),
         "last_drawdown_reset": (
             None
             if override is None
@@ -147,6 +162,7 @@ async def portfolio(
             "max_open_trades": settings.max_open_trades,
             "max_daily_loss_pct": str(settings.max_daily_loss_pct),
             "max_drawdown_pct": str(settings.max_drawdown_pct),
+            "max_portfolio_heat_pct": str(settings.max_portfolio_heat_pct),
         },
     }
 
@@ -355,3 +371,34 @@ async def risk_overrides(
             for r in rows
         ]
     }
+
+
+async def _heat_of(
+    market: MarketService, open_trades: list[PaperTrade], equity: Decimal
+) -> correlation.Heat:
+    """Correlation-aware risk across the open book.
+
+    Correlations are measured from the same daily history the benchmark uses.
+    A symbol whose history cannot be fetched simply does not contribute a
+    measured pair, and `portfolio_heat` then assumes the pair is correlated —
+    the conservative reading, and the right one when the alternative is
+    reporting a concentrated book as diversified.
+    """
+    exposures = [
+        correlation.Exposure(symbol=t.symbol, direction=t.direction, risk_amount=t.risk_amount)
+        for t in open_trades
+    ]
+    if len(exposures) < 2:
+        return correlation.portfolio_heat(exposures, {}, equity)
+
+    symbols = sorted({e.symbol for e in exposures})
+    fetched = await asyncio.gather(
+        *(market.get_candles(s, Timeframe.H1, limit=HEAT_BARS, persist=False) for s in symbols),
+        return_exceptions=True,
+    )
+    series = {
+        symbol: to_series(result.data)
+        for symbol, result in zip(symbols, fetched, strict=True)
+        if not isinstance(result, BaseException)
+    }
+    return correlation.portfolio_heat(exposures, correlation.matrix(series), equity)

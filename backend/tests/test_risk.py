@@ -334,3 +334,54 @@ def test_format_price_scales_its_precision_to_the_magnitude():
     assert format_price(Decimal("121829.5134")) == "121829.51"
     assert format_price(Decimal("2.41376655")) == "2.4138"
     assert format_price(Decimal("0.000012345678")) == "0.00001235"
+
+
+# --- the limit `max_open_trades` only appeared to provide --------------------
+
+
+def test_a_concentrated_book_is_refused_even_under_the_position_limit():
+    """Three positions is well inside the five-position limit. If they are the
+    same bet three times, the position count is not the constraint that
+    matters."""
+    manager = RiskManager()
+    decision = approve(
+        manager,
+        portfolio=portfolio(open_symbols=frozenset({"ETHUSDT", "SOLUSDT"})),
+        projected_heat_pct=Decimal("2.9"),
+    )
+
+    assert not decision.approved
+    assert RejectReason.PORTFOLIO_HEAT in decision.reasons
+    assert any("concentration" in n for n in decision.notes)
+
+
+def test_a_diversified_book_at_the_same_position_count_is_allowed():
+    manager = RiskManager()
+    decision = approve(
+        manager,
+        portfolio=portfolio(open_symbols=frozenset({"ETHUSDT", "SOLUSDT"})),
+        projected_heat_pct=Decimal("2.2"),
+    )
+
+    assert decision.approved
+    assert decision.heat_checked is True
+
+
+def test_heat_exactly_at_the_limit_is_allowed():
+    """The limit is a ceiling, not a fence one short of it."""
+    manager = RiskManager(RiskLimits(max_portfolio_heat_pct=Decimal("2.5")))
+    assert approve(manager, projected_heat_pct=Decimal("2.5")).approved
+
+
+def test_an_unmeasured_heat_is_flagged_rather_than_silently_skipped():
+    """A caller with nothing to correlate — a single-symbol replay — passes
+    None. That must be visible on the decision, not inferred from its absence.
+    """
+    manager = RiskManager()
+    decision = approve(manager, projected_heat_pct=None)
+
+    assert decision.approved
+    assert decision.heat_checked is False
+    # And it does not appear as a note: every note corresponds to a breached
+    # rule, and "this check did not run" is not one.
+    assert not any("heat" in n.lower() for n in decision.notes)

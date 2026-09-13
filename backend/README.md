@@ -76,7 +76,7 @@ pre-push hook and CI both call.
 | GET | `/api/signals` | Every tracked symbol, scanned concurrently. |
 | GET | `/api/signals/{symbol}` | One signal, with its plan or its refusal. |
 | GET | `/api/signals/{symbol}/analysis` | Every indicator reading behind it. |
-| GET | `/api/bot/portfolio` | Balance, performance, limits, **and `halt`**. |
+| GET | `/api/bot/portfolio` | Balance, performance, limits, `halt`, **and `heat`**. |
 | GET | `/api/bot/trades/open` | Open positions, marked to market. |
 | GET | `/api/bot/trades/history` | Closed trades, filterable. |
 | GET | `/api/bot/equity-curve` | Balance after each closed trade. |
@@ -161,7 +161,8 @@ app/
     repositories/        upserts keyed so re-ingestion is idempotent
   services/              fetch-and-store orchestration
   analysis/              series, trend, momentum, volatility, volume, levels,
-                         structure (BOS/CHoCH, FVG, order blocks, sweeps)
+                         structure (BOS/CHoCH, FVG, order blocks, sweeps),
+                         correlation (returns-based, with portfolio heat)
   signals/               factors.py (the seven dimensions) · scoring.py
                          (conviction x consensus x coverage) · analyzer.py
   risk/                  sizing.py (quantity from stop distance) · manager.py
@@ -172,7 +173,7 @@ app/
   analytics/             breakdown (Wilson intervals) · insights (inert by
                          construction) · benchmark (versus holding)
   api/routes/            HTTP surface
-tests/                   295 tests, no network required
+tests/                   324 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -256,10 +257,13 @@ slippage on both legs. Real slippage grows with order size and shrinks with
 liquidity; real fills are partial; real perpetuals charge funding. None of that
 is here.
 
-**There is no correlation model.** Five open positions across BTC, ETH and SOL
-is close to one position in a drawdown. The `max_open_trades` limit bounds the
-number of trades, not the concentration of risk, so a bad day costs nearer 5%
-than 1%.
+**Correlation is measured now, and is still an estimate.** It is computed on
+RETURNS rather than prices — two assets that both drift upward for a year show
+a price correlation near 1 whether or not their daily moves are related — over
+a rolling 240-bar window. But it describes the past, and crypto correlations
+converge on 1 precisely during the selloffs that threaten an account, which is
+when the calm-market number is most misleading. Unmeasurable pairs are
+therefore assumed correlated at 0.9, never independent.
 
 **The news dimension is silent.** No feed is connected, so scoring runs on six
 of seven dimensions and `coverage` tops out at 0.95. The dimension is reserved

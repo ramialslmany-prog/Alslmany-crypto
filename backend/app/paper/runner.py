@@ -13,12 +13,14 @@ behaviour reproducible from a fixed input.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from app.analysis.series import to_series
+from app.analysis import correlation
+from app.analysis.series import Series, to_series
 from app.core.errors import MarketDataError
 from app.core.logging import get_logger
 from app.market_data.timeframes import Timeframe
@@ -30,6 +32,12 @@ from app.services.market_service import MarketService
 from app.signals.analyzer import analyse, build_signal
 
 logger = get_logger(__name__)
+
+# Roughly two months of hourly bars. Long enough for a correlation to mean
+# something, short enough that last quarter's regime does not outvote this
+# week's — crypto correlations move, and a coefficient averaged over a year
+# describes a market that no longer exists.
+CORRELATION_BARS = 240
 
 
 @dataclass
@@ -48,6 +56,9 @@ class TickReport:
     # to be answerable, and silence is the worst possible answer.
     rejected: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
+    # What the open book would lose in a correlated move, and how much of that
+    # is a measurement rather than an assumption.
+    heat: dict[str, Any] = field(default_factory=dict)
     # Account-level state at the moment of the tick. A tick that opened nothing
     # because the drawdown limit halted the bot is a different event from one
     # that opened nothing because no setup qualified.
@@ -65,6 +76,7 @@ class TickReport:
             "rejected": self.rejected,
             "errors": self.errors,
             "halt": self.halt,
+            "heat": self.heat,
         }
 
 
@@ -111,18 +123,75 @@ class BotRunner:
         # because no setup qualified, and the report is where an operator looks.
         report.halt = self.risk.halt_state(state)
 
-        # 2. Look for new entries.
+        # 2. Fetch every symbol's history ONCE, concurrently, before deciding
+        # anything. Correlation is a property of the whole book, so the first
+        # symbol considered needs the series of a symbol that would otherwise
+        # not be fetched until the end of the loop.
+        fetched = await self._prefetch(symbols, report)
+        series = {sym: to_series(sourced.data) for sym, sourced in fetched.items()}
+        correlations = correlation.matrix(
+            {sym: correlation.series_window(s, CORRELATION_BARS) for sym, s in series.items()}
+        )
+
+        # 3. Look for new entries.
+        #
+        # `book` is the live open book, not the list this tick was handed. A
+        # position opened on the first symbol has to count against the heat
+        # limit when the second is considered, for the same reason it counts
+        # against the position limit — otherwise one tick opens five copies of
+        # the same trade and each one is measured as though it were alone.
+        book = [t for t in trades if t.status == "open"]
+
         for symbol in symbols:
             report.scanned.append(symbol)
+            sourced = fetched.get(symbol)
+            if sourced is None:
+                continue  # its failure is already on the report
             try:
-                state = await self._consider(symbol, state, report)
+                state = await self._consider(
+                    symbol, sourced, series[symbol], book, correlations, state, report
+                )
             except MarketDataError as exc:
                 report.errors.append({"symbol": symbol, "code": exc.code})
             except Exception as exc:
                 logger.exception("symbol scan failed", extra={"symbol": symbol})
                 report.errors.append({"symbol": symbol, "code": type(exc).__name__})
 
+        report.heat = self._heat(book, correlations, state).to_dict()
         return report
+
+    async def _prefetch(self, symbols: list[str], report: TickReport) -> dict[str, Any]:
+        """Candles for every symbol at once. A failure is reported, not raised."""
+        results = await asyncio.gather(
+            *(self.market.get_candles(s, self.timeframe, limit=300) for s in symbols),
+            return_exceptions=True,
+        )
+        out: dict[str, Any] = {}
+        for symbol, result in zip(symbols, results, strict=True):
+            if isinstance(result, MarketDataError):
+                report.errors.append({"symbol": symbol, "code": result.code})
+            elif isinstance(result, BaseException):
+                logger.exception("prefetch failed", extra={"symbol": symbol})
+                report.errors.append({"symbol": symbol, "code": type(result).__name__})
+            else:
+                out[symbol] = result
+        return out
+
+    def _heat(
+        self,
+        book: list[PaperTrade],
+        correlations: dict[tuple[str, str], float],
+        state: PortfolioState,
+        extra: correlation.Exposure | None = None,
+    ) -> correlation.Heat:
+        exposures = [
+            correlation.Exposure(symbol=t.symbol, direction=t.direction, risk_amount=t.risk_amount)
+            for t in book
+            if t.status == "open"
+        ]
+        if extra is not None:
+            exposures.append(extra)
+        return correlation.portfolio_heat(exposures, correlations, state.equity)
 
     # --- monitoring ------------------------------------------------------
 
@@ -176,7 +245,16 @@ class BotRunner:
 
     # --- entries ---------------------------------------------------------
 
-    async def _consider(self, symbol: str, state, report: TickReport) -> PortfolioState:
+    async def _consider(
+        self,
+        symbol: str,
+        sourced,
+        series: Series,
+        book: list[PaperTrade],
+        correlations: dict[tuple[str, str], float],
+        state,
+        report: TickReport,
+    ) -> PortfolioState:
         """Consider one symbol. Returns the (possibly updated) portfolio state.
 
         The state is threaded through rather than read once per tick: a position
@@ -184,9 +262,7 @@ class BotRunner:
         when the second is considered, or a single tick could open six positions
         against a limit of five.
         """
-        sourced = await self.market.get_candles(symbol, self.timeframe, limit=300)
-
-        analysis = analyse(to_series(sourced.data), symbol, self.timeframe.value)
+        analysis = analyse(series, symbol, self.timeframe.value)
         if analysis is None:
             report.rejected.append({"symbol": symbol, "reasons": ["insufficient_history"]})
             return state
@@ -207,6 +283,18 @@ class BotRunner:
         # The data must be live, and provenance is the only thing that can say so.
         data_is_live = not (sourced.provenance.stale or sourced.provenance.cached is None)
 
+        # The heat the book would carry WITH this position, not without it.
+        projected = self._heat(
+            book,
+            correlations,
+            state,
+            extra=correlation.Exposure(
+                symbol=symbol,
+                direction=signal.signal,
+                risk_amount=signal.plan.size.risk_amount,
+            ),
+        )
+
         decision = self.risk.evaluate(
             symbol=symbol,
             portfolio=state,
@@ -215,6 +303,7 @@ class BotRunner:
             notional=signal.plan.size.notional,
             data_is_live=data_is_live,
             volatility_tradeable=analysis.volatility.is_tradeable,
+            projected_heat_pct=projected.effective_pct,
         )
 
         if not decision.approved:
@@ -223,6 +312,7 @@ class BotRunner:
                     "symbol": symbol,
                     "reasons": [r.value for r in decision.reasons],
                     "notes": list(decision.notes),
+                    "projected_heat_pct": str(projected.effective_pct),
                 }
             )
             return state
@@ -248,6 +338,7 @@ class BotRunner:
         )
         report.opened.append(symbol)
         report.new_trades.append(trade)
+        book.append(trade)
         report.signals[-1]["opened"] = True
 
         # Fold the new position into the state so the next symbol in this same
