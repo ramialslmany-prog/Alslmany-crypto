@@ -68,6 +68,11 @@ class Score:
     confidence: float  # 0-100
     bias: float  # -100 (bearish) .. +100 (bullish)
     factors: tuple[Factor, ...]
+    # How much of the evidence that actually spoke agrees with the direction,
+    # 0-1. Reported separately because it answers a different question from
+    # `bias`, and the two are routinely confused.
+    consensus: float = 0.0
+    coverage: float = 0.0
 
     @property
     def available_weight(self) -> float:
@@ -98,11 +103,26 @@ class Score:
 def combine(factors: list[Factor]) -> Score:
     """Reduce the factors to a direction and a confidence.
 
-    Confidence is scaled by how much of the weight was actually *available*, not
-    by the full 100. If the news feed is down and liquidity could not be read,
-    the remaining evidence cannot honestly produce the same confidence it would
-    with everything present — a system that scores 80 on partial information and
-    80 on complete information is hiding the difference that matters.
+    Confidence answers "how much should this be trusted", which is NOT the same
+    question as "how bullish is the evidence" — and an earlier version of this
+    function conflated them by reporting |bias| as confidence.
+
+    Two situations produce a bias of 55: every dimension leaning moderately the
+    same way, and several dimensions disagreeing violently while happening to
+    net out. The first deserves to be acted on and the second does not, and a
+    formula built on magnitude alone cannot tell them apart. It also made the
+    75 floor unreachable — the best case attainable across all seven dimensions
+    was 83.8, so qualifying demanded near-perfection everywhere at once, and the
+    bot structurally never traded.
+
+    Confidence is therefore built from three separable things:
+
+        conviction — how hard the weighted evidence leans
+        consensus  — how much of the evidence that SPOKE agrees with that lean
+        coverage   — how much of the total weight was available at all
+
+    A dimension with raw 0 gets no vote in consensus: it did not speak, and
+    counting silence as disagreement is as wrong as counting it as assent.
     """
     available = sum(f.weight for f in factors if f.available)
     if available <= 0:
@@ -111,10 +131,6 @@ def combine(factors: list[Factor]) -> Score:
     signed = sum(f.contribution for f in factors)
     bias = signed / available * 100
 
-    # Confidence is the strength of the lean, discounted by missing evidence.
-    coverage = available / sum(WEIGHTS.values())
-    confidence = abs(bias) * coverage
-
     if bias > 0:
         direction = Direction.LONG
     elif bias < 0:
@@ -122,9 +138,31 @@ def combine(factors: list[Factor]) -> Score:
     else:
         direction = Direction.NO_TRADE
 
+    coverage = available / sum(WEIGHTS.values())
+
+    speaking = [f for f in factors if f.available and f.raw != 0]
+    if speaking and direction is not Direction.NO_TRADE:
+        wanted = 1 if direction is Direction.LONG else -1
+        agreeing = sum(
+            f.weight * abs(f.raw) for f in speaking if (1 if f.raw > 0 else -1) == wanted
+        )
+        total_voice = sum(f.weight * abs(f.raw) for f in speaking)
+        consensus = agreeing / total_voice if total_voice else 0.0
+    else:
+        consensus = 0.0
+
+    conviction = min(abs(bias) / 100.0, 1.0)
+
+    # Geometric mean: strong but contested, or unanimous but weak, are both
+    # penalised. Only strength AND agreement together produce a high number,
+    # which is exactly the property the confidence floor exists to select for.
+    confidence = (conviction * consensus) ** 0.5 * coverage * 100
+
     return Score(
         direction=direction,
         confidence=round(min(confidence, 100.0), 2),
         bias=round(bias, 2),
         factors=tuple(factors),
+        consensus=round(consensus, 4),
+        coverage=round(coverage, 4),
     )

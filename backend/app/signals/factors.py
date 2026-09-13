@@ -87,35 +87,41 @@ def score_momentum(
             available=False,
         )
 
-    parts: list[float] = []
+    # Weighted, not averaged. MACD is the primary read because it is
+    # trend-following; RSI is a secondary confirmation. Taking a plain mean let
+    # a deliberately capped RSI halve the momentum score in exactly the
+    # conditions where momentum is strongest.
+    parts: list[tuple[float, float]] = []  # (value, weight)
     reasons: list[str] = []
+
+    if macd_value is not None:
+        parts.append((1.0 if macd_value.is_bullish else -1.0, 0.6))
+        reasons.append("macd-bullish" if macd_value.is_bullish else "macd-bearish")
 
     if rsi_value is not None:
         if rsi_value >= 70:
-            # Overbought is not bearish on its own — strong trends stay
-            # overbought for a long time — but it does cap the upside here.
-            parts.append(0.2)
+            # Overbought is NOT bearish. A strong trend stays overbought for a
+            # long time, and treating that as a reason to discount momentum
+            # means the system is most sceptical exactly when it is most right.
+            parts.append((0.7, 0.3))
             reasons.append("rsi-overbought")
         elif rsi_value <= 30:
-            parts.append(-0.2)
+            parts.append((-0.7, 0.3))
             reasons.append("rsi-oversold")
         else:
-            parts.append((rsi_value - 50) / 20)
+            parts.append(((rsi_value - 50) / 20, 0.3))
             reasons.append(f"rsi-{round(rsi_value)}")
-
-    if macd_value is not None:
-        parts.append(0.6 if macd_value.is_bullish else -0.6)
-        reasons.append("macd-bullish" if macd_value.is_bullish else "macd-bearish")
 
     if stoch is not None:
         if stoch.is_overbought:
-            parts.append(-0.1)
+            parts.append((-0.3, 0.1))
             reasons.append("stoch-overbought")
         elif stoch.is_oversold:
-            parts.append(0.1)
+            parts.append((0.3, 0.1))
             reasons.append("stoch-oversold")
 
-    raw = sum(parts) / len(parts) if parts else 0.0
+    total_weight = sum(w for _, w in parts)
+    raw = sum(v * w for v, w in parts) / total_weight if total_weight else 0.0
     return Factor(
         dimension="momentum",
         raw=max(-1.0, min(1.0, raw)),
@@ -205,8 +211,18 @@ def score_liquidity(structure: Structure, direction_hint: float) -> Factor:
     zone = structure.premium_discount
     if zone is not None:
         reasons.append(f"price-in-{zone.zone}")
-        # Buying premium is buying what someone else is distributing.
-        if zone.zone == "premium" and direction_hint > 0:
+        # Premium/discount is a RANGING-market concept, and applying it inside a
+        # trend inverts its meaning. In any sustained trend price sits at the
+        # extreme of every lookback window by definition, so penalising that
+        # penalises trading WITH the trend — which measured at -8.25 points
+        # against clean uptrends and made trend-following unreachable.
+        #
+        # Inside a trend, position-in-range says nothing about whether to take
+        # the setup, so it is recorded and not scored.
+        ranging = structure.state is StructureState.RANGING
+        if not ranging:
+            reasons.append("range-position-not-scored-in-trend")
+        elif zone.zone == "premium" and direction_hint > 0:
             raw -= 0.3
             reasons.append("long-into-premium")
         elif zone.zone == "discount" and direction_hint < 0:
@@ -214,6 +230,7 @@ def score_liquidity(structure: Structure, direction_hint: float) -> Factor:
             reasons.append("short-into-discount")
         elif zone.zone == "discount" and direction_hint > 0:
             raw += 0.2
+            reasons.append("long-from-discount")
 
     return Factor(
         dimension="liquidity",
@@ -223,8 +240,15 @@ def score_liquidity(structure: Structure, direction_hint: float) -> Factor:
     )
 
 
-def score_risk_reward(rr: float | None) -> Factor:
-    """Reward-to-risk, scored on the plan rather than on the chart."""
+def score_risk_reward(rr: float | None, direction_hint: float = 1.0) -> Factor:
+    """Reward-to-risk, scored on the plan rather than on the chart.
+
+    Reward-to-risk has NO DIRECTION — it describes the quality of a plan, not
+    which way price should go. Returning a positive raw for a good ratio made
+    every well-planned SHORT contribute bullish points that fought the short
+    itself, worth +10 against it, and shorts became unreachable. It is signed by
+    the prevailing lean for the same reason volume is.
+    """
     if rr is None:
         return Factor(
             dimension="risk_reward",
@@ -235,26 +259,35 @@ def score_risk_reward(rr: float | None) -> Factor:
         )
 
     if rr >= 3.0:
-        raw, reason = 1.0, "rr-excellent"
+        quality, reason = 1.0, "rr-excellent"
     elif rr >= 2.0:
-        raw, reason = 0.7, "rr-good"
+        quality, reason = 0.7, "rr-good"
     elif rr >= 1.5:
-        raw, reason = 0.3, "rr-acceptable"
+        quality, reason = 0.3, "rr-acceptable"
     else:
         # Below the floor this is not a weak positive, it is a reason not to
         # trade — a 1.2R setup needs a win rate most strategies do not have.
-        raw, reason = -1.0, "rr-below-minimum"
+        quality, reason = -1.0, "rr-below-minimum"
 
     return Factor(
         dimension="risk_reward",
-        raw=raw,
+        raw=quality * (1.0 if direction_hint >= 0 else -1.0),
         weight=WEIGHTS["risk_reward"],
         reasons=(reason, f"rr-{rr:.2f}"),
     )
 
 
-def score_news_risk(volatility: VolatilityReading, news_flag: str | None = None) -> Factor:
+def score_news_risk(
+    volatility: VolatilityReading,
+    news_flag: str | None = None,
+    direction_hint: float = 1.0,
+) -> Factor:
     """Event risk.
+
+    Like reward-to-risk, event risk has no direction: it is a reason to trade
+    LESS, never a reason to trade the other way. Returning a fixed negative raw
+    made elevated risk read as bearish evidence, which quietly ENCOURAGED shorts
+    in exactly the conditions where nothing should be traded.
 
     No news API is wired in, so this scores what *is* observable — a volatility
     regime that usually accompanies an event — and says so. It never invents a
@@ -263,11 +296,12 @@ def score_news_risk(volatility: VolatilityReading, news_flag: str | None = None)
     """
     reasons: list[str] = []
     raw = 0.0
+    lean = 1.0 if direction_hint >= 0 else -1.0
 
     if news_flag:
         return Factor(
             dimension="news_risk",
-            raw=-1.0,
+            raw=-1.0 * lean,
             weight=WEIGHTS["news_risk"],
             reasons=(f"news-{news_flag}",),
         )
@@ -279,8 +313,21 @@ def score_news_risk(volatility: VolatilityReading, news_flag: str | None = None)
         raw = -0.4
         reasons.append("volatility-elevated")
     else:
-        reasons.append("no-news-feed-configured")
+        # With no news feed and nothing unusual in volatility, this dimension
+        # has nothing to say — which is `available=False`, not `raw=0.0`. The
+        # distinction is the one this class documents, and getting it wrong
+        # here put a permanent 5-point drag on every score in the system.
+        return Factor(
+            dimension="news_risk",
+            raw=0.0,
+            weight=WEIGHTS["news_risk"],
+            reasons=("no-news-feed-configured",),
+            available=False,
+        )
 
     return Factor(
-        dimension="news_risk", raw=raw, weight=WEIGHTS["news_risk"], reasons=tuple(reasons)
+        dimension="news_risk",
+        raw=raw * lean,
+        weight=WEIGHTS["news_risk"],
+        reasons=tuple(reasons),
     )

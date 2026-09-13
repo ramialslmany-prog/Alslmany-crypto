@@ -196,11 +196,20 @@ def build_plan(
     for multiple, allocation in zip(multiples, allocations, strict=True):
         price = entry + distance * multiple if is_long else entry - distance * multiple
         barrier = resistance if is_long else support
+
         if barrier is not None:
-            if is_long and barrier < price and barrier > entry:
+            blocks = (is_long and entry < barrier < price) or (
+                not is_long and price < barrier < entry
+            )
+            # A level closer than half the stop distance sits INSIDE the noise
+            # the stop is sized to survive, so it cannot meaningfully cap the
+            # trade. Clamping to it anyway dragged all three targets onto a
+            # trivial obstacle and collapsed reward-to-risk to ~0.05, which then
+            # failed the 1.5 floor and silently killed the setup.
+            meaningful = abs(barrier - entry) >= distance * Decimal("0.5")
+            if blocks and meaningful:
                 price = barrier
-            elif not is_long and barrier > price and barrier < entry:
-                price = barrier
+
         targets.append(
             Target(
                 price=price.quantize(Decimal("0.00000001")),
