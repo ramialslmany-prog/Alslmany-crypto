@@ -214,10 +214,13 @@ class PaperEngine:
         else:
             gross = (trade.entry - fill.price) * trade.quantity
 
-        # Both legs' fees come out. Charging only the exit would understate the
-        # cost of every trade by half.
+        # Both legs' fees come out. Charging only the exit understates the cost
+        # of every trade by half — and did, until a two-thousand-trade
+        # simulation put a number on it: at the taker rate on a typical
+        # notional, the missing entry fee was roughly a tenth of the amount
+        # risked, silently added to every single result.
         total_fees = trade.fees + fill.fee
-        pnl = (gross - fill.fee).quantize(Decimal("0.01"))
+        pnl = (gross - total_fees).quantize(Decimal("0.01"))
 
         risk = trade.risk_amount
         r = (pnl / risk).quantize(Decimal("0.01")) if risk > 0 else Decimal(0)

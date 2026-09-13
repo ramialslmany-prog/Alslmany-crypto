@@ -86,7 +86,11 @@ class PaperBroker:
             quantity=quantity,
             requested=price,
             price=filled.quantize(Decimal("0.00000001")),
-            fee=fee.quantize(Decimal("0.00000001")),
+            # A fee is money debited from the account, not a price, so it is
+            # carried in the account's own unit. Eight decimal places here
+            # would mean the sum of the fees and the reported total could
+            # never agree.
+            fee=fee.quantize(Decimal("0.01")),
             at=datetime.now(UTC),
         )
         self.fills.append(fill)

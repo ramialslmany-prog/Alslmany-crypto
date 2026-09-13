@@ -288,7 +288,21 @@ footer p { max-width: 680px; margin: 0 auto; }
 .insight .applied { margin-bottom: 0; }
 .insight .tag.strength { background: transparent; border-color: var(--rule); color: var(--ink-muted); }
 
-/* A thin sample is dimmed rather than hidden, and labelled in words as well. */
-tr.thin td { opacity: 0.62; }
-.tag.thin-tag { background: transparent; border-color: var(--rule); color: var(--ink-faint); }
+/* A thin sample is set apart rather than hidden — and NOT by opacity.
+   Dimming a row to 62% multiplies every colour in it against the background:
+   the jade "+0.97R" fell from 8.9:1 to under 4.5:1 and the whole row failed
+   WCAG AA. An audit caught it. The row is recessed by its own ground instead,
+   which changes nothing about the legibility of the text on it, and the sample
+   is stated in a word as well as a shade. */
+tr.thin td { background: var(--panel-2); font-style: italic; }
+tr.thin td:first-child { border-inline-start: 3px solid var(--rule); }
+.tag.thin-tag { background: transparent; border-color: var(--rule); color: var(--ink-muted); font-style: normal; }
 tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
+
+/* The halt banner. Loud on purpose: this is the one state where the system
+   needs a person, and it must not read like the stale-feed warning. */
+.notice.halt { border-left-width: 4px; border-left-color: var(--down); }
+.notice.halt ul { margin: 8px 0; padding-inline-start: 20px; }
+.notice.halt li { margin-bottom: 8px; }
+.notice.halt p { margin: 8px 0 0; }
+.notice.halt button { margin-inline-end: 10px; }

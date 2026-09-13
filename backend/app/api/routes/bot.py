@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_market_service, settings_dep
+from app.api.deps import get_market_service, require_operator, settings_dep
 from app.config import Settings
 from app.core.errors import MarketDataError
 from app.core.logging import get_logger
@@ -19,8 +20,8 @@ from app.paper.engine import ExitReason, PaperEngine
 from app.paper.models import PaperTrade
 from app.paper.portfolio import equity_curve, performance, portfolio_state
 from app.paper.runner import BotRunner
-from app.paper.store import TradeRepository
-from app.risk.manager import RiskLimits
+from app.paper.store import RiskOverrideRepository, TradeRepository
+from app.risk.manager import RiskLimits, RiskManager
 from app.services.market_service import MarketService
 
 logger = get_logger(__name__)
@@ -63,9 +64,12 @@ def _trade_dict(trade: PaperTrade, mark: Decimal | None = None) -> dict[str, Any
         "result": trade.result,
         "exit_reason": trade.exit_reason,
         "fees": str(trade.fees),
-        # Stated on every trade, in every response. The guarantee should not
-        # require reading the documentation to discover.
-        "is_paper": True,
+        # Stated on every trade, in every response: the guarantee should not
+        # require reading the documentation to discover. Read from the row
+        # rather than hardcoded — a literal True would keep printing the
+        # guarantee even on a row that did not satisfy it, which is the one
+        # circumstance where this field would actually matter.
+        "is_paper": bool(trade.is_paper),
     }
     if mark is not None and trade.status == "open":
         move = mark - trade.entry if trade.direction == "LONG" else trade.entry - mark
@@ -102,13 +106,33 @@ async def portfolio(
     closed = [t for t in trades if t.status == "closed"]
 
     marks = await _marks(market, {t.symbol for t in open_trades})
+    override = await RiskOverrideRepository(session).latest_drawdown_reset()
     state = portfolio_state(
-        trades=trades, starting_balance=settings.initial_balance_usdt, marks=marks
+        trades=trades,
+        starting_balance=settings.initial_balance_usdt,
+        marks=marks,
+        peak_reset=(None if override is None else (override.at, override.baseline_equity)),
     )
     stats = performance(closed, settings.initial_balance_usdt)
 
+    # A bot that has stopped because nothing qualifies and a bot that has
+    # stopped because it hit its drawdown limit look identical from outside.
+    # Only one of them needs a human, so the difference is stated.
+    halt = RiskManager(_limits(settings)).halt_state(state)
+
     return {
         "paper_trading_only": True,
+        "halt": halt,
+        "last_drawdown_reset": (
+            None
+            if override is None
+            else {
+                "at": override.at.isoformat(),
+                "baseline_equity": str(override.baseline_equity),
+                "drawdown_pct_at_reset": str(override.drawdown_pct_at_reset),
+                "note": override.note,
+            }
+        ),
         "starting_balance": str(settings.initial_balance_usdt),
         "balance": str(state.balance),
         "equity": str(state.equity),
@@ -180,26 +204,22 @@ async def curve(
     }
 
 
-@router.post("/tick")
+@router.post("/tick", dependencies=[Depends(require_operator)])
 async def tick(
     settings: Annotated[Settings, Depends(settings_dep)],
     market: Annotated[MarketService, Depends(get_market_service)],
     session: Annotated[AsyncSession, Depends(get_session)],
     timeframe: Annotated[str, Query()] = "1h",
-    x_cron_secret: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
     """Run one pass of the bot.
 
-    Closed by default. When `CRON_SECRET` is configured the header must match;
-    an endpoint that opens positions must not be callable by anyone who finds
-    the URL. It is a POST because it changes state.
+    A POST because it changes state, and behind `require_operator` because an
+    endpoint that opens positions must not be callable by anyone who finds the
+    URL.
     """
-    expected = getattr(settings, "cron_secret", None)
-    if expected and x_cron_secret != expected:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
     repo = TradeRepository(session)
     trades = await repo.all()
+    override = await RiskOverrideRepository(session).latest_drawdown_reset()
 
     runner = BotRunner(
         market=market,
@@ -208,13 +228,17 @@ async def tick(
         starting_balance=settings.initial_balance_usdt,
         timeframe=parse_timeframe(timeframe),
     )
-    report = await runner.tick(settings.symbol_list, trades)
+    report = await runner.tick(
+        settings.symbol_list,
+        trades,
+        peak_reset=(None if override is None else (override.at, override.baseline_equity)),
+    )
     repo.add_all(report.new_trades)
 
     return {"paper_trading_only": True, **report.to_dict()}
 
 
-@router.post("/trades/{trade_id}/close")
+@router.post("/trades/{trade_id}/close", dependencies=[Depends(require_operator)])
 async def close_manually(
     trade_id: int,
     market: Annotated[MarketService, Depends(get_market_service)],
@@ -229,3 +253,105 @@ async def close_manually(
     engine = PaperEngine(PaperBroker())
     result = await engine.close(trade, price=sourced.data.price, reason=ExitReason.MANUAL)
     return {"data": _trade_dict(result.trade), "pnl": str(result.pnl)}
+
+
+@router.post("/risk/acknowledge-drawdown", dependencies=[Depends(require_operator)])
+async def acknowledge_drawdown(
+    settings: Annotated[Settings, Depends(settings_dep)],
+    market: Annotated[MarketService, Depends(get_market_service)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    note: Annotated[str | None, Query(max_length=500)] = None,
+) -> dict[str, Any]:
+    """Clear a drawdown halt by resetting the high-water mark to today's equity.
+
+    This is the one place in the system where a human overrides a risk limit,
+    so three things are true of it and none are negotiable.
+
+    It is a **POST behind the same operator guard as the tick**: resuming a bot
+    that stopped after a 10% loss must not be reachable by anyone who finds the
+    URL.
+
+    It is **recorded, not applied**: an append-only row carries the equity, the
+    drawdown at the moment of the decision, and whatever the operator wrote. A
+    limit that can be lifted without trace is not a limit.
+
+    It **refuses when there is nothing to clear**, rather than quietly writing a
+    row. Resetting a high-water mark that is not breached would silently discard
+    a real peak and lower the bar for the next halt.
+    """
+    repo = TradeRepository(session)
+    overrides = RiskOverrideRepository(session)
+    trades = await repo.all()
+    open_trades = [t for t in trades if t.status == "open"]
+
+    marks = await _marks(market, {t.symbol for t in open_trades})
+    previous = await overrides.latest_drawdown_reset()
+    state = portfolio_state(
+        trades=trades,
+        starting_balance=settings.initial_balance_usdt,
+        marks=marks,
+        peak_reset=(None if previous is None else (previous.at, previous.baseline_equity)),
+    )
+
+    limits = _limits(settings)
+    drawdown = state.drawdown_pct
+    if drawdown < limits.max_drawdown_pct:
+        return {
+            "acknowledged": False,
+            "reason": (
+                f"Drawdown is {drawdown.quantize(Decimal('0.01'))}%, inside the "
+                f"{limits.max_drawdown_pct}% limit. There is nothing to clear, and "
+                "resetting the high-water mark anyway would discard a real peak."
+            ),
+            "halt": RiskManager(limits).halt_state(state),
+        }
+
+    now = datetime.now(UTC)
+    override = overrides.record_drawdown_reset(
+        baseline_equity=state.equity,
+        drawdown_pct=drawdown.quantize(Decimal("0.01")),
+        note=note,
+        at=now,
+    )
+    await session.flush()
+
+    logger.warning(
+        "drawdown limit acknowledged by operator",
+        extra={
+            "baseline_equity": str(override.baseline_equity),
+            "drawdown_pct": str(override.drawdown_pct_at_reset),
+            "note": note,
+        },
+    )
+
+    return {
+        "acknowledged": True,
+        "baseline_equity": str(override.baseline_equity),
+        "drawdown_pct_at_reset": str(override.drawdown_pct_at_reset),
+        "at": now.isoformat(),
+        "note": note,
+        "effect": (
+            "Drawdown is now measured from this equity forward. The previous peak "
+            "is not restored, and this decision stays on the record."
+        ),
+    }
+
+
+@router.get("/risk/overrides")
+async def risk_overrides(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Every time a human overrode a risk limit. Read-only, oldest kept."""
+    rows = await RiskOverrideRepository(session).history()
+    return {
+        "data": [
+            {
+                "kind": r.kind,
+                "at": r.at.isoformat(),
+                "baseline_equity": str(r.baseline_equity),
+                "drawdown_pct_at_reset": str(r.drawdown_pct_at_reset),
+                "note": r.note,
+            }
+            for r in rows
+        ]
+    }

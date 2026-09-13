@@ -14,6 +14,7 @@ behaviour reproducible from a fixed input.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -47,6 +48,10 @@ class TickReport:
     # to be answerable, and silence is the worst possible answer.
     rejected: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
+    # Account-level state at the moment of the tick. A tick that opened nothing
+    # because the drawdown limit halted the bot is a different event from one
+    # that opened nothing because no setup qualified.
+    halt: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         # new_trades holds ORM objects and is deliberately excluded: this dict
@@ -59,6 +64,7 @@ class TickReport:
             "closed": self.closed,
             "rejected": self.rejected,
             "errors": self.errors,
+            "halt": self.halt,
         }
 
 
@@ -81,7 +87,12 @@ class BotRunner:
         self.timeframe = timeframe
         self.strategy = strategy
 
-    async def tick(self, symbols: list[str], trades: list[PaperTrade]) -> TickReport:
+    async def tick(
+        self,
+        symbols: list[str],
+        trades: list[PaperTrade],
+        peak_reset: tuple[datetime, Decimal] | None = None,
+    ) -> TickReport:
         report = TickReport()
 
         # 1. Manage what is already open, before considering anything new.
@@ -89,7 +100,16 @@ class BotRunner:
 
         open_trades = [t for t in trades if t.status == "open"]
         marks = await self._marks(open_trades, report)
-        state = portfolio_state(trades=trades, starting_balance=self.starting_balance, marks=marks)
+        state = portfolio_state(
+            trades=trades,
+            starting_balance=self.starting_balance,
+            marks=marks,
+            peak_reset=peak_reset,
+        )
+        # Stated on the report itself: a tick that opened nothing because the
+        # account is halted is a different event from one that opened nothing
+        # because no setup qualified, and the report is where an operator looks.
+        report.halt = self.risk.halt_state(state)
 
         # 2. Look for new entries.
         for symbol in symbols:

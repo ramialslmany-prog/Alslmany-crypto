@@ -172,6 +172,7 @@ def portfolio_state(
     starting_balance: Decimal,
     marks: dict[str, Decimal],
     today: date | None = None,
+    peak_reset: tuple[datetime, Decimal] | None = None,
 ) -> PortfolioState:
     """Current state, for the risk manager's limit checks.
 
@@ -179,6 +180,13 @@ def portfolio_state(
     carried at its entry rather than being dropped: excluding it would quietly
     understate exposure exactly when prices are unavailable, which is when
     exposure matters most.
+
+    `peak_reset` is an operator's acknowledgement of a drawdown halt: `(at,
+    equity)`. After it, the high-water mark is measured from that equity and
+    the trades that followed, not from a peak the account reached before the
+    loss. Without it the drawdown limit is an absorbing state — equity rises
+    only by trading, and trading is exactly what the limit has stopped — so the
+    bot would go quiet forever with nothing to say why.
     """
     today = today or datetime.now(UTC).date()
     closed = [t for t in trades if t.status == "closed"]
@@ -193,7 +201,12 @@ def portfolio_state(
         unrealised += move * trade.quantity
 
     curve = equity_curve(closed, starting_balance)
-    peak = max([starting_balance, *[b for _, b in curve]], default=starting_balance)
+    if peak_reset is None:
+        peak = max([starting_balance, *[b for _, b in curve]], default=starting_balance)
+    else:
+        reset_at, baseline = peak_reset
+        after = [b for at, b in curve if at >= reset_at]
+        peak = max([baseline, *after], default=baseline)
 
     realised_today = sum(
         (t.pnl or Decimal(0))

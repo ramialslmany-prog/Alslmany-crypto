@@ -165,3 +165,56 @@ class RiskManager:
             notes.append(f"Position of {notional} exceeds the balance of {portfolio.balance}.")
 
         return RiskDecision(approved=not reasons, reasons=tuple(reasons), notes=tuple(notes))
+
+    def halt_state(
+        self, portfolio: PortfolioState, now: datetime | None = None
+    ) -> dict[str, object]:
+        """Is the bot stopped by an account-level limit, regardless of setup?
+
+        `evaluate` answers "may this trade be opened", which mixes the
+        properties of one setup with the state of the whole account. An
+        operator needs the second question answered on its own: a bot that has
+        gone quiet because no setup qualifies and a bot that has gone quiet
+        because it hit its drawdown limit look identical from the outside, and
+        only one of them needs a human.
+        """
+        now = now or datetime.now(UTC)
+        drawdown = portfolio.drawdown_pct
+        daily_loss = portfolio.daily_loss_pct if portfolio.day == now.date() else Decimal(0)
+
+        blocks: list[dict[str, object]] = []
+        if drawdown >= self.limits.max_drawdown_pct:
+            blocks.append(
+                {
+                    "limit": "max_drawdown",
+                    "value": str(drawdown.quantize(Decimal("0.01"))),
+                    "threshold": str(self.limits.max_drawdown_pct),
+                    "clears": "manual",
+                    "explanation": (
+                        "Drawdown from the account's high-water mark has passed the "
+                        "limit. This does not clear on its own: equity rises only by "
+                        "trading, and trading is what the limit has stopped. It "
+                        "needs a deliberate acknowledgement, which is recorded."
+                    ),
+                }
+            )
+        if daily_loss >= self.limits.max_daily_loss_pct:
+            blocks.append(
+                {
+                    "limit": "max_daily_loss",
+                    "value": str(daily_loss.quantize(Decimal("0.01"))),
+                    "threshold": str(self.limits.max_daily_loss_pct),
+                    "clears": "at the next UTC day",
+                    "explanation": (
+                        "Today's realised losses passed the daily limit. Trading "
+                        "resumes tomorrow with no action needed."
+                    ),
+                }
+            )
+
+        return {
+            "halted": bool(blocks),
+            "blocks": blocks,
+            "drawdown_pct": str(drawdown.quantize(Decimal("0.01"))),
+            "peak_equity": str(portfolio.peak_equity),
+        }

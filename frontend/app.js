@@ -333,7 +333,7 @@ function renderFactors(factors) {
       : "";
     return `<tr class="${f.available ? "" : "unavailable"}">
       <td>${esc(f.dimension.replace(/_/g, " "))}</td>
-      <td class="num">${f.weight}%</td>
+      <td class="num">${esc(f.weight)}%</td>
       <td class="bar-cell"><span class="bar"><span class="mid"></span>${bar}</span></td>
       <td class="num">${f.available ? f.contribution.toFixed(1) : "n/a"}</td>
     </tr>`;
@@ -357,7 +357,7 @@ function renderSignalCard(s) {
         <div class="kv"><dt>Entry</dt><dd>${fmtPrice(s.entry)}</dd></div>
         <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(s.stop_loss)}</dd></div>
         <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(s.take_profit)}</dd></div>
-        <div class="kv"><dt>Reward / risk</dt><dd>${s.risk_reward ?? "—"}</dd></div>
+        <div class="kv"><dt>Reward / risk</dt><dd>${esc(s.risk_reward ?? "—")}</dd></div>
         <div class="kv"><dt>Risk level</dt><dd>${esc(s.risk_level)}</dd></div>
       </dl>`
     : `<p class="muted" style="margin:0">No entry, stop or target is shown for a NO_TRADE. Publishing levels beside a decision not to trade invites taking it anyway.</p>`;
@@ -415,6 +415,53 @@ function renderPositionCard(t) {
 
 /* ---------- views ---------- */
 
+/** A bot that has stopped because nothing qualifies and a bot that has stopped
+    because it hit its drawdown limit look identical from outside. Only one of
+    them needs a human, so the difference gets the loudest element on the page. */
+function renderHalt(halt, lastReset) {
+  const node = el("halt");
+  if (!halt || !halt.halted) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
+  }
+
+  const manual = halt.blocks.some((b) => b.clears === "manual");
+  node.hidden = false;
+  node.className = "notice halt";
+  node.innerHTML = `
+    <h3>The bot has stopped trading</h3>
+    <ul>${halt.blocks.map((b) => `<li>
+      <strong>${esc(b.limit.replace(/_/g, " "))}</strong> —
+      ${esc(b.value)}% against a ${esc(b.threshold)}% limit.
+      Clears: ${esc(b.clears)}.<br />
+      <span class="muted">${esc(b.explanation)}</span>
+    </li>`).join("")}</ul>
+    ${lastReset ? `<p class="muted">Last acknowledged ${esc(new Date(lastReset.at).toLocaleString())} at ${fmtMoney(lastReset.baseline_equity)}, after a ${esc(lastReset.drawdown_pct_at_reset)}% drawdown.</p>` : ""}
+    ${manual ? `<p><button id="ack-drawdown" type="button" class="primary">Acknowledge and resume</button>
+      <span class="muted">Recorded permanently. The previous peak is not restored.</span></p>` : ""}`;
+
+  const button = el("ack-drawdown");
+  if (button) button.addEventListener("click", acknowledgeDrawdown);
+}
+
+async function acknowledgeDrawdown() {
+  const button = el("ack-drawdown");
+  button.disabled = true;
+  button.textContent = "Recording…";
+  try {
+    const result = await getJson("/bot/risk/acknowledge-drawdown", { method: "POST" });
+    if (!result.acknowledged) {
+      setNotice("warn", "Nothing to acknowledge", esc(result.reason));
+    }
+    await loadPortfolio();
+  } catch (error) {
+    setNotice("warn", "The acknowledgement was not recorded", esc(error.message));
+    button.disabled = false;
+    button.textContent = "Acknowledge and resume";
+  }
+}
+
 async function loadPortfolio() {
   try {
     const [p, curve, hist] = await Promise.all([
@@ -431,27 +478,28 @@ async function loadPortfolio() {
       { label: "Balance", value: fmtMoney(p.balance), sub: `started at ${fmtMoney(p.starting_balance)}` },
       { label: "Equity", value: fmtMoney(p.equity), sub: `${p.open_positions} open` },
       { label: "Total P/L", value: pnl.text, cls: pnl.cls, sub: `${perf.total_trades} trades` },
-      { label: "Today", value: today.text, cls: today.cls, sub: `limit ${p.limits.max_daily_loss_pct}%` },
+      { label: "Today", value: today.text, cls: today.cls, sub: `limit ${esc(p.limits.max_daily_loss_pct)}%` },
       { label: "Win rate", value: `${perf.win_rate}%`, sub: `${perf.wins}W / ${perf.losses}L` },
       { label: "Profit factor", value: perf.profit_factor ?? "—", sub: perf.profit_factor ? "gross win ÷ gross loss" : "no losses yet" },
       { label: "Expectancy", value: `${perf.expectancy_r}R`, sub: "per trade, in R" },
-      { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `limit ${p.limits.max_drawdown_pct}%` },
+      { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `limit ${esc(p.limits.max_drawdown_pct)}%` },
     ].map((t) => `<div class="tile">
-        <p class="label">${t.label}</p>
-        <p class="value ${t.cls || ""}">${t.value}</p>
+        <p class="label">${esc(t.label)}</p>
+        <p class="value ${t.cls || ""}">${esc(t.value)}</p>
         <p class="sub">${esc(t.sub)}</p>
       </div>`).join("");
 
+    renderHalt(p.halt, p.last_drawdown_reset);
     el("equity").innerHTML = renderEquity(curve.data, num(curve.starting_balance));
     el("outcomes").innerHTML = renderOutcomes(perf);
     state.history = hist.data;
     el("by-symbol").innerHTML = renderBySymbol(hist.data);
 
     el("limits").innerHTML = [
-      ["Risk per trade", `${p.limits.risk_per_trade_pct}%`],
+      ["Risk per trade", `${esc(p.limits.risk_per_trade_pct)}%`],
       ["Max open trades", p.limits.max_open_trades],
-      ["Max daily loss", `${p.limits.max_daily_loss_pct}%`],
-      ["Max drawdown", `${p.limits.max_drawdown_pct}%`],
+      ["Max daily loss", `${esc(p.limits.max_daily_loss_pct)}%`],
+      ["Max drawdown", `${esc(p.limits.max_drawdown_pct)}%`],
       ["Longest losing streak", perf.longest_losing_streak],
       ["Fees paid", fmtMoney(perf.total_fees)],
     ].map(([label, value]) => `<div><div class="label">${label}</div><div class="value">${esc(value)}</div></div>`).join("");
@@ -649,7 +697,7 @@ async function loadInsights() {
         <header>
           <span class="tag">${esc(o.topic)}</span>
           <span class="tag strength">${esc(STRENGTH_LABEL[o.strength] || o.strength)}</span>
-          <span class="muted">n = ${o.sample}</span>
+          <span class="muted">n = ${esc(o.sample)}</span>
         </header>
         <p class="finding">${esc(o.finding)}</p>
         <p class="muted">${esc(o.evidence)}</p>
@@ -669,8 +717,9 @@ async function loadBreakdown() {
     const payload = await getJson(`/analytics/breakdown?by=${by}`);
     el("an-floor").textContent =
       `${payload.total_closed} closed trades. A group needs ${payload.min_sample} ` +
-      `before it is ranked; smaller groups are shown greyed, because hiding them ` +
-      `would distort the picture as surely as ranking them would.`;
+      `before it is ranked; smaller groups are still shown, set in italic and ` +
+      `marked THIN, because hiding them would distort the picture as surely ` +
+      `as ranking them would.`;
 
     el("an-body").innerHTML = payload.data.length
       ? payload.data.map((g) => {
@@ -683,14 +732,14 @@ async function loadBreakdown() {
             : "—";
           return `<tr class="${g.reliable ? "" : "thin"}" ${g.note ? `title="${esc(g.note)}"` : ""}>
             <td class="sym">${esc(g.key)}${g.reliable ? "" : ` <span class="tag thin-tag">thin</span>`}</td>
-            <td class="num">${p.total_trades}</td>
+            <td class="num">${esc(p.total_trades)}</td>
             <td class="num">${esc(g.share_pct)}%</td>
             <td class="num">${g.win_rate_ci ? `${esc(p.win_rate)}%` : "—"}</td>
             <td class="muted">${esc(ci)}</td>
             <td class="num ${exp.cls}">${exp.text}</td>
             <td class="num ${tot.cls}">${tot.text}</td>
             <td class="num ${pnl.cls}">${pnl.text}</td>
-            <td class="num">${p.profit_factor ?? "—"}</td>
+            <td class="num">${esc(p.profit_factor ?? "—")}</td>
           </tr>` + (g.note ? `<tr class="note-row"><td colspan="9" class="muted">${esc(g.note)}</td></tr>` : "");
         }).join("")
       : `<tr><td colspan="9" class="empty">No closed trades yet.</td></tr>`;
@@ -714,7 +763,7 @@ async function loadBenchmark() {
       const window = `${new Date(b.window.from).toLocaleDateString()} → ${new Date(b.window.to).toLocaleDateString()}`;
       return `<tr>
         <td class="sym">${esc(b.symbol)}</td>
-        <td class="num">${b.trades}</td>
+        <td class="num">${esc(b.trades)}</td>
         <td class="muted">${esc(window)}</td>
         <td class="num ${hold.cls}">${b.hold_return_pct === null ? "—" : hold.text}</td>
         <td class="num ${pnl.cls}">${pnl.text}</td>
@@ -775,9 +824,9 @@ function renderBacktest(r) {
   el("bt-status").className = caveats ? "notice warn" : "notice info";
   el("bt-status").innerHTML =
     `<strong>Simulated result — ${esc(r.symbol)} ${esc(r.timeframe)}</strong><br />` +
-    `${r.meta.bars_received} bars received of ${r.meta.bars_requested} asked for · ` +
-    `${r.bars_analysed} reached the analyser · ${r.signals_generated} qualified · ` +
-    `${perf.total_trades} trades taken · source ${esc(r.meta.source)}` +
+    `${esc(r.meta.bars_received)} bars received of ${esc(r.meta.bars_requested)} asked for · ` +
+    `${esc(r.bars_analysed)} reached the analyser · ${esc(r.signals_generated)} qualified · ` +
+    `${esc(perf.total_trades)} trades taken · source ${esc(r.meta.source)}` +
     (caveats ? `<ul>${caveats}</ul>` : "");
 
   el("bt-tiles").innerHTML = [

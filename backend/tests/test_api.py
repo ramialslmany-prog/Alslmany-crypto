@@ -99,6 +99,39 @@ async def api(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
+@pytest_asyncio.fixture
+async def api_secured(tmp_path, monkeypatch):
+    """The same app with `CRON_SECRET` configured.
+
+    The state-changing endpoints are open by default, which is right for a
+    local run and wrong for a deployment; this fixture exercises the
+    deployment's configuration rather than assuming it works.
+    """
+    db = tmp_path / "api-secured.db"
+    test_settings = Settings(
+        environment="test",
+        database_url=f"sqlite+aiosqlite:///{db}",
+        symbols="BTCUSDT",
+        cron_secret="topsecret",
+        ticker_cache_seconds=0.0,
+        candle_cache_seconds=0.0,
+    )
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.config.get_settings", lambda: test_settings)
+    monkeypatch.setattr("app.main.get_settings", lambda: test_settings)
+    monkeypatch.setattr("app.api.deps.get_settings", lambda: test_settings)
+    monkeypatch.setattr("app.main.build_providers", lambda s: [StubProvider()])
+
+    from app.main import create_app
+
+    app = create_app()
+    async with LifespanManager(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    get_settings.cache_clear()
+
+
 async def test_health_is_dependency_free(api):
     client, _ = api
     r = await client.get("/api/health")
@@ -427,3 +460,107 @@ async def test_the_benchmark_reads_prices_without_archiving_them(api, monkeypatc
     assert all(p is False for p in seen), (
         f"the benchmark archived candles: persist flags were {seen}"
     )
+
+
+async def _seed_drawdown(pnls: list[str]) -> None:
+    """Write a closed-trade history straight to the database.
+
+    The halt is a property of the ledger, so the ledger is what the test sets
+    up — going through the bot would make this a test of the bot instead.
+    """
+    from app.database.session import get_sessionmaker
+    from app.paper.models import PaperTrade
+
+    base = datetime.now(UTC) - timedelta(days=10)
+    async with get_sessionmaker()() as session:
+        for i, raw in enumerate(pnls):
+            pnl = Decimal(raw)
+            session.add(
+                PaperTrade(
+                    symbol="BTCUSDT",
+                    direction="LONG",
+                    status="closed",
+                    timeframe="1h",
+                    entry=Decimal("100"),
+                    stop_loss=Decimal("95"),
+                    take_profit=Decimal("115"),
+                    quantity=Decimal("20"),
+                    notional=Decimal("2000"),
+                    risk_amount=Decimal("200"),
+                    reward_risk=Decimal("3"),
+                    exit_price=Decimal("115") if pnl > 0 else Decimal("95"),
+                    pnl=pnl,
+                    r_multiple=(pnl / 200).quantize(Decimal("0.01")),
+                    fees=Decimal("2"),
+                    result="WIN" if pnl > 0 else "LOSS",
+                    exit_reason="take_profit" if pnl > 0 else "stop_loss",
+                    confidence=Decimal("84"),
+                    strategy="multi-factor-v1",
+                    reason="fixture",
+                    opened_at=base + timedelta(hours=i * 6),
+                    closed_at=base + timedelta(hours=i * 6 + 3),
+                    is_paper=True,
+                )
+            )
+        await session.commit()
+
+
+# Up to 11,500, then down to 10,100 — a 12.17% drawdown against a 10% limit.
+BREACHING = ["300"] * 5 + ["-200"] * 7
+
+
+async def test_a_drawdown_breach_is_announced_not_left_to_be_inferred(api):
+    """Silence is the worst way for a safety limit to report itself."""
+    client, _ = api
+    await _seed_drawdown(BREACHING)
+
+    body = (await client.get("/api/bot/portfolio")).json()
+    assert body["halt"]["halted"] is True
+
+    block = body["halt"]["blocks"][0]
+    assert block["limit"] == "max_drawdown"
+    assert block["clears"] == "manual"
+    assert "does not clear on its own" in block["explanation"]
+
+
+async def test_acknowledging_a_drawdown_clears_the_halt_and_leaves_a_record(api):
+    client, _ = api
+    await _seed_drawdown(BREACHING)
+
+    result = (await client.post("/api/bot/risk/acknowledge-drawdown?note=reviewed+by+hand")).json()
+    assert result["acknowledged"] is True
+    assert result["note"] == "reviewed by hand"
+
+    after = (await client.get("/api/bot/portfolio")).json()
+    assert after["halt"]["halted"] is False
+    # The peak is the equity that survived, not the one the account lost.
+    assert after["peak_equity"] == after["equity"]
+    assert after["last_drawdown_reset"]["drawdown_pct_at_reset"] == "12.17"
+
+    log = (await client.get("/api/bot/risk/overrides")).json()
+    assert len(log["data"]) == 1
+    assert log["data"][0]["note"] == "reviewed by hand"
+
+
+async def test_acknowledging_when_nothing_is_breached_is_refused(api):
+    """Resetting a high-water mark that is not breached would silently discard a
+    real peak and lower the bar for the next halt."""
+    client, _ = api
+    await _seed_drawdown(["300", "300", "-100"])
+
+    result = (await client.post("/api/bot/risk/acknowledge-drawdown")).json()
+    assert result["acknowledged"] is False
+    assert "nothing to clear" in result["reason"]
+    assert (await client.get("/api/bot/risk/overrides")).json()["data"] == []
+
+
+async def test_the_acknowledgement_is_closed_when_a_secret_is_configured(api_secured):
+    """Resuming a bot that stopped after a 10% loss must not be reachable by
+    anyone who finds the URL."""
+    client = api_secured
+
+    assert (await client.post("/api/bot/risk/acknowledge-drawdown")).status_code == 401
+    ok = await client.post(
+        "/api/bot/risk/acknowledge-drawdown", headers={"x-cron-secret": "topsecret"}
+    )
+    assert ok.status_code == 200

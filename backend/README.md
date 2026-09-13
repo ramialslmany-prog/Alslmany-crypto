@@ -73,6 +73,21 @@ pre-push hook and CI both call.
 | GET | `/api/market/{symbol}/ticker` | Current quote. |
 | GET | `/api/market/{symbol}/candles` | OHLCV. `?timeframe=1h&limit=200` |
 | GET | `/api/market/{symbol}/orderbook` | Depth. `?depth=20` |
+| GET | `/api/signals` | Every tracked symbol, scanned concurrently. |
+| GET | `/api/signals/{symbol}` | One signal, with its plan or its refusal. |
+| GET | `/api/signals/{symbol}/analysis` | Every indicator reading behind it. |
+| GET | `/api/bot/portfolio` | Balance, performance, limits, **and `halt`**. |
+| GET | `/api/bot/trades/open` | Open positions, marked to market. |
+| GET | `/api/bot/trades/history` | Closed trades, filterable. |
+| GET | `/api/bot/equity-curve` | Balance after each closed trade. |
+| POST | `/api/bot/tick` | One pass of the bot. Behind `CRON_SECRET`. |
+| POST | `/api/bot/trades/{trade_id}/close` | Close one position by hand. Behind `CRON_SECRET`. |
+| POST | `/api/bot/risk/acknowledge-drawdown` | Clear a drawdown halt. Behind `CRON_SECRET`, recorded. |
+| GET | `/api/bot/risk/overrides` | Every risk override a human made. |
+| GET | `/api/analytics/breakdown` | Performance by `?by=` dimension, with sample sizes. |
+| GET | `/api/analytics/insights` | Observations. Always `applied: false`. |
+| GET | `/api/analytics/benchmark` | Strategy versus holding, per symbol. |
+| GET | `/api/backtest/{symbol}` | Historical replay. `?timeframe=1h&bars=500` |
 
 Every `/api` route except health and readiness carries a per-client budget,
 sized by how much upstream work it causes — `overview` fans out to every symbol
@@ -145,8 +160,19 @@ app/
     models/              coins · candles · ticker_snapshots · system_logs
     repositories/        upserts keyed so re-ingestion is idempotent
   services/              fetch-and-store orchestration
+  analysis/              series, trend, momentum, volatility, volume, levels,
+                         structure (BOS/CHoCH, FVG, order blocks, sweeps)
+  signals/               factors.py (the seven dimensions) · scoring.py
+                         (conviction x consensus x coverage) · analyzer.py
+  risk/                  sizing.py (quantity from stop distance) · manager.py
+                         (collects EVERY breached rule, not the first)
+  paper/                 broker (adverse slippage both ways) · engine ·
+                         portfolio · runner · store · models
+  backtest/              window.py (no-look-ahead, structurally) · engine.py
+  analytics/             breakdown (Wilson intervals) · insights (inert by
+                         construction) · benchmark (versus holding)
   api/routes/            HTTP surface
-tests/                   73 tests, no network required
+tests/                   294 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -221,8 +247,47 @@ Two claims in this file were also false and are now true: `system_logs` was a
 documented audit trail nothing ever wrote to, and Alembic was named as owning
 schema changes with no Alembic in the repository.
 
-## Next
+## What this backend cannot tell you
 
-Stage 2 — technical indicators (RSI, MACD, EMA/SMA, ATR, VWAP, volume) computed
-over the stored series, with each one verified against published reference
-values rather than against its own output.
+Every item is a real limit, not a disclaimer.
+
+**Costs are modelled, not measured.** A flat taker fee and a fixed adverse
+slippage on both legs. Real slippage grows with order size and shrinks with
+liquidity; real fills are partial; real perpetuals charge funding. None of that
+is here.
+
+**There is no correlation model.** Five open positions across BTC, ETH and SOL
+is close to one position in a drawdown. The `max_open_trades` limit bounds the
+number of trades, not the concentration of risk, so a bad day costs nearer 5%
+than 1%.
+
+**The news dimension is silent.** No feed is connected, so scoring runs on six
+of seven dimensions and `coverage` tops out at 0.95. The dimension is reserved
+and never fabricated.
+
+**The confidence score is an assumption until the ledger tests it.** It is
+built to separate strength, agreement and coverage — but whether it actually
+orders outcomes is measured, not assumed. `/api/analytics/breakdown?by=confidence`
+is where that is checked, and the insights say plainly if it is inverted.
+
+**The backtest replays one symbol.** No cross-symbol correlation, no liquidity
+model: the whole size is assumed to fill at one price. It is therefore
+optimistic for large sizes and thin books, before any of its pessimistic
+choices are counted.
+
+**Rate-limit counters live in process memory.** Two instances mean two budgets.
+The point at which this should move to Redis is the point at which more than
+one instance is deployed.
+
+**The drawdown halt is absorbing by design.** Drawdown is measured from the
+account's high-water mark, and equity rises only by trading — which the limit
+has stopped. So it needs a human, and the acknowledgement is an append-only
+row rather than a setting.
+
+> A two-thousand-trade simulation of a losing strategy (20% win rate) is why
+> the acknowledgement is manual: the halted account held **$9,017 after 33
+> trades**; the one that acknowledged every halt kept going for **1,312 trades
+> and ended at $49**.
+
+**Candle history is capped at 1,000 bars.** A window older than that is
+reported as uncovered rather than silently truncated.

@@ -194,3 +194,51 @@ def test_migrations_build_the_same_schema_the_application_does(tmp_path, monkeyp
     assert expected <= set(from_migration), "the migration did not build the schema"
     assert expected <= set(from_models), "create_all() did not build the schema"
     assert from_migration == from_models
+
+
+# --- claims made in the READMEs --------------------------------------------
+
+
+def _readme() -> str:
+    return (Path(__file__).resolve().parents[1] / "README.md").read_text()
+
+
+def test_every_route_the_app_serves_is_documented():
+    """An endpoint table drifts the moment a route is added without touching it,
+    and a table that is silently wrong is worse than no table.
+
+    The OpenAPI schema is used rather than `app.routes`, which in this FastAPI
+    version nests included routers behind wrapper objects that carry no path —
+    walking it naively finds four routes and passes while proving nothing.
+    """
+    from app.main import create_app
+
+    documented = _readme()
+    served = [p for p in create_app().openapi()["paths"] if p.startswith("/api")]
+
+    assert len(served) > 15, f"only {len(served)} routes found; the walk is wrong"
+    undocumented = [p for p in served if p not in documented]
+    assert not undocumented, f"routes missing from the endpoint table: {undocumented}"
+
+
+def test_the_documented_test_count_is_the_real_one():
+    """A number in a README is a claim like any other."""
+    import ast
+    import re
+
+    tests_dir = Path(__file__).resolve().parent
+    count = 0
+    for source in tests_dir.glob("test_*.py"):
+        tree = ast.parse(source.read_text())
+        count += sum(
+            1
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        )
+
+    claimed = re.search(r"tests/\s+(\d+) tests", _readme())
+    assert claimed, "the README no longer states a test count"
+    assert int(claimed.group(1)) == count, (
+        f"the README claims {claimed.group(1)} tests; there are {count}"
+    )

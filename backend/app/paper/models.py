@@ -85,3 +85,35 @@ class PortfolioSnapshot(Base, TimestampMixin):
     at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
     __table_args__ = (Index("ix_portfolio_snapshots_at", "at"),)
+
+
+class RiskOverride(Base, TimestampMixin):
+    """An operator's acknowledgement of a risk halt.
+
+    The maximum-drawdown limit is measured against the account's all-time high,
+    which means that once it is breached the bot cannot trade its way back:
+    equity only rises by trading, and trading is what the limit has stopped.
+    Without this table the halt is permanent and silent, which is the worst of
+    both worlds — the protection fires and then nothing ever tells the operator
+    why the bot went quiet.
+
+    So the halt stays (an automatic resume in 10% steps would be far worse), and
+    clearing it becomes a deliberate, recorded act. Rows are appended and never
+    updated: a risk override that can be edited or overwritten is not an audit
+    trail, and the question "who decided to keep trading after a 10% loss, and
+    when" must always have an answer.
+    """
+
+    __tablename__ = "risk_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The equity the high-water mark was reset to, so drawdown after this point
+    # is measured from here rather than from a peak the account may never see
+    # again.
+    baseline_equity: Mapped[Decimal] = mapped_column(Money(), nullable=False)
+    drawdown_pct_at_reset: Mapped[Decimal] = mapped_column(Money(), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text())
+    at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+    __table_args__ = (Index("ix_risk_overrides_at", "at"),)
