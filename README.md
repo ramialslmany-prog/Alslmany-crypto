@@ -151,15 +151,10 @@ storage is ephemeral, so a reset is never mistaken for a change in strategy.
 
 ## Testing
 
-[![CI](https://github.com/ramialslmany-prog/Alslmany-crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/ramialslmany-prog/Alslmany-crypto/actions/workflows/ci.yml)
-
 ```bash
-npm test
+npm run verify   # typecheck · lint · test · build — the whole guarantee
+npm test         # just the suite
 ```
-
-Every push and pull request runs typecheck, lint, the full suite and a
-production build. A test suite that only executes when someone remembers to
-type `npm test` is documentation, not a guarantee.
 
 377 assertions run against compiled output, covering the indicators, market
 structure, regime classification, the recommendation engine and the bot.
@@ -170,6 +165,35 @@ reported a calm market as a volatility shock on floating-point noise; a
 backtester that skipped every bar and reported "0 trades" as though it were a
 finding; async assertions landing after the report was written; and a chart and a
 signal card quoting different prices for the same asset on the same screen.
+
+### Where the guarantee actually runs
+
+A suite that executes only when someone remembers to type `npm test` is
+documentation, not a guarantee. So the four steps are bound to the push itself,
+in two places that share one definition:
+
+| | Runs | Defined by |
+|---|---|---|
+| **pre-push hook** (`.githooks/pre-push`) | on every `git push`, locally | `npm run verify` |
+| **GitHub Actions** (`.github/workflows/ci.yml`) | on every push and pull request | `npm run verify` |
+
+The hook installs itself through the `prepare` script on `npm install`
+(`core.hooksPath=.githooks` — no dependency, nothing to add). Push past it
+deliberately with `git push --no-verify` or `SKIP_VERIFY=1`.
+
+Both call the same script rather than restating the steps, so the hosted check
+and the local check cannot drift apart and quietly disagree about what passing
+means.
+
+**GitHub Actions is currently unavailable on this account** — runs terminate in
+about two seconds having consumed zero billable milliseconds, which is the
+signature of an account-level block (Actions disabled for the repository, or a
+spending limit / billing state that stops jobs before a runner picks them up)
+rather than anything in this repository. The workflow file is correct and will
+start passing the moment Actions is enabled; until then the pre-push hook is
+what enforces the guarantee, which is exactly why it exists. See
+[Settings → Actions → General](https://github.com/ramialslmany-prog/Alslmany-crypto/settings/actions)
+and [billing](https://github.com/settings/billing).
 
 ---
 

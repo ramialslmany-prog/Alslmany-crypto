@@ -2,14 +2,17 @@
   "name": "alslmany-crypto",
   "version": "1.0.0",
   "private": true,
-  "description": "Alslmany Crypto \u2014 crypto recommendations & an autonomous trading bot, built on auditable analysis.",
+  "description": "Alslmany Crypto — crypto recommendations & an autonomous trading bot, built on auditable analysis.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node tests/bootstrap.cjs"
+    "test": "tsc -p tsconfig.test.json && node tests/bootstrap.cjs",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "hooks:install": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "prepare": "npm run hooks:install"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.0",

@@ -1,15 +1,16 @@
 name: CI
 
-# Runs on every push and every pull request. The point of a test suite is that
-# it runs without anyone remembering to run it — 354 assertions that only
-# execute when someone types `npm test` are documentation, not a guarantee.
+# Runs the same four steps as `npm run verify` and the pre-push hook.
+# One definition of "verified" lives in package.json; this workflow calls it
+# rather than restating it, so the hosted check and the local check cannot
+# drift apart and quietly disagree about what passing means.
+
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: ["**"]
 
-# A newer push supersedes an in-flight run on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -19,36 +20,18 @@ jobs:
     name: Typecheck · Lint · Test · Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      # `npm ci` installs exactly the lockfile, so CI cannot pass on a
-      # dependency tree the repository does not actually pin.
-      - name: Install dependencies
-        run: npm ci
+      # From the lockfile, so CI cannot pass on a dependency tree the
+      # repository does not pin.
+      - run: npm ci
 
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      - name: Lint
-        run: npm run lint
-
-      # The analysis and trading engines are where a quiet numerical mistake is
-      # most expensive, so these run before the build rather than after it.
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
+      - run: npm run verify
         env:
-          # The build must succeed with no secrets configured, because that is
-          # how someone deploying this for the first time will experience it.
           NEXT_TELEMETRY_DISABLED: "1"
