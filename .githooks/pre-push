@@ -18,7 +18,9 @@ fi
 
 echo "pre-push: lint · format · tests"
 
-if ! sh backend/verify.sh; then
+# Invoked directly, not via `sh`: the script declares bash in its shebang
+# and uses `set -o pipefail`, which dash does not support.
+if ! ./backend/verify.sh; then
   echo ""
   echo "pre-push: verification failed — push aborted."
   echo "Fix the failure above, or push deliberately with --no-verify."
