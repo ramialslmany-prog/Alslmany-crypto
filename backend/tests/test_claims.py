@@ -242,3 +242,39 @@ def test_the_documented_test_count_is_the_real_one():
     assert int(claimed.group(1)) == count, (
         f"the README claims {claimed.group(1)} tests; there are {count}"
     )
+
+
+def test_the_package_is_named_rather_than_guessed():
+    """A fresh `pip install -e backend[dev]` must work — which is all CI does.
+
+    `backend/` holds two top-level directories, `app` and `alembic`. Under a
+    flat layout setuptools refuses to guess between them and aborts the build,
+    so the install fails on any machine without an already-built virtualenv.
+    That is every CI runner, and it stayed invisible here for exactly as long
+    as the checked-in `.venv` kept answering for it.
+
+    The test asserts the declaration rather than running pip, so it costs
+    nothing — but it fails the moment a second top-level directory is added
+    without the declaration that makes it unambiguous.
+    """
+    import tomllib
+
+    backend = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((backend / "pyproject.toml").read_text())
+
+    top_level = {
+        p.name
+        for p in backend.iterdir()
+        if p.is_dir() and not p.name.startswith((".", "_")) and p.name != "tests"
+    }
+    top_level -= {"build", "dist"}
+    top_level = {n for n in top_level if not n.endswith(".egg-info")}
+
+    if len(top_level) < 2:
+        pytest.skip("only one top-level directory; automatic discovery is safe")
+
+    find = config.get("tool", {}).get("setuptools", {}).get("packages", {}).get("find")
+    assert find and find.get("include"), (
+        f"{sorted(top_level)} are all top-level here, so setuptools cannot guess "
+        "which is the package: declare [tool.setuptools.packages.find].include"
+    )

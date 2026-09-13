@@ -27,6 +27,17 @@ dev = [
   "ruff>=0.7",
 ]
 
+# Without this, a FRESH install fails outright: setuptools finds two top-level
+# directories here (`app` and `alembic`), refuses to guess which is the package,
+# and aborts. It never showed up locally because the checked-in virtualenv was
+# built before `alembic/` existed — so `pip install -e backend[dev]` worked on
+# every machine that already had it and failed on every machine that did not,
+# CI included. Naming the package is the fix; `alembic/` holds migration
+# scripts, not importable library code, and is deliberately excluded.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

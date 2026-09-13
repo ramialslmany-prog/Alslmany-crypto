@@ -172,7 +172,7 @@ app/
   analytics/             breakdown (Wilson intervals) · insights (inert by
                          construction) · benchmark (versus holding)
   api/routes/            HTTP surface
-tests/                   294 tests, no network required
+tests/                   295 tests, no network required
 ```
 
 ### Three decisions worth knowing
