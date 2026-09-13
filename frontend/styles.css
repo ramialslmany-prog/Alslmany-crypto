@@ -341,3 +341,17 @@ tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
 .alerts code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px;
   font-family: ui-monospace, monospace; font-size: 12px; }
 .alerts button { margin-inline-end: 10px; }
+
+/* ---------- replay refusals ---------- */
+
+.refusals { padding: 0 14px 14px; }
+.refusals h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-faint); }
+.refusals ul { margin: 0 0 10px; padding: 0; list-style: none; }
+.refusals li { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+  font-size: 13px; }
+.refusals .tag { min-width: 62px; text-align: center; }
+/* The account-level ones are the point of this panel, so they are the ones
+   that carry the accent — with the word beside them, never colour alone. */
+.refusals .tag.account { color: var(--accent); border-color: var(--warn-rule); }
+.refusals p { margin: 0; }

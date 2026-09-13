@@ -591,3 +591,43 @@ async def test_the_config_endpoint_says_whether_alerts_are_on_never_the_token(ap
 
     assert body["alerts_configured"] is False
     assert not any("token" in k for k in body)
+
+
+async def test_a_portfolio_replay_is_labelled_and_names_what_it_replayed(api):
+    """A four-symbol replay reported as a five-symbol one is a quietly
+    different result, so the symbols actually used are named."""
+    client, _ = api
+    r = await client.get("/api/backtest?timeframe=1h&bars=260")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["kind"] == "PORTFOLIO_BACKTEST"
+    assert body["meta"]["symbols_replayed"] == ["BTCUSDT", "ETHUSDT"]
+    assert body["meta"]["failures"] == []
+    assert "refusals" in body and "peak_open_positions" in body
+
+
+async def test_a_symbol_that_cannot_be_fetched_is_named_not_dropped(api):
+    client, stub = api
+    stub.fail = True
+
+    body = (await client.get("/api/backtest?bars=260")).json()
+
+    assert body["meta"]["symbols_replayed"] == []
+    assert {f["symbol"] for f in body["meta"]["failures"]} == {"BTCUSDT", "ETHUSDT"}
+    assert body["caveats"], "an empty replay was returned without saying why"
+
+
+async def test_the_portfolio_replay_does_not_block_the_event_loop(api):
+    """Five symbols is five times the CPU of the single-symbol route, so this
+    is the one that would hurt most if it ran on the loop."""
+    import asyncio
+
+    client, _ = api
+    task = asyncio.create_task(client.get("/api/backtest?bars=400"))
+    await asyncio.sleep(0.05)
+    health = await asyncio.wait_for(client.get("/api/health"), timeout=2.0)
+
+    assert health.status_code == 200
+    assert not task.done(), "the portfolio replay held the event loop"
+    assert (await task).status_code == 200

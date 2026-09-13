@@ -89,7 +89,8 @@ pre-push hook and CI both call.
 | GET | `/api/analytics/breakdown` | Performance by `?by=` dimension, with sample sizes. |
 | GET | `/api/analytics/insights` | Observations. Always `applied: false`. |
 | GET | `/api/analytics/benchmark` | Strategy versus holding, per symbol. |
-| GET | `/api/backtest/{symbol}` | Historical replay. `?timeframe=1h&bars=500` |
+| GET | `/api/backtest/{symbol}` | Historical replay of one symbol. `?timeframe=1h&bars=500` |
+| GET | `/api/backtest` | Replay every symbol together, on one account. |
 | WS | `/ws` | Live prices and account state, pushed every 5s. |
 
 The WebSocket sits outside `/api` on purpose: it is not a REST resource, and
@@ -183,7 +184,8 @@ app/
   paper/                 broker (adverse slippage both ways) · depth (what an
                          order of this size costs to cross) · engine ·
                          portfolio · runner · store · models
-  backtest/              window.py (no-look-ahead, structurally) · engine.py
+  backtest/              window.py (no-look-ahead, structurally) · engine.py ·
+                         portfolio.py (every symbol on one account, one clock)
   analytics/             breakdown (Wilson intervals) · insights (inert by
                          construction) · benchmark (versus holding)
   alerts/                telegram.py — sends, never receives; a failed alert
@@ -191,7 +193,7 @@ app/
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   384 tests, no network required
+tests/                   401 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -314,10 +316,12 @@ built to separate strength, agreement and coverage — but whether it actually
 orders outcomes is measured, not assumed. `/api/analytics/breakdown?by=confidence`
 is where that is checked, and the insights say plainly if it is inverted.
 
-**The backtest replays one symbol.** No cross-symbol correlation, no liquidity
-model: the whole size is assumed to fill at one price. It is therefore
-optimistic for large sizes and thin books, before any of its pessimistic
-choices are counted.
+**The portfolio replay shares capital but not liquidity.** Every symbol runs on
+one account against one clock, so `max_open_trades`, the daily-loss limit, the
+drawdown halt and the correlation heat limit all bind — the last of these is
+testable historically for the first time. What it still does not model is market
+impact across simultaneous entries: each fill is priced as though it were the
+only order in the book that instant.
 
 **Rate-limit counters live in process memory.** Two instances mean two budgets.
 The point at which this should move to Redis is the point at which more than

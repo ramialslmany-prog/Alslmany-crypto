@@ -924,21 +924,26 @@ async function loadBenchmark() {
 
 /** The replay is expensive, so it runs on request and never on tab open. */
 async function runBacktest() {
+  const scope = el("bt-scope").value;
   const symbol = el("bt-symbol").value;
   const timeframe = el("bt-tf").value;
   const bars = el("bt-bars").value;
-  if (!symbol) return;
+  if (scope === "symbol" && !symbol) return;
 
   const button = el("run-backtest");
   button.disabled = true;
   button.textContent = "Replaying…";
   el("bt-status").hidden = false;
   el("bt-status").className = "notice info";
-  el("bt-status").innerHTML = `<strong>Replaying ${esc(symbol)} ${esc(timeframe)} over ${esc(bars)} bars…</strong>`;
+  el("bt-status").innerHTML = `<strong>Replaying ${
+    scope === "portfolio" ? "the whole portfolio" : esc(symbol)
+  } ${esc(timeframe)} over ${esc(bars)} bars…</strong>`;
 
   try {
-    const r = await getJson(
-      `/backtest/${encodeURIComponent(symbol)}?timeframe=${timeframe}&bars=${bars}`);
+    const path = scope === "portfolio"
+      ? `/backtest?timeframe=${timeframe}&bars=${bars}`
+      : `/backtest/${encodeURIComponent(symbol)}?timeframe=${timeframe}&bars=${bars}`;
+    const r = await getJson(path);
     renderBacktest(r);
   } catch (error) {
     el("bt-results").hidden = true;
@@ -951,6 +956,7 @@ async function runBacktest() {
 }
 
 function renderBacktest(r) {
+  const portfolio = r.kind === "PORTFOLIO_BACKTEST";
   const perf = r.performance;
   const ret = signed(r.total_return_pct, "%");
   const hold = signed(r.buy_and_hold_pct, "%");
@@ -962,15 +968,22 @@ function renderBacktest(r) {
   const caveats = (r.caveats || []).map((c) => `<li>${esc(c)}</li>`).join("");
   el("bt-status").className = caveats ? "notice warn" : "notice info";
   el("bt-status").innerHTML =
-    `<strong>Simulated result — ${esc(r.symbol)} ${esc(r.timeframe)}</strong><br />` +
-    `${esc(r.meta.bars_received)} bars received of ${esc(r.meta.bars_requested)} asked for · ` +
-    `${esc(r.bars_analysed)} reached the analyser · ${esc(r.signals_generated)} qualified · ` +
-    `${esc(perf.total_trades)} trades taken · source ${esc(r.meta.source)}` +
+    `<strong>Simulated result — ${
+      portfolio ? `${r.symbols.length} symbols on one account` : esc(r.symbol)
+    } ${esc(r.timeframe)}</strong><br />` +
+    (portfolio
+      ? `${esc(r.bars_replayed)} bars replayed across ${esc(r.symbols.join(", "))} · ` +
+        `${esc(r.signals_generated)} qualified · ${esc(perf.total_trades)} trades · ` +
+        `peak ${esc(r.peak_open_positions)} open at once`
+      : `${esc(r.meta.bars_received)} bars received of ${esc(r.meta.bars_requested)} asked for · ` +
+        `${esc(r.bars_analysed)} reached the analyser · ${esc(r.signals_generated)} qualified · ` +
+        `${esc(perf.total_trades)} trades taken · source ${esc(r.meta.source)}`) +
     (caveats ? `<ul>${caveats}</ul>` : "");
 
   el("bt-tiles").innerHTML = [
     { label: "Strategy return", value: ret.text, cls: ret.cls, sub: `from ${fmtMoney(r.starting_balance)} · risk ${r.risk_pct}%/trade` },
-    { label: "Buy and hold", value: hold.text, cls: hold.cls, sub: "same window, no trading" },
+    { label: "Buy and hold", value: hold.text, cls: hold.cls,
+      sub: portfolio ? "equal-weight basket, same window" : "same window, no trading" },
     { label: "Versus holding", value: vs.text, cls: vs.cls, sub: beat >= 0 ? "the strategy added this" : "holding would have won" },
     { label: "Trades", value: perf.total_trades, sub: `${perf.wins}W / ${perf.losses}L` },
     { label: "Win rate", value: `${perf.win_rate}%`, sub: `longest losing streak ${perf.longest_losing_streak}` },
@@ -987,12 +1000,17 @@ function renderBacktest(r) {
   wireTooltips(el("bt-equity"));
 
   el("bt-count").textContent = `${r.trades.length} closed`;
+  // The symbol column only earns its place when there is more than one symbol.
+  document.querySelectorAll("#bt-trades .symbol-col").forEach((cell) => {
+    cell.hidden = !portfolio;
+  });
   el("bt-trades-body").innerHTML = r.trades.length
     ? r.trades.map((t) => {
         const pnl = signed(t.pnl);
         const rr = signed(t.r_multiple, "R");
         return `<tr>
           <td class="muted">${t.opened_at ? esc(new Date(t.opened_at).toLocaleString()) : "—"}</td>
+          <td class="sym symbol-col" ${portfolio ? "" : "hidden"}>${esc(t.symbol || "—")}</td>
           <td><span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span></td>
           <td class="num price">${fmtPrice(t.entry)}</td>
           <td class="num price">${fmtPrice(t.exit)}</td>
@@ -1003,9 +1021,41 @@ function renderBacktest(r) {
           <td class="num">${Number(t.confidence).toFixed(0)}</td>
         </tr>`;
       }).join("")
-    : `<tr><td colspan="9" class="empty">The strategy took no trade in this window. That is a result, not a failure — it declined every setup on offer.</td></tr>`;
+    : `<tr><td colspan="10" class="empty">The strategy took no trade in this window. That is a result, not a failure — it declined every setup on offer.</td></tr>`;
 
+  renderRefusals(portfolio ? r.refusals : null);
   el("bt-results").hidden = false;
+}
+
+/** Why the replay declined. "The bot did not trade" means two completely
+    different things, and only one of them is a portfolio effect. */
+function renderRefusals(refusals) {
+  const node = el("bt-refusals");
+  if (!refusals || !Object.keys(refusals).length) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
+  }
+
+  // Setup-level first, then the ones the account imposed — the second group is
+  // what a single-symbol replay can never show you.
+  const ACCOUNT = new Set([
+    "portfolio_heat", "duplicate_position", "max_open_trades",
+    "daily_loss_limit", "drawdown_limit", "insufficient_balance",
+  ]);
+  const rows = Object.entries(refusals).sort((a, b) => b[1] - a[1]);
+
+  node.hidden = false;
+  node.innerHTML = `
+    <h3>Why it declined</h3>
+    <ul>${rows.map(([reason, count]) => `<li>
+      <span class="tag ${ACCOUNT.has(reason) ? "account" : ""}">${
+        ACCOUNT.has(reason) ? "account" : "setup"}</span>
+      <strong>${esc(count)}</strong> ${esc(reason.replace(/_/g, " "))}
+    </li>`).join("")}</ul>
+    <p class="muted">A setup refusal means nothing qualified. An account refusal
+    means the trade was good enough and the book would not carry it — which is
+    the only thing a single-symbol replay can never tell you.</p>`;
 }
 
 /* ---------- live feed ---------- */
@@ -1166,6 +1216,9 @@ async function boot() {
 
   el("run-tick").addEventListener("click", runTick);
   el("run-backtest").addEventListener("click", runBacktest);
+  el("bt-scope").addEventListener("change", () => {
+    el("bt-symbol").disabled = el("bt-scope").value === "portfolio";
+  });
   el("an-by").addEventListener("change", loadBreakdown);
   el("sig-tf").addEventListener("change", loadSignals);
   el("symbol").addEventListener("change", loadCandles);

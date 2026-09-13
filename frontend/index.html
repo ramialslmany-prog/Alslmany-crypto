@@ -294,6 +294,11 @@
         <div class="panel-head">
           <h2>Historical replay</h2>
           <div class="panel-actions">
+            <label for="bt-scope" class="sr-only">Scope</label>
+            <select id="bt-scope">
+              <option value="symbol" selected>One symbol</option>
+              <option value="portfolio">Whole portfolio</option>
+            </select>
             <label for="bt-symbol" class="sr-only">Symbol</label>
             <select id="bt-symbol"></select>
             <label for="bt-tf" class="sr-only">Timeframe</label>
@@ -320,6 +325,7 @@
           worse than a naive backtest, which is the point.
         </p>
         <div id="bt-status" class="notice" hidden></div>
+        <div id="bt-refusals" class="refusals" hidden></div>
       </div>
 
       <div id="bt-results" hidden>
@@ -343,6 +349,7 @@
               <thead>
                 <tr>
                   <th scope="col">Opened</th>
+                  <th scope="col" class="symbol-col" hidden>Symbol</th>
                   <th scope="col">Side</th>
                   <th scope="col" class="num">Entry</th>
                   <th scope="col" class="num">Exit</th>
