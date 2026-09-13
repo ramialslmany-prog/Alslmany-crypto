@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.core.logging import get_logger
+from app.market_data.schemas import OrderBook
 from app.paper.broker import Broker, Fill
 from app.paper.models import PaperTrade
 
@@ -72,7 +73,13 @@ class PaperEngine:
 
     # --- opening ---------------------------------------------------------
 
-    async def open(self, request: OpenRequest, *, data_is_live: bool) -> PaperTrade:
+    async def open(
+        self,
+        request: OpenRequest,
+        *,
+        data_is_live: bool,
+        book: OrderBook | None = None,
+    ) -> PaperTrade:
         """Open a simulated position.
 
         `data_is_live` is a required argument rather than a default, so that
@@ -93,6 +100,7 @@ class PaperEngine:
             side=side,
             quantity=request.quantity,
             price=request.entry,
+            book=book,
         )
 
         trade = PaperTrade(
@@ -200,13 +208,24 @@ class PaperEngine:
 
     # --- closing ---------------------------------------------------------
 
-    async def close(self, trade: PaperTrade, *, price: Decimal, reason: str) -> CloseResult:
+    async def close(
+        self,
+        trade: PaperTrade,
+        *,
+        price: Decimal,
+        reason: str,
+        book: OrderBook | None = None,
+    ) -> CloseResult:
         if trade.status != "open":
             raise ValueError(f"trade {trade.id} is already {trade.status}")
 
         side = "sell" if trade.direction == "LONG" else "buy"
         fill = await self.broker.place(
-            symbol=trade.symbol, side=side, quantity=trade.quantity, price=price
+            symbol=trade.symbol,
+            side=side,
+            quantity=trade.quantity,
+            price=price,
+            book=book,
         )
 
         if trade.direction == "LONG":

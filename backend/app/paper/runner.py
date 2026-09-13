@@ -24,6 +24,7 @@ from app.analysis.series import Series, to_series
 from app.core.errors import MarketDataError
 from app.core.logging import get_logger
 from app.market_data.timeframes import Timeframe
+from app.paper.depth import cost_to_cross
 from app.paper.engine import ExitReason, OpenRequest, PaperEngine
 from app.paper.models import PaperTrade
 from app.paper.portfolio import portfolio_state
@@ -56,6 +57,9 @@ class TickReport:
     # to be answerable, and silence is the worst possible answer.
     rejected: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
+    # What each entry actually cost to cross, and whether that was measured
+    # from a book or assumed from a constant.
+    fills: list[dict[str, Any]] = field(default_factory=list)
     # What the open book would lose in a correlated move, and how much of that
     # is a measurement rather than an assumption.
     heat: dict[str, Any] = field(default_factory=dict)
@@ -77,6 +81,7 @@ class TickReport:
             "errors": self.errors,
             "halt": self.halt,
             "heat": self.heat,
+            "fills": self.fills,
         }
 
 
@@ -231,6 +236,31 @@ class BotRunner:
                 }
             )
 
+    async def _order_book(self, symbol: str, report: TickReport):
+        try:
+            return (await self.market.get_order_book(symbol, depth=50)).data
+        except MarketDataError as exc:
+            # Reported, not swallowed. A fill priced from an assumption instead
+            # of a book is a weaker measurement, and the tick says so.
+            report.errors.append({"symbol": symbol, "code": exc.code, "context": "order_book"})
+            return None
+        except Exception as exc:
+            # Depth is an improvement on the fill price, not a precondition for
+            # trading. Letting an unexpected failure here abandon a qualified
+            # setup would trade a better cost estimate for a missed trade,
+            # which is the worse deal. Recorded under its own type rather than
+            # as a market outage, so a real bug cannot hide behind a plausible
+            # one.
+            logger.exception("order book fetch failed", extra={"symbol": symbol})
+            report.errors.append(
+                {
+                    "symbol": symbol,
+                    "code": type(exc).__name__,
+                    "context": "order_book",
+                }
+            )
+            return None
+
     async def _marks(self, open_trades: list[PaperTrade], report: TickReport) -> dict[str, Decimal]:
         marks: dict[str, Decimal] = {}
         for trade in open_trades:
@@ -317,6 +347,15 @@ class BotRunner:
             )
             return state
 
+        side = "buy" if signal.signal == "LONG" else "sell"
+
+        # The book is fetched ONLY once a trade is actually going to be opened.
+        # Quoting depth for every symbol on every tick would multiply upstream
+        # load by the size of the universe to price fills that mostly never
+        # happen. A failure here is not fatal: the broker falls back to its
+        # flat assumption and the fill records that it did.
+        order_book = await self._order_book(symbol, report)
+
         plan = signal.plan
         trade = await self.engine.open(
             OpenRequest(
@@ -335,10 +374,28 @@ class BotRunner:
                 evidence=signal.evidence,
             ),
             data_is_live=data_is_live,
+            book=order_book,
         )
         report.opened.append(symbol)
         report.new_trades.append(trade)
         book.append(trade)
+
+        # What the fill actually cost, and whether that was measured or
+        # assumed. Slippage ends up baked into the entry price, so without
+        # this line there is no way to tell a fill priced from a real book
+        # from one priced from a constant.
+        cost = (
+            cost_to_cross(order_book, side, plan.size.quantity) if order_book is not None else None
+        )
+        report.fills.append(
+            {
+                "symbol": symbol,
+                "requested": str(plan.entry),
+                "filled": str(trade.entry),
+                "depth_measured": cost is not None,
+                "cost": cost.to_dict() if cost is not None else None,
+            }
+        )
         report.signals[-1]["opened"] = True
 
         # Fold the new position into the state so the next symbol in this same

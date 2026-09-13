@@ -178,7 +178,8 @@ app/
                          confluence.py (the timeframe above; subtracts only)
   risk/                  sizing.py (quantity from stop distance) · manager.py
                          (collects EVERY breached rule, not the first)
-  paper/                 broker (adverse slippage both ways) · engine ·
+  paper/                 broker (adverse slippage both ways) · depth (what an
+                         order of this size costs to cross) · engine ·
                          portfolio · runner · store · models
   backtest/              window.py (no-look-ahead, structurally) · engine.py
   analytics/             breakdown (Wilson intervals) · insights (inert by
@@ -186,7 +187,7 @@ app/
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   351 tests, no network required
+tests/                   366 tests, no network required
 ```
 
 ### Three decisions worth knowing
@@ -265,10 +266,23 @@ schema changes with no Alembic in the repository.
 
 Every item is a real limit, not a disclaimer.
 
-**Costs are modelled, not measured.** A flat taker fee and a fixed adverse
-slippage on both legs. Real slippage grows with order size and shrinks with
-liquidity; real fills are partial; real perpetuals charge funding. None of that
-is here.
+**Slippage is measured now; the rest of the costs are still modelled.** When a
+position opens, the order book is fetched and the real cost of crossing at that
+size is computed — half the spread, which any size pays, plus impact, which
+only orders eating past the best quote pay. The flat 0.03% it replaced was
+three times too expensive for a small order in a deep book and a seventh of the
+true cost for a large order in a thin one:
+
+    order size      deep book     thin book
+             5        0.0100%       0.0180%
+           100        0.0150%       0.2050%
+           400        0.0450%       0.2050%
+
+Still assumed: fills are all-or-nothing (no partial fills), perpetual funding
+is not modelled, and the book is a snapshot while a real fill takes time during
+which it moves. A book too thin to cover the order reports `exhausted` and the
+flat assumption is kept as a floor, because a book that ran out is evidence the
+order is too big — not evidence it is cheap.
 
 **Correlation is measured now, and is still an estimate.** It is computed on
 RETURNS rather than prices — two assets that both drift upward for a year show

@@ -8,7 +8,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.core.errors import NoMarketDataError
-from app.market_data.schemas import Candle, Provenance, Sourced, Ticker
+from app.market_data.schemas import (
+    Candle,
+    OrderBook,
+    OrderBookLevel,
+    Provenance,
+    Sourced,
+    Ticker,
+)
 from app.paper.broker import PaperBroker
 from app.paper.engine import ExitReason, PaperEngine
 from app.paper.models import PaperTrade
@@ -49,6 +56,41 @@ class FakeMarket:
         self.base = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
         self.fail: set[str] = set()
         self.override_bar: dict[str, tuple[Decimal, Decimal]] = {}
+
+    async def get_order_book(self, symbol, depth=20, **kw):
+        """A shallow but real book around the last close.
+
+        Deliberately deep enough to fill an ordinary position and no deeper, so
+        an oversized order runs out of levels here the way it would on a venue.
+        """
+        if symbol in self.fail:
+            raise NoMarketDataError("down", providers_tried=["fake"])
+
+        last = Decimal(str(round(self.closes[symbol][-1], 8)))
+        step = last * Decimal("0.0002")
+        levels = [
+            OrderBookLevel(
+                price=(last + step * (i + 1)).quantize(Decimal("0.00000001")), quantity=Decimal("5")
+            )
+            for i in range(depth)
+        ]
+        bids = [
+            OrderBookLevel(
+                price=(last - step * (i + 1)).quantize(Decimal("0.00000001")), quantity=Decimal("5")
+            )
+            for i in range(depth)
+        ]
+        return Sourced(
+            data=OrderBook(
+                symbol=symbol, bids=tuple(bids), asks=tuple(levels), timestamp=datetime.now(UTC)
+            ),
+            provenance=Provenance(
+                provider="fake",
+                cached=False,
+                stale=self.stale,
+                fetched_at=datetime.now(UTC),
+            ),
+        )
 
     async def get_candles(self, symbol, timeframe, limit=200, **kw):
         if symbol in self.fail:
@@ -334,3 +376,38 @@ async def test_every_symbol_is_fetched_once_per_tick():
     await runner(market).tick(symbols, [])
 
     assert sorted(calls) == sorted(symbols), f"duplicate or missing fetches: {calls}"
+
+
+async def test_the_tick_reports_what_each_entry_cost_to_cross():
+    """Slippage ends up baked into the entry price. Without this line there is
+    no way to tell a fill priced from a real book from one priced from a
+    constant — and those are different kinds of evidence."""
+    market = FakeMarket({"BTCUSDT": trending(QUALIFYING_SEED, up=True)})
+    report = await runner(market).tick(["BTCUSDT"], [])
+
+    if not report.opened:
+        raise AssertionError("nothing opened, so no fill was recorded to check")
+
+    fill = report.fills[0]
+    assert fill["symbol"] == "BTCUSDT"
+    assert fill["depth_measured"] is True
+    assert Decimal(fill["cost"]["total_pct"]) >= 0
+    # The recorded fill is worse than the requested price, never better.
+    assert Decimal(fill["filled"]) > Decimal(fill["requested"])
+
+
+async def test_a_missing_order_book_does_not_cost_the_trade():
+    """Depth improves the fill price; it is not a precondition for trading.
+    Letting a failed depth quote abandon a qualified setup would trade a better
+    cost estimate for a missed trade, which is the worse deal."""
+    market = FakeMarket({"BTCUSDT": trending(QUALIFYING_SEED, up=True)})
+
+    async def no_book(symbol, depth=20, **kw):
+        raise NoMarketDataError("depth down", providers_tried=["fake"])
+
+    market.get_order_book = no_book
+    report = await runner(market).tick(["BTCUSDT"], [])
+
+    assert report.opened == ["BTCUSDT"], "a depth outage cost a qualified trade"
+    assert report.fills[0]["depth_measured"] is False
+    assert any(e.get("context") == "order_book" for e in report.errors)

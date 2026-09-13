@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
 
+from app.market_data.schemas import OrderBook
+from app.paper.depth import DepthCost, cost_to_cross
 from app.risk.sizing import SLIPPAGE_PCT, TAKER_FEE_PCT
 
 
@@ -36,6 +38,15 @@ class Fill:
     fee: Decimal
     at: datetime
     simulated: bool = True  # always true; there is no other kind here
+    # How the slippage was arrived at. A fill priced from a real book and one
+    # priced from an assumption are different kinds of evidence, and a result
+    # that cannot tell them apart cannot be audited.
+    depth: DepthCost | None = None
+    slippage_pct: Decimal = SLIPPAGE_PCT
+
+    @property
+    def depth_measured(self) -> bool:
+        return self.depth is not None
 
     @property
     def slippage(self) -> Decimal:
@@ -47,7 +58,15 @@ class Fill:
 
 
 class Broker(Protocol):
-    async def place(self, *, symbol: str, side: str, quantity: Decimal, price: Decimal) -> Fill: ...
+    async def place(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        price: Decimal,
+        book: OrderBook | None = None,
+    ) -> Fill: ...
 
 
 class PaperBroker:
@@ -69,13 +88,40 @@ class PaperBroker:
         self.slippage_pct = slippage_pct
         self.fills: list[Fill] = []
 
-    async def place(self, *, symbol: str, side: str, quantity: Decimal, price: Decimal) -> Fill:
+    async def place(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        price: Decimal,
+        book: OrderBook | None = None,
+    ) -> Fill:
+        """Fill at `price` plus the cost of crossing.
+
+        `book` is passed in, never fetched: this class has no HTTP client and
+        no credentials, and that is the property that makes "no real trading"
+        structural rather than a promise. When a book is supplied the slippage
+        is measured from it; when one is not, the flat assumption is used and
+        the fill says which it was.
+        """
         if quantity <= 0:
             raise ValueError("quantity must be positive")
         if price <= 0:
             raise ValueError("price must be positive")
 
-        drift = price * self.slippage_pct / Decimal(100)
+        depth = cost_to_cross(book, side, quantity) if book is not None else None
+        # A book that could not cover the order is not evidence of a cheap
+        # fill — it is evidence the order is too big for this market. Its
+        # measured cost describes only the part that filled, so the assumption
+        # is kept as a floor rather than being replaced by a flattering number.
+        slippage_pct = self.slippage_pct
+        if depth is not None:
+            slippage_pct = (
+                max(depth.total_pct, self.slippage_pct) if depth.exhausted else depth.total_pct
+            )
+
+        drift = price * slippage_pct / Decimal(100)
         # Buying fills higher than asked; selling fills lower. Never the reverse.
         filled = price + drift if side == "buy" else price - drift
         fee = (quantity * filled) * self.fee_pct / Decimal(100)
@@ -92,6 +138,8 @@ class PaperBroker:
             # never agree.
             fee=fee.quantize(Decimal("0.01")),
             at=datetime.now(UTC),
+            depth=depth,
+            slippage_pct=slippage_pct,
         )
         self.fills.append(fill)
         return fill
