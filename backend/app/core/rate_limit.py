@@ -62,6 +62,9 @@ DEFAULT_BUDGET = Budget(limit=120)
 def classify(path: str) -> str:
     if "/backtest" in path:
         return "backtest"
+    # The one analytics route that reaches upstream, once per traded symbol.
+    if path.endswith("/benchmark"):
+        return "overview"
     if path.endswith("/bot/tick"):
         return "bot_tick"
     if path.endswith("/analysis"):

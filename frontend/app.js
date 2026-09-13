@@ -629,6 +629,109 @@ async function loadCandles() {
   }
 }
 
+/* ---------- analytics ---------- */
+
+const STRENGTH_LABEL = {
+  insufficient: "not enough data",
+  suggestive: "suggestive",
+  supported: "supported",
+};
+
+async function loadAnalytics() {
+  await Promise.all([loadInsights(), loadBreakdown(), loadBenchmark()]);
+}
+
+async function loadInsights() {
+  try {
+    const payload = await getJson("/analytics/insights");
+    el("insights").innerHTML = payload.data.map((o) => `
+      <article class="insight insight-${esc(o.strength)}">
+        <header>
+          <span class="tag">${esc(o.topic)}</span>
+          <span class="tag strength">${esc(STRENGTH_LABEL[o.strength] || o.strength)}</span>
+          <span class="muted">n = ${o.sample}</span>
+        </header>
+        <p class="finding">${esc(o.finding)}</p>
+        <p class="muted">${esc(o.evidence)}</p>
+        <p class="consider"><strong>Consider:</strong> ${esc(o.consider)}</p>
+        <p class="muted applied">Applied automatically: <strong>no</strong>. ${esc(o.requires)}</p>
+      </article>`).join("");
+  } catch (error) {
+    el("insights").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+/** A win rate without its sample size is a number pretending to be evidence,
+    so the interval and the count travel with it in every row. */
+async function loadBreakdown() {
+  const by = el("an-by").value;
+  try {
+    const payload = await getJson(`/analytics/breakdown?by=${by}`);
+    el("an-floor").textContent =
+      `${payload.total_closed} closed trades. A group needs ${payload.min_sample} ` +
+      `before it is ranked; smaller groups are shown greyed, because hiding them ` +
+      `would distort the picture as surely as ranking them would.`;
+
+    el("an-body").innerHTML = payload.data.length
+      ? payload.data.map((g) => {
+          const p = g.performance;
+          const exp = signed(p.expectancy_r, "R");
+          const tot = signed(p.total_r, "R");
+          const pnl = signed(p.total_pnl);
+          const ci = g.win_rate_ci
+            ? `${g.win_rate_ci[0]}–${g.win_rate_ci[1]}%`
+            : "—";
+          return `<tr class="${g.reliable ? "" : "thin"}" ${g.note ? `title="${esc(g.note)}"` : ""}>
+            <td class="sym">${esc(g.key)}${g.reliable ? "" : ` <span class="tag thin-tag">thin</span>`}</td>
+            <td class="num">${p.total_trades}</td>
+            <td class="num">${esc(g.share_pct)}%</td>
+            <td class="num">${g.win_rate_ci ? `${esc(p.win_rate)}%` : "—"}</td>
+            <td class="muted">${esc(ci)}</td>
+            <td class="num ${exp.cls}">${exp.text}</td>
+            <td class="num ${tot.cls}">${tot.text}</td>
+            <td class="num ${pnl.cls}">${pnl.text}</td>
+            <td class="num">${p.profit_factor ?? "—"}</td>
+          </tr>` + (g.note ? `<tr class="note-row"><td colspan="9" class="muted">${esc(g.note)}</td></tr>` : "");
+        }).join("")
+      : `<tr><td colspan="9" class="empty">No closed trades yet.</td></tr>`;
+  } catch (error) {
+    el("an-body").innerHTML = `<tr><td colspan="9" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+  }
+}
+
+/** Holding is the benchmark that decides whether any of this was worth doing.
+    The two percentages have different denominators, so they sit side by side
+    and are never subtracted into a single flattering number. */
+async function loadBenchmark() {
+  try {
+    const payload = await getJson("/analytics/benchmark");
+    el("bench-note").textContent = payload.denominator_note;
+
+    const rows = payload.data.map((b) => {
+      const hold = signed(b.hold_return_pct, "%");
+      const pnl = signed(b.strategy_pnl);
+      const acct = signed(b.strategy_return_pct, "%");
+      const window = `${new Date(b.window.from).toLocaleDateString()} → ${new Date(b.window.to).toLocaleDateString()}`;
+      return `<tr>
+        <td class="sym">${esc(b.symbol)}</td>
+        <td class="num">${b.trades}</td>
+        <td class="muted">${esc(window)}</td>
+        <td class="num ${hold.cls}">${b.hold_return_pct === null ? "—" : hold.text}</td>
+        <td class="num ${pnl.cls}">${pnl.text}</td>
+        <td class="num ${acct.cls}">${acct.text}</td>
+      </tr>` + (b.note ? `<tr class="note-row"><td colspan="6" class="muted">${esc(b.note)}</td></tr>` : "");
+    });
+
+    const failed = (payload.failures || []).map((f) =>
+      `<tr class="note-row"><td colspan="6" class="muted">${esc(f.symbol)} — price history unavailable (${esc(f.code)}), so no comparison is shown.</td></tr>`);
+
+    el("benchmark-body").innerHTML = [...rows, ...failed].join("")
+      || `<tr><td colspan="6" class="empty">No closed trades to compare yet.</td></tr>`;
+  } catch (error) {
+    el("benchmark-body").innerHTML = `<tr><td colspan="6" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+  }
+}
+
 /* ---------- backtest ---------- */
 
 /** The replay is expensive, so it runs on request and never on tab open. */
@@ -725,6 +828,7 @@ const LOADERS = {
   positions: loadPositions,
   history: loadHistory,
   market: async () => { await loadOverview(); await loadCandles(); },
+  analytics: loadAnalytics,
   // Deliberately absent: a replay costs real CPU and must be asked for.
   backtest: () => {},
 };
@@ -760,6 +864,7 @@ async function boot() {
 
   el("run-tick").addEventListener("click", runTick);
   el("run-backtest").addEventListener("click", runBacktest);
+  el("an-by").addEventListener("change", loadBreakdown);
   el("sig-tf").addEventListener("change", loadSignals);
   el("symbol").addEventListener("change", loadCandles);
   el("timeframe").addEventListener("change", loadCandles);

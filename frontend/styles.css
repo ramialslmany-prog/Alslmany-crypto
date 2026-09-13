@@ -265,3 +265,30 @@ footer p { max-width: 680px; margin: 0 auto; }
   .cards { grid-template-columns: 1fr; padding: 12px; }
   .tile .value { font-size: 19px; }
 }
+
+/* ---------- analytics ---------- */
+
+.insights { display: grid; gap: 12px; padding: 14px; }
+
+.insight {
+  border: 1px solid var(--rule); border-left-width: 3px;
+  border-radius: 8px; padding: 12px 14px; background: var(--panel-2);
+}
+/* The left edge carries strength. It is never the only carrier — every card
+   also prints the word and the sample size — because a reader who cannot
+   distinguish the hues must still be able to read the confidence. */
+.insight-supported { border-left-color: var(--up); }
+.insight-suggestive { border-left-color: var(--accent); }
+.insight-insufficient { border-left-color: var(--ink-faint); }
+
+.insight header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.insight .finding { margin: 0 0 6px; font-size: 14px; }
+.insight p { margin: 0 0 6px; }
+.insight .consider { font-size: 13px; color: var(--ink-muted); }
+.insight .applied { margin-bottom: 0; }
+.insight .tag.strength { background: transparent; border-color: var(--rule); color: var(--ink-muted); }
+
+/* A thin sample is dimmed rather than hidden, and labelled in words as well. */
+tr.thin td { opacity: 0.62; }
+.tag.thin-tag { background: transparent; border-color: var(--rule); color: var(--ink-faint); }
+tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }

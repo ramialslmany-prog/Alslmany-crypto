@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -335,3 +335,95 @@ async def test_a_backtest_does_not_block_the_event_loop(api):
     assert health.status_code == 200
     assert not task.done(), "the replay held the event loop while it ran"
     assert (await task).status_code == 200
+
+
+async def test_analytics_on_an_empty_ledger_refuses_rather_than_reports(api):
+    client, _ = api
+    r = await client.get("/api/analytics/insights")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["applied"] is False
+    assert body["total_closed"] == 0
+    assert [o["strength"] for o in body["data"]] == ["insufficient"]
+
+
+async def test_the_breakdown_names_its_dimensions_and_its_sample_floor(api):
+    client, _ = api
+    r = await client.get("/api/analytics/breakdown?by=symbol")
+    assert r.status_code == 200
+    body = r.json()
+
+    # The floor is part of the response, not documentation: a client rendering
+    # this table needs to state it beside the numbers.
+    assert body["min_sample"] >= 20
+    assert "confidence" in body["dimensions"]
+
+
+async def test_an_unknown_breakdown_dimension_is_a_422(api):
+    client, _ = api
+    r = await client.get("/api/analytics/breakdown?by=phase_of_moon")
+    assert r.status_code == 422
+
+
+async def test_the_benchmark_reads_prices_without_archiving_them(api, monkeypatch):
+    """The analytics routes claim in their own docstring to write nothing.
+
+    A thousand daily bars per traded symbol, archived on every call, would make
+    that claim false and cost a five-thousand-row write for one percentage.
+    """
+    from app.database.session import get_sessionmaker
+    from app.paper.models import PaperTrade
+    from app.services.market_service import MarketService
+
+    client, _ = api
+
+    # The benchmark only fetches prices for symbols that were actually traded,
+    # so without a closed trade this test would pass by doing nothing.
+    now = datetime.now(UTC)
+    async with get_sessionmaker()() as session:
+        session.add(
+            PaperTrade(
+                symbol="BTCUSDT",
+                direction="LONG",
+                status="closed",
+                timeframe="1h",
+                entry=Decimal("100"),
+                stop_loss=Decimal("95"),
+                take_profit=Decimal("115"),
+                quantity=Decimal("20"),
+                notional=Decimal("2000"),
+                risk_amount=Decimal("100"),
+                reward_risk=Decimal("3"),
+                exit_price=Decimal("115"),
+                pnl=Decimal("300"),
+                r_multiple=Decimal("3"),
+                fees=Decimal("2"),
+                result="WIN",
+                exit_reason="take_profit",
+                confidence=Decimal("82"),
+                strategy="multi-factor-v1",
+                reason="fixture",
+                opened_at=now - timedelta(days=3),
+                closed_at=now - timedelta(days=1),
+                is_paper=True,
+            )
+        )
+        await session.commit()
+
+    original = MarketService.get_candles
+    seen: list[bool] = []
+
+    async def spy(self, symbol, timeframe, limit=200, *, persist=True):
+        seen.append(persist)
+        return await original(self, symbol, timeframe, limit, persist=persist)
+
+    monkeypatch.setattr(MarketService, "get_candles", spy)
+
+    r = await client.get("/api/analytics/benchmark")
+    assert r.status_code == 200
+    assert r.json()["data"], "the traded symbol produced no benchmark row"
+    assert seen, "no price history was fetched, so nothing was actually tested"
+    assert all(p is False for p in seen), (
+        f"the benchmark archived candles: persist flags were {seen}"
+    )

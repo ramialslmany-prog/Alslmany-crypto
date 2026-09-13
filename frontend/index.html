@@ -22,6 +22,7 @@
       <button role="tab" class="tab" data-view="positions" aria-selected="false">Open</button>
       <button role="tab" class="tab" data-view="history" aria-selected="false">History</button>
       <button role="tab" class="tab" data-view="market" aria-selected="false">Market</button>
+      <button role="tab" class="tab" data-view="analytics" aria-selected="false">Analytics</button>
       <button role="tab" class="tab" data-view="backtest" aria-selected="false">Backtest</button>
     </nav>
     <div class="topbar-right">
@@ -188,6 +189,85 @@
         </div>
         <div id="chart-wrap" class="chart-wrap"><p class="empty">Select a symbol.</p></div>
         <p id="chart-meta" class="muted meta-line"></p>
+      </div>
+    </section>
+
+    <!-- ============ ANALYTICS ============ -->
+    <section class="view" data-view="analytics">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Observations</h2>
+          <span class="muted">Read by a human, applied by nobody</span>
+        </div>
+        <p class="muted meta-line">
+          Nothing on this page changes the engine. A strategy that retunes itself on
+          the trades it already took is fitting noise &mdash; the sample it learns from
+          is the sample it chose &mdash; so every observation here is advisory and says
+          so.
+        </p>
+        <div id="insights" class="insights"><p class="empty">Loading&hellip;</p></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Performance breakdown</h2>
+          <div class="panel-actions">
+            <label for="an-by" class="sr-only">Group by</label>
+            <select id="an-by">
+              <option value="symbol" selected>By symbol</option>
+              <option value="confidence">By confidence band</option>
+              <option value="timeframe">By timeframe</option>
+              <option value="direction">By direction</option>
+              <option value="exit_reason">By exit reason</option>
+              <option value="strategy">By strategy</option>
+            </select>
+          </div>
+        </div>
+        <p id="an-floor" class="muted meta-line"></p>
+        <div class="table-scroll">
+          <table id="an-table">
+            <thead>
+              <tr>
+                <th scope="col">Group</th>
+                <th scope="col" class="num">Trades</th>
+                <th scope="col" class="num">Share</th>
+                <th scope="col" class="num">Win rate</th>
+                <th scope="col">95% interval</th>
+                <th scope="col" class="num">Expectancy</th>
+                <th scope="col" class="num">Total R</th>
+                <th scope="col" class="num">P/L</th>
+                <th scope="col" class="num">Profit factor</th>
+              </tr>
+            </thead>
+            <tbody id="an-body">
+              <tr><td colspan="9" class="empty">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Against simply holding</h2>
+          <span class="muted">Same window, per symbol</span>
+        </div>
+        <p id="bench-note" class="muted meta-line"></p>
+        <div class="table-scroll">
+          <table id="benchmark">
+            <thead>
+              <tr>
+                <th scope="col">Symbol</th>
+                <th scope="col" class="num">Trades</th>
+                <th scope="col">Window traded</th>
+                <th scope="col" class="num">Holding returned</th>
+                <th scope="col" class="num">Strategy P/L</th>
+                <th scope="col" class="num">of account</th>
+              </tr>
+            </thead>
+            <tbody id="benchmark-body">
+              <tr><td colspan="6" class="empty">Loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
