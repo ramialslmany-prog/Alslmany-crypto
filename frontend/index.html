@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Market Data · Alslmany Paper Trading</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div>
+        <h1>Alslmany</h1>
+        <p class="sub">Analysis &amp; paper trading</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge badge-paper" title="This platform holds no exchange credentials and has no order-placement code path.">
+        PAPER TRADING ONLY
+      </span>
+      <span id="feed-state" class="badge badge-unknown">CHECKING FEED</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Availability is stated here, above the data, never inferred from a
+         blank cell. A screen that renders a price it could not obtain is the
+         failure mode this whole layer exists to prevent. -->
+    <section id="notice" class="notice" hidden></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Market overview</h2>
+        <div class="panel-actions">
+          <span id="updated" class="muted" aria-live="polite"></span>
+          <button id="refresh" type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="overview">
+          <thead>
+            <tr>
+              <th scope="col">Symbol</th>
+              <th scope="col" class="num">Price</th>
+              <th scope="col" class="num">24h</th>
+              <th scope="col" class="num">24h high</th>
+              <th scope="col" class="num">24h low</th>
+              <th scope="col" class="num">24h volume</th>
+              <th scope="col">Source</th>
+            </tr>
+          </thead>
+          <tbody id="overview-body">
+            <tr><td colspan="7" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Candles</h2>
+        <div class="panel-actions">
+          <label for="symbol" class="sr-only">Symbol</label>
+          <select id="symbol"></select>
+          <label for="timeframe" class="sr-only">Timeframe</label>
+          <select id="timeframe">
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h" selected>1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1D</option>
+          </select>
+        </div>
+      </div>
+      <div id="chart-wrap" class="chart-wrap">
+        <p class="empty">Select a symbol.</p>
+      </div>
+      <p id="chart-meta" class="muted meta-line"></p>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Stage 1 — market data and storage. Educational research tool, not
+      financial advice. All trades in this system are simulated.
+    </p>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -28,10 +28,19 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
       # From the lockfile, so CI cannot pass on a dependency tree the
       # repository does not pin.
       - run: npm ci
 
+      - run: pip install -e "backend[dev]"
+
+      # Runs the Next.js app and the FastAPI backend through the same script
+      # the pre-push hook uses.
       - run: npm run verify
         env:
           NEXT_TELEMETRY_DISABLED: "1"
