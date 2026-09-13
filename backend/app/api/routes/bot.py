@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import correlation
@@ -222,6 +222,7 @@ async def curve(
 
 @router.post("/tick", dependencies=[Depends(require_operator)])
 async def tick(
+    request: Request,
     settings: Annotated[Settings, Depends(settings_dep)],
     market: Annotated[MarketService, Depends(get_market_service)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -240,6 +241,7 @@ async def tick(
     runner = BotRunner(
         market=market,
         engine=PaperEngine(PaperBroker()),
+        notifier=getattr(request.app.state, "notifier", None),
         limits=_limits(settings),
         starting_balance=settings.initial_balance_usdt,
         timeframe=parse_timeframe(timeframe),
@@ -402,3 +404,37 @@ async def _heat_of(
         if not isinstance(result, BaseException)
     }
     return correlation.portfolio_heat(exposures, correlation.matrix(series), equity)
+
+
+@router.post("/alerts/test", dependencies=[Depends(require_operator)])
+async def test_alert(
+    request: Request,
+    settings: Annotated[Settings, Depends(settings_dep)],
+) -> dict[str, Any]:
+    """Send one message, so "configured" can be proved rather than assumed.
+
+    Behind the operator guard like every other state-changing route: an open
+    endpoint that makes the server send chat messages is a spam relay with
+    extra steps.
+    """
+    notifier = getattr(request.app.state, "notifier", None)
+    configured = bool(notifier and notifier.config.configured)
+
+    if not configured:
+        return {
+            "configured": False,
+            "sent": False,
+            "reason": (
+                "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not both set. "
+                "Alerts are off; nothing else is affected."
+            ),
+        }
+
+    sent = await notifier.send(
+        "<b>Alslmany</b> — test alert. Paper trading only; this bot sends and never receives."
+    )
+    return {
+        "configured": True,
+        "sent": sent,
+        "reason": None if sent else "Telegram did not accept the message.",
+    }

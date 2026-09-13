@@ -551,6 +551,50 @@ function renderHeat(heat, limitPct) {
     ${assumed}`;
 }
 
+/** Alerts are configured on the server and nowhere else. This panel reports
+    WHETHER they are on — never the token, which never reaches the browser. */
+async function loadAlerts() {
+  try {
+    const config = await getJson("/config");
+    const on = config.alerts_configured;
+    el("alerts").innerHTML = `
+      <p class="alerts-state">
+        <span class="tag ${on ? "win" : ""}">${on ? "CONFIGURED" : "OFF"}</span>
+        ${on
+          ? "Open, close and halt notifications are sent to the configured chat."
+          : "Set <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> on the server to turn these on. Nothing else is affected."}
+      </p>
+      <p class="muted">
+        The bot only sends. It reads no messages and accepts no commands, so a
+        stolen token leaks the fact that a paper position opened — and nothing else.
+      </p>
+      ${on ? `<p><button id="test-alert" type="button" class="primary">Send a test message</button>
+        <span id="alert-result" class="muted"></span></p>` : ""}`;
+
+    const button = el("test-alert");
+    if (button) button.addEventListener("click", sendTestAlert);
+  } catch (error) {
+    el("alerts").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+  }
+}
+
+async function sendTestAlert() {
+  const button = el("test-alert");
+  button.disabled = true;
+  button.textContent = "Sending…";
+  try {
+    const result = await getJson("/bot/alerts/test", { method: "POST" });
+    el("alert-result").textContent = result.sent
+      ? "Sent."
+      : `Not sent — ${result.reason || "Telegram refused it."}`;
+  } catch (error) {
+    el("alert-result").textContent = `Failed — ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Send a test message";
+  }
+}
+
 async function loadPortfolio() {
   try {
     const [p, curve, hist] = await Promise.all([
@@ -580,6 +624,7 @@ async function loadPortfolio() {
 
     renderHalt(p.halt, p.last_drawdown_reset);
     el("heat").innerHTML = renderHeat(p.heat, p.limits.max_portfolio_heat_pct);
+    loadAlerts();
     el("equity").innerHTML = renderEquity(curve.data, num(curve.starting_balance));
     el("outcomes").innerHTML = renderOutcomes(perf);
     state.history = hist.data;

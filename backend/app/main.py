@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.alerts.telegram import TelegramConfig, TelegramNotifier
 from app.api import live
 from app.api.routes import analytics, backtest, bot, health, market, signals
 from app.config import Settings, get_settings
@@ -67,6 +68,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     providers = build_providers(settings)
     app.state.market_service = MarketService(MarketDataRouter(providers, settings))
     app.state.settings = settings
+    app.state.notifier = TelegramNotifier(
+        TelegramConfig(token=settings.telegram_bot_token, chat_id=settings.telegram_chat_id),
+        base_url=settings.telegram_api_base,
+    )
+    logger.info(
+        "alerts",
+        # Whether, never what.
+        extra={"configured": app.state.notifier.config.configured},
+    )
 
     try:
         yield

@@ -564,3 +564,30 @@ async def test_the_acknowledgement_is_closed_when_a_secret_is_configured(api_sec
         "/api/bot/risk/acknowledge-drawdown", headers={"x-cron-secret": "topsecret"}
     )
     assert ok.status_code == 200
+
+
+async def test_the_alert_test_route_reports_unconfigured_rather_than_failing(api):
+    """With no token the answer is a state, not an error — and it names the two
+    variables, because "alerts are off" is useless without "here is why"."""
+    client, _ = api
+    body = (await client.post("/api/bot/alerts/test")).json()
+
+    assert body["configured"] is False
+    assert body["sent"] is False
+    assert "TELEGRAM_BOT_TOKEN" in body["reason"]
+
+
+async def test_the_alert_test_route_is_behind_the_operator_guard(api_secured):
+    """An open endpoint that makes the server send chat messages is a spam
+    relay with extra steps."""
+    assert (await api_secured.post("/api/bot/alerts/test")).status_code == 401
+    allowed = await api_secured.post("/api/bot/alerts/test", headers={"x-cron-secret": "topsecret"})
+    assert allowed.status_code == 200
+
+
+async def test_the_config_endpoint_says_whether_alerts_are_on_never_the_token(api):
+    client, _ = api
+    body = (await client.get("/api/config")).json()
+
+    assert body["alerts_configured"] is False
+    assert not any("token" in k for k in body)

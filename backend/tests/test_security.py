@@ -33,17 +33,29 @@ def test_paper_trading_cannot_be_switched_off_by_configuration():
         Settings(paper_trading_only=False)
 
 
-def test_nothing_in_the_application_sends_a_write_request_anywhere():
-    """Placing an order requires a POST, PUT or DELETE to an exchange. The
-    application makes none: every upstream call is a read.
+# The only module allowed to make an outbound write request, and what it is for.
+# Sending a chat message is not placing an order; anything else appearing here
+# is a change that has to be argued for in review rather than slipped in.
+WRITE_ALLOWLIST = {"telegram.py"}
 
-    This is checked on the call sites rather than on a flag, because a flag can
-    be true while the code that would ignore it still exists.
+
+def test_no_module_sends_a_write_request_except_the_one_that_may():
+    """Placing an order requires a POST, PUT or DELETE. Only the notifier makes
+    one, and it posts a chat message to Telegram.
+
+    Checked at the call sites rather than against a flag, because a flag can be
+    true while the code that would ignore it still exists. The allowlist is one
+    filename rather than "no writes at all" so the rule says what it actually
+    protects — and it still fails the moment a second module starts writing
+    anywhere. `test_the_notifier_cannot_reach_an_exchange` below closes the
+    obvious hole in an allowlist: the permitted module being pointed at a venue.
     """
     writes = {"post", "put", "patch", "delete"}
     offenders: list[str] = []
 
     for source in sources():
+        if source.name in WRITE_ALLOWLIST:
+            continue
         tree = ast.parse(source.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -57,6 +69,31 @@ def test_nothing_in_the_application_sends_a_write_request_anywhere():
                     offenders.append(f"{source.name}: {target}.{func.attr}")
 
     assert not offenders, f"outbound write requests found: {offenders}"
+
+
+def test_the_notifier_cannot_reach_an_exchange():
+    """An allowlist is worthless if the one module permitted to write can be
+    pointed at a venue."""
+    from app.alerts import telegram
+
+    source = (APP / "alerts" / "telegram.py").read_text().lower()
+    for venue in ("binance", "okx", "bybit", "coinbase", "kraken", "/order"):
+        assert venue not in source, f"the notifier references {venue}"
+
+    assert telegram.API == "https://api.telegram.org"
+
+
+def test_the_notifier_can_only_send_and_never_receive():
+    """A Telegram bot that can be INSTRUCTED is a remote control for an account.
+
+    This one exposes no way to read updates, so a stolen token leaks the fact
+    that a paper position opened and nothing else.
+    """
+    from app.alerts.telegram import TelegramNotifier
+
+    methods = {m.lower() for m in dir(TelegramNotifier) if not m.startswith("_")}
+    for reader in ("get_updates", "getupdates", "poll", "listen", "receive"):
+        assert reader not in methods, f"the notifier exposes {reader}"
 
 
 def test_no_credential_handling_exists_for_any_exchange():

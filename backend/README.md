@@ -83,6 +83,8 @@ pre-push hook and CI both call.
 | POST | `/api/bot/tick` | One pass of the bot. Behind `CRON_SECRET`. |
 | POST | `/api/bot/trades/{trade_id}/close` | Close one position by hand. Behind `CRON_SECRET`. |
 | POST | `/api/bot/risk/acknowledge-drawdown` | Clear a drawdown halt. Behind `CRON_SECRET`, recorded. |
+| POST | `/api/bot/alerts/test` | Send one Telegram message. Behind `CRON_SECRET`. |
+| POST | `/api/bot/alerts/test` | Send one Telegram message. Behind `CRON_SECRET`. |
 | GET | `/api/bot/risk/overrides` | Every risk override a human made. |
 | GET | `/api/analytics/breakdown` | Performance by `?by=` dimension, with sample sizes. |
 | GET | `/api/analytics/insights` | Observations. Always `applied: false`. |
@@ -184,10 +186,12 @@ app/
   backtest/              window.py (no-look-ahead, structurally) · engine.py
   analytics/             breakdown (Wilson intervals) · insights (inert by
                          construction) · benchmark (versus holding)
+  alerts/                telegram.py — sends, never receives; a failed alert
+                         never costs a trade
   api/live.py            WebSocket feed: one broadcaster, many consumers,
                          asleep when nobody is watching
   api/routes/            HTTP surface
-tests/                   366 tests, no network required
+tests/                   384 tests, no network required
 ```
 
 ### Three decisions worth knowing

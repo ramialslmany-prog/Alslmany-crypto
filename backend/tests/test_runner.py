@@ -411,3 +411,38 @@ async def test_a_missing_order_book_does_not_cost_the_trade():
     assert report.opened == ["BTCUSDT"], "a depth outage cost a qualified trade"
     assert report.fills[0]["depth_measured"] is False
     assert any(e.get("context") == "order_book" for e in report.errors)
+
+
+async def test_a_failing_alert_never_costs_a_trade():
+    """Proved by accident first: a misconfigured base URL sent five alerts to
+    the wrong host, all five were rejected, and all five positions opened
+    anyway. An exchange outage is a reason not to trade; a chat outage is not.
+    """
+
+    class Broken:
+        async def send(self, text: str) -> bool:
+            raise RuntimeError("telegram is on fire")
+
+    market = FakeMarket(identical([f"S{i}USDT" for i in range(2)]))
+    bot = runner(market)
+    bot.notifier = Broken()
+
+    report = await bot.tick([f"S{i}USDT" for i in range(2)], [])
+
+    assert report.opened, "a broken notifier stopped the bot from trading"
+
+
+async def test_alerts_fire_for_the_things_worth_waking_up_for():
+    from app.alerts.telegram import NullNotifier
+
+    recorder = NullNotifier()
+    market = FakeMarket({"BTCUSDT": trending(QUALIFYING_SEED, up=True)})
+    bot = runner(market)
+    bot.notifier = recorder
+
+    report = await bot.tick(["BTCUSDT"], [])
+
+    if report.opened:
+        assert any("BTCUSDT" in m and "paper" in m.lower() for m in recorder.sent), (
+            "a position opened without an alert"
+        )

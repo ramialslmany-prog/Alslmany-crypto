@@ -19,6 +19,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from app.alerts import telegram
+from app.alerts.telegram import Notifier
 from app.analysis import correlation
 from app.analysis.series import Series, to_series
 from app.core.errors import MarketDataError
@@ -96,6 +98,7 @@ class BotRunner:
         starting_balance: Decimal = Decimal("10000"),
         timeframe: Timeframe = Timeframe.H1,
         strategy: str = "multi-factor-v1",
+        notifier: Notifier | None = None,
     ) -> None:
         self.market = market
         self.engine = engine
@@ -103,6 +106,9 @@ class BotRunner:
         self.starting_balance = starting_balance
         self.timeframe = timeframe
         self.strategy = strategy
+        # Optional by design. A bot with no notifier trades identically to one
+        # with a working notifier; alerts sit downstream of every decision.
+        self.notifier = notifier
 
     async def tick(
         self,
@@ -127,6 +133,8 @@ class BotRunner:
         # account is halted is a different event from one that opened nothing
         # because no setup qualified, and the report is where an operator looks.
         report.halt = self.risk.halt_state(state)
+        if report.halt.get("halted"):
+            await self._notify(telegram.halted(report.halt["blocks"]))
 
         # 2. Fetch every symbol's history ONCE, concurrently, before deciding
         # anything. Correlation is a property of the whole book, so the first
@@ -235,6 +243,22 @@ class BotRunner:
                     "result": result.result,
                 }
             )
+            await self._notify(telegram.closed(result.trade, result.pnl, result.r_multiple))
+
+    async def _notify(self, text: str) -> None:
+        """Fire and forget, deliberately.
+
+        Notification is downstream of the decision, so nothing here is allowed
+        to change what the bot did. `send` already swallows its own failures;
+        this catches anything it did not, because a chat service must never be
+        able to fail a trading tick.
+        """
+        if self.notifier is None:
+            return
+        try:
+            await self.notifier.send(text)
+        except Exception:
+            logger.exception("alert failed")
 
     async def _order_book(self, symbol: str, report: TickReport):
         try:
@@ -397,6 +421,7 @@ class BotRunner:
             }
         )
         report.signals[-1]["opened"] = True
+        await self._notify(telegram.opened(trade))
 
         # Fold the new position into the state so the next symbol in this same
         # tick sees it.

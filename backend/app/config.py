@@ -92,6 +92,14 @@ class Settings(BaseSettings):
 
     market_data_api_key: str | None = Field(default=None, repr=False)
 
+    # ---- alerts (the token never leaves the server) ---------------------
+    telegram_bot_token: str | None = Field(default=None, repr=False)
+    telegram_chat_id: str | None = Field(default=None, repr=False)
+    # Overridable so the send path can be exercised against a local stand-in
+    # rather than only being asserted. Telegram also publishes a self-hosted
+    # Bot API server, which this is the correct knob for.
+    telegram_api_base: str = "https://api.telegram.org"
+
     # Guards the bot tick endpoint. Unset means the endpoint is open, which is
     # acceptable for a local run and is not for a deployment — so the readiness
     # summary reports whether it is configured.
@@ -171,6 +179,9 @@ class Settings(BaseSettings):
             "ai_provider": self.ai_provider,
             "ai_configured": self.ai_api_key is not None,
             "bot_endpoint_protected": self.cron_secret is not None,
+            # Whether, never what. A readiness screen that prints the token is
+            # a readiness screen that publishes it.
+            "alerts_configured": bool(self.telegram_bot_token and self.telegram_chat_id),
         }
 
 
