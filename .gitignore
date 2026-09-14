@@ -31,3 +31,8 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# runtime data: sqlite db + downloaded historical archive
+/data/*.db
+/data/*.db-*
+/data/archive/
