@@ -1,0 +1,168 @@
+"""Application entry point.
+
+Expensive, long-lived objects — the database engine, the HTTP clients behind
+each exchange adapter, the quote cache — are built once in the lifespan and
+torn down deterministically. Building them per request would give every call a
+cold cache and a new connection pool.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.alerts.telegram import TelegramConfig, TelegramNotifier
+from app.api import live
+from app.api.routes import analytics, backtest, bot, health, market, signals
+from app.config import Settings, get_settings
+from app.core.errors import AppError, app_error_handler, unhandled_error_handler
+from app.core.logging import configure_logging, get_logger
+from app.core.rate_limit import RateLimitMiddleware
+from app.database.repositories import CoinRepository
+from app.database.session import (
+    create_all,
+    dispose_engine,
+    init_engine,
+    session_scope,
+)
+from app.market_data.router import MarketDataRouter, build_providers
+from app.services.market_service import MarketService
+
+logger = get_logger(__name__)
+
+
+def _find_frontend() -> Path | None:
+    """Locate the static site, whatever the install looks like.
+
+    Resolving it only as parents[2] assumes `app` is being imported from the
+    source tree. A plain `pip install ./backend` puts the package in
+    site-packages instead, where that expression points at a directory that
+    does not exist — so the mount below was skipped and the whole site served
+    404 while every /api route kept working. Silent, and exactly the shape of
+    failure a deployment hits first.
+
+    FRONTEND_DIR wins when set, so an image is free to put the site anywhere.
+    """
+    override = os.environ.get("FRONTEND_DIR")
+    candidates = (
+        [Path(override)]
+        if override
+        else [
+            Path(__file__).resolve().parents[2] / "frontend",
+            Path.cwd() / "frontend",
+        ]
+    )
+    return next((c for c in candidates if (c / "index.html").is_file()), None)
+
+
+FRONTEND_DIR = _find_frontend()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings: Settings = get_settings()
+    configure_logging("DEBUG" if settings.debug else "INFO")
+
+    logger.info(
+        "starting",
+        extra={
+            "environment": settings.environment,
+            "providers": settings.provider_list,
+            "symbols": settings.symbol_list,
+            # Stated at boot so the guarantee is visible in the log of every
+            # deployment, not only in the documentation.
+            "paper_trading_only": settings.paper_trading_only,
+        },
+    )
+
+    init_engine(settings)
+    # Stage 1 creates the schema at startup so a fresh clone runs with no extra
+    # command. Alembic owns schema changes from here on.
+    await create_all(settings)
+
+    async with session_scope() as session:
+        created = await CoinRepository(session).ensure(settings.symbol_list)
+    if created:
+        logger.info("seeded coins", extra={"symbols": [c.symbol for c in created]})
+
+    providers = build_providers(settings)
+    app.state.market_service = MarketService(MarketDataRouter(providers, settings))
+    app.state.settings = settings
+    app.state.notifier = TelegramNotifier(
+        TelegramConfig(token=settings.telegram_bot_token, chat_id=settings.telegram_chat_id),
+        base_url=settings.telegram_api_base,
+    )
+    logger.info(
+        "alerts",
+        # Whether, never what.
+        extra={"configured": app.state.notifier.config.configured},
+    )
+
+    try:
+        yield
+    finally:
+        await app.state.market_service.router.aclose()
+        await dispose_engine()
+        logger.info("stopped")
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        description=(
+            "Cryptocurrency analysis and **paper-trading** platform. "
+            "Simulated trades only: this service holds no exchange credentials "
+            "and has no order-placement code path."
+        ),
+        lifespan=lifespan,
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+    )
+
+    # Outermost: a throttled request should cost as little as possible.
+    app.add_middleware(RateLimitMiddleware)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+
+    app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)
+
+    app.include_router(health.router, prefix="/api")
+    app.include_router(market.router, prefix="/api")
+    app.include_router(signals.router, prefix="/api")
+    app.include_router(bot.router, prefix="/api")
+    app.include_router(backtest.router, prefix="/api")
+    app.include_router(analytics.router, prefix="/api")
+    # Not under /api: a WebSocket is not a REST resource, and the rate-limit
+    # middleware counts HTTP requests, which a long-lived socket is not.
+    app.include_router(live.router)
+
+    if FRONTEND_DIR is not None:
+        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    else:
+        # Loud: a deployment that serves no site should say so at boot rather
+        # than answer 404 at the root and leave the reason to be guessed.
+        logger.warning(
+            "frontend not found; serving the API only",
+            extra={"hint": "set FRONTEND_DIR to the directory holding index.html"},
+        )
+
+    return app
+
+
+app = create_app()

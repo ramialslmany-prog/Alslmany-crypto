@@ -1,140 +1,289 @@
-# Alslmany Crypto — AI Trading Intelligence
+# السلماني كريبتو · Alslmany Crypto
 
-An AI-powered crypto trading & market-intelligence platform. Live multi-exchange
-data, a deterministic + AI signal engine, an **autonomous spot trader** that
-enters/manages/reviews its own trades, a walk-forward **backtester**,
-**smart-money** market-structure analysis, a real **whale feed**, and instant
-**Telegram alerts** — fully bilingual (English / العربية, RTL-aware).
+منصة تحليل عملات رقمية وتداول **ورقي** — تحليل مستمر للسوق، إشارات مبنية على أدلة،
+وصفقات محاكاة برصيد افتراضي.
 
-> ⚠️ Educational tool, **not financial advice**. Trade at your own risk.
+An AI-assisted cryptocurrency analysis and **paper-trading** platform.
 
 ---
 
-## Features
+> ## ⚠️ تداول ورقي فقط · Paper trading only
+>
+> هذا النظام **لا يحتفظ بمفاتيح منصات تداول، ولا يحتوي على أي مسار برمجي لإرسال أمر
+> حقيقي، ولا يصل إلى أي أموال.** كل الصفقات محاكاة برصيد افتراضي قدره 10,000 دولار.
+>
+> البنية مصمّمة بحيث *يمكن* إضافة التداول الحقيقي لاحقاً بشكل متعمّد خلف منفذ
+> (port) مستقل — لكن لا شيء هنا قادر على تنفيذ أمر، و`paper_trading_only` ثابت
+> يمكن فحصه وقت التشغيل، لا مجرد تعليق في التوثيق.
+>
+> أداة بحثية وتعليمية، وليست نصيحة مالية. تداول العملات الرقمية ينطوي على مخاطر
+> خسارة رأس المال بالكامل.
 
-| Section | What it does | Data source |
+---
+
+## التشغيل
+
+```bash
+./setup.sh
+backend/.venv/bin/python -m uvicorn app.main:app --reload --app-dir backend
+```
+
+ثم افتح <http://127.0.0.1:8000>.
+
+المخطط يُنشأ وقائمة العملات تُزرع عند أول تشغيل — لا توجد خطوة إعداد إضافية.
+SQLite هو الافتراضي كي تعمل نسخة جديدة بلا خادم؛ PostgreSQL هو هدف الإنتاج:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/alslmany
+```
+
+## اللغة — عربي أولاً، والإنجليزية باختيارك
+
+الواجهة تُشحن بالعربية و `dir="rtl"`. الإنجليزية زرّ واحد في الأعلى، والاختيار يُحفظ
+ويُطبَّق **قبل أول رسم للصفحة** لا بعده — فلا ترى قارئ الإنجليزية الصفحة تُرسم بالعربية
+ثم تنقلب باتجاهها.
+
+ثلاثة قرارات تستحق الذكر لأنها ليست بديهية:
+
+1. **الأرقام تبقى لاتينية في اللغتين.** الأرقام العربية-الهندية (٠١٢…) عربية صحيحة
+   وخاطئة هنا: السعر يُنسخ ويُقارن بشاشة منصّة تكتبه `108,500`. تُرجَم الكلمات وتُترك
+   الأرقام.
+
+2. **الرسوم لا تُعكس.** الزمن يمضي من اليسار لليمين على كل منصّة وبكل لغة، فالمخطط
+   يبقى كما هو ويُعكس النص حوله فقط. وكذلك الرموز والأسعار: `BTCUSDT` ليست كلمة تُقرأ
+   بالعربية بل رمز يُنسخ، وعكسه يغيّر معناه.
+
+3. **مفردات المحرّك تُترجم من مفاتيحها لا من جُمله.** المحلّل يُخرج `macd-bullish` و
+   `swept-up-liquidity` كمفاتيح، والبطاقة تُركَّب في اللغتين من نفس الأدلّة المنظّمة —
+   فلا يمكن للنسخة العربية أن تنحرف فتقول ما لم يجده المحلّك. وجملتا «نقض الفكرة» و
+   «تقليص الحجم» تُعاد صياغتهما من الأرقام التي ينشرها الخادم بجانبهما، لا من تحليل
+   نصّه الإنجليزي.
+
+`backend/tests/test_i18n.py` يمنع الانفصال: يفشل البناء إن وُجد مفتاح بلغة دون
+الأخرى، أو استدعت الواجهة مفتاحاً غير معرّف، أو اختلفت المتغيّرات `{...}` بين
+اللغتين، أو أضاف أحدهم عاملاً للمحرّك بلا ترجمة.
+
+**التحقق:** صفر مخالفات WCAG 2 مستوى A/AA عبر الشاشات السبع في اللغتين (axe-core)،
+وصفر أخطاء في الطرفية، ولا فيض أفقي عند عرض 390 بكسل.
+
+## النشر — الحصول على رابط عام
+
+الموقع كله خدمة واحدة: FastAPI يقدّم الـ API تحت `/api` والواجهة على `/`، فلا يوجد
+أصل ثانٍ ولا إعداد CORS في الإنتاج، ورابط واحد يكفي.
+
+`render.yaml` في جذر المستودع يصف الخدمة كاملة، فالنشر هو:
+
+> Render → **New** → **Blueprint** → اختر هذا المستودع → **Apply**
+
+ثم تحصل على رابط بالشكل `https://alslmany.onrender.com`. لا يلزم Docker ولا أي
+أداة محلية. `Dockerfile` موجود أيضاً لمن يفضّل Fly.io أو Railway أو أي مستضيف
+يقبل صورة.
+
+**ثلاثة أمور اعرفها قبل أن تنشر، لأنها ستحدث ولن تكون أعطالاً:**
+
+1. **الخطة المجانية تنام.** الخدمة تتوقف عند الخمول وتستيقظ مع أول طلب، فالتحميل
+   الأول بعد فترة هدوء بطيء (عشرات الثواني). هذا سلوك المنصة لا خلل في التطبيق.
+
+2. **السجل الورقي يُمحى.** الخطة المجانية بلا قرص دائم، فقاعدة SQLite تُحذف مع كل
+   نشر وكل إعادة تشغيل. الصفقات المغلقة تختفي — **الاستراتيجية لا تتغير**، وهذان
+   أمران مختلفان تماماً ولا يجوز الخلط بينهما عند قراءة الأداء. لسجل يبقى، أنشئ
+   قاعدة PostgreSQL على Render واضبط `DATABASE_URL` بصيغة `postgresql+asyncpg://`
+   (المحرّك غير متزامن بالكامل، ورابط `postgresql://` عادي لن يُقلع).
+
+3. **المفاتيح تُدخل في لوحة Render لا في المستودع.** `CRON_SECRET` تولّده المنصة
+   تلقائياً — وهو ما يحمي مسارات البوت التي تغيّر الحالة؛ بدونه تبقى مفتوحة.
+   `TELEGRAM_BOT_TOKEN` و `TELEGRAM_CHAT_ID` و `AI_API_KEY` تُكتب يدوياً، والتنبيهات
+   تبقى معطّلة بهدوء حتى تُضبط.
+
+## التحقّق
+
+```bash
+./backend/verify.sh      # ruff check · ruff format --check · pytest
+```
+
+يعمل تلقائياً عند كل `git push` عبر خطاف `pre-push`، وفي GitHub Actions — كلاهما
+يستدعي نفس السكربت، فلا يمكن أن يختلفا على معنى "ناجح".
+
+---
+
+## البنية
+
+```
+backend/     FastAPI — بيانات السوق، التحليل، المخاطر، التداول الورقي
+frontend/    الواجهة
+```
+
+تفاصيل الخلفية ونقاط الـ API في [`backend/README.md`](backend/README.md).
+
+## المراحل
+
+بناء على عشر مراحل، كل واحدة تُختبر قبل الانتقال للتالية.
+
+| | المرحلة | الحالة |
 |---|---|---|
-| **Overview** | Market snapshot, Fear & Greed, KPIs, whale flow | CoinGecko + alternative.me |
-| **Markets** | 300 coins, spot/futures, search, sparklines | CoinGecko |
-| **Manual Signals** | Rule-based recommendations (auditable confluences) | Binance/OKX/Bybit klines |
-| **Tracker** | Track picks, entry amount, live P&L | local |
-| **AI Signals** | Deep per-coin AI analysis + market brief | LLM (Groq/OpenAI) |
-| **AI Trader** | Autonomous: enters → staged TP/stop → self-reviews → learns | engine + LLM |
-| **Smart Money** | Market structure (BOS/CHoCH/FVG), key levels per major | klines |
-| **Whales** | Large single prints (accumulation/distribution), live | Binance aggTrades |
-| **Backtest** | Walk-forward the spot strategy on real history | klines |
-| **News** | Live crypto headlines + AI market-impact read | RSS + LLM |
-| **Settings** | Language, Telegram status/test, data, risk params | — |
+| 1 | بيانات السوق وقاعدة البيانات | ✅ |
+| 2 | المؤشرات الفنية | ✅ |
+| 3 | بنية السوق / SMC | ✅ |
+| 4 | محرّك الإشارات والتقييم | ✅ |
+| 5 | إدارة المخاطر | ✅ |
+| 6 | محرّك التداول الورقي (البوت) | ✅ |
+| 7 | لوحة التحكم | ✅ |
+| 8 | الاختبار التاريخي | ✅ |
+| 9 | تحليلات الأداء المتقدمة | ✅ |
+| 10 | التدقيق النهائي | ✅ |
+| 11 | مخاطرة واعية بالارتباط | ✅ |
+| 12 | بثّ حيّ عبر WebSocket | ✅ |
+| 13 | توافق الأطر الزمنية | ✅ |
+| 14 | انزلاق مشتقّ من دفتر الأوامر | ✅ |
+| 15 | تنبيهات تيليجرام | ✅ |
+| 16 | اختبار تاريخي على مستوى المحفظة | ✅ |
 
-Everything runs on **real data** with graceful fallbacks. No keys are required
-to run it — the AI falls back to a built-in local engine, and signals come from
-public exchange APIs.
+### ما تراه في اللوحة
 
----
+**المحفظة** — الرصيد، حقوق الملكية، الربح/الخسارة، نسبة الربح، معامل الربح،
+التوقّع بالـ R، أقصى تراجع · منحنى حقوق الملكية · توزيع النتائج · النتيجة لكل عملة
+· حدود المخاطرة معروضة كحقائق لا كمفاتيح.
 
-## Quick start (local)
+**الإشارات** — بطاقة لكل عملة: الاتجاه، الثقة، الدخول، الوقف، الهدف، العائد/المخاطرة،
+ومستوى المخاطرة. وكل بطاقة تُفتح على **تفكيك الدرجة الكامل**: الأبعاد السبعة
+بأوزانها وميلها ونقاطها، والأنماط التي اكتُشفت فعلاً.
 
-```bash
-npm install
-cp .env.example .env.local   # optional — see below
-npm run dev                  # http://localhost:3000
-```
+**المراكز المفتوحة** — الربح غير المحقق بالدولار وبالـ R، مع الفكرة المجمّدة عند الدخول.
 
-Open `http://localhost:3000` → it redirects straight into the dashboard.
+**السجل** — كل صفقة مغلقة مع فلترة بالعملة والاتجاه والنتيجة. الأرباح والخسائر
+بنفس الوزن البصري.
 
-### Optional keys (`.env.local`)
+**السوق** — أسعار حيّة وشارت شموع، والشمعة غير المكتملة مرسومة مجوّفة.
 
-All optional — the app works without them.
+**التنبيهات** — إشعار على تيليجرام عند فتح صفقة وإغلاقها وعند توقّف البوت بحدّ
+مخاطرة. والبوت **يُرسل ولا يستقبل**: لا يقرأ رسائل ولا يقبل أوامر، فبوت تيليجرام
+الذي يمكن أن *يُؤمَر* هو جهاز تحكّم عن بُعد بحساب — وهذه المنصّة لا تملك شيئاً كهذا
+عمداً. والتوكن لا يغادر الخادم أبداً: `/api/config` يقول **هل** التنبيهات مضبوطة،
+لا **بماذا**.
 
-- **`GROQ_API_KEY`** — free LLM for the AI features ([console.groq.com/keys](https://console.groq.com/keys)). Without it, a local analysis engine is used.
-- **`TELEGRAM_BOT_TOKEN`** — push the best picks + trade alerts to your Telegram. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`), press **Start** on it once; the chat id is auto-detected.
-- **`CRON_SECRET`** — protects the 24/7 scan endpoint (see Deployment).
+وفشل التنبيه لا يكلّف صفقة أبداً. الإشعار لاحق للقرار لا شرط له: انقطاع منصّة
+التداول سبب لعدم التداول، وانقطاع خدمة محادثة ليس كذلك.
 
----
+**توافق الأطر الزمنية** — كل إشارة تُقاس أيضاً ضدّ الإطار الأعلى (الساعة ضدّ
+الأربع ساعات، والأربع ساعات ضدّ اليوم). والعقوبة **غير متماثلة عمداً**: التعارض
+يخفض الثقة، والتوافق لا يرفعها. السبب أن الأبعاد السبعة قاست الأدلة على هذا
+الإطار بالفعل؛ موافقة الإطار الأعلى لا تجعلها أقوى، بل تكتفي بألّا تناقضها —
+ومكافأة الاتفاق كانت ستضخّم الثقة فوق ما قِيس، وتحسب الاتجاه مرّتين.
 
-## Telegram alerts
+الإطار الأعلى **مشتقّ من نفس الشموع** لا مجلوباً من المنصّة: صفر طلبات إضافية،
+ونفس السلوك في البثّ الحيّ وفي إعادة التشغيل التاريخية، ومنع النظر للمستقبل محفوظ
+بنيوياً. وشمعة الإطار الأعلى غير المكتملة تُسقَط — وهي نفس قاعدة الشمعة الجارية
+بمستوى أعلى.
 
-Once `TELEGRAM_BOT_TOKEN` is set and you've pressed **Start** on your bot, you
-get pro signal-channel cards on every event:
+**البثّ الحيّ** — الأسعار وحالة الحساب تُدفع عبر WebSocket كل خمس ثوانٍ بدل
+الاستطلاع كل عشرين. باثّ واحد يخدم كل المتصلين، فمئة تبويب مفتوح تكلّف المنصّة
+ما يكلّفه تبويب واحد، ويتوقّف تماماً حين يغادر آخر متصل. وإن انقطع الاتصال يعود
+الاستطلاع تلقائياً مع تراجع أُسّي، والشارة تفرّق بين **حيّ** و**حيّ · قديم**: الأول
+عن النقل، والثاني عن البيانات — والقاعدة نفسها تسري، لا سعر يُخترع أبداً.
 
-```
-#BTC/USDT - طويل🟢
+**التركّز** — أهم رقم في اللوحة: كم يخسر الدفتر المفتوح **معاً**. خمسة مراكز
+بمخاطرة ١٪ لكلٍّ منها ليست مخاطرة ٥٪ إلا إذا كانت مستقلة — وفي الكريبتو نادراً ما
+تكون. يُعرض الرقم الفعلي مقابل الحدّ، ومعامل التركّز، وأشدّ زوج ارتباطاً، وأي زوج
+لم يُقس ارتباطه (ويُفترض مرتبطاً).
 
-نقطة الدخول: 64,143
-وقف الخسارة: 62,500
+**التحليلات** — الأداء مقسوماً حسب العملة والإطار الزمني والاتجاه ونطاق الثقة
+وسبب الخروج، ومع كل مجموعة **حجم عيّنتها وفاصل ثقة ٩٥٪** لنسبة الفوز. أي مجموعة
+تحت ٢٠ صفقة تُعرض ولا تُرتَّب. وبجانبها مقارنة مع **الاحتفاظ البسيط** لكل عملة على
+نفس النافذة الزمنية التي تداولتها فعلاً. ثم **ملاحظات** مكتوبة للقراءة البشرية —
+ولا تُطبَّق تلقائياً أبداً.
 
-الهدف 1: 66,580
-الهدف 2: 68,210
-الهدف 3: 70,650
-```
+**الاختبار التاريخي للمحفظة** — إعادة تشغيل كل العملات **معاً على حساب واحد**.
+الفرق ليس شكلياً: إعادة تشغيل كل عملة وحدها تمنح كلاً منها الرصيد كاملاً، بينما
+تشغيلها معاً يجعلها تتنافس عليه — وكل حدود المحفظة (عدد المراكز، الخسارة اليومية،
+التراجع، والتركّز) لا تعني شيئاً إلا حين يمكن لعدة مراكز أن توجد في آن. وهذه أول
+مرة يُختبر فيها حدّ الارتباط **تاريخياً**.
 
-…and result cards on exits (target hit / stop / breakeven / time exit) with the
-realized % and duration. The autonomous trader also moves the stop to breakeven
-after Target 1 and trails it after Target 2.
+وأهم رقم فيه هو **تفصيل أسباب الرفض**: «البوت لم يتداول» تعني شيئين مختلفين
+تماماً — إمّا أن لا إعداد تأهّل (سبب يخصّ الصفقة)، أو أن الصفقة كانت جيدة والحساب
+رفض حملها (سبب يخصّ المحفظة). والثاني هو ما لا يستطيع اختبار العملة الواحدة إظهاره
+أبداً. والمقارنة مع سلّة متساوية الأوزان لا مع عملة واحدة محظوظة.
 
----
-
-## Deployment (Vercel) — 24/7
-
-The browser-driven trader runs only while the site is open. For **24/7** pushes
-(site closed), deploy and schedule the server-side scan.
-
-1. Push this repo to GitHub.
-2. Import it at [vercel.com/new](https://vercel.com/new) (framework auto-detected: Next.js).
-3. Add the env vars in **Project → Settings → Environment Variables**:
-   `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `CRON_SECRET` (any long random string).
-4. Deploy.
-
-### Scheduling the scan
-
-`vercel.json` already declares a daily cron hitting `/api/cron/scan` (the most
-frequent Vercel Cron allows on the free Hobby plan). Vercel sends the auth
-header automatically. While the site is open in a browser the in-app trader also
-scans moment-by-moment (~every 15s) for much faster entries.
-
-> **Free (Hobby) plan note:** Vercel Cron on Hobby runs **once per day**. For
-> more frequent pushes for free, use an external scheduler instead — e.g.
-> [cron-job.org](https://cron-job.org): create a job that GETs
-> `https://YOUR-APP.vercel.app/api/cron/scan?key=YOUR_CRON_SECRET` every few hours.
-
-You can trigger it manually anytime:
-
-```bash
-curl "https://YOUR-APP.vercel.app/api/cron/scan?key=YOUR_CRON_SECRET"
-```
+**الاختبار التاريخي** — إعادة تشغيل الشموع شمعة بشمعة عبر نفس محلّل البوت ونفس
+مدير المخاطر ونفس الوسيط. القرار على إغلاق الشمعة والتنفيذ على افتتاح **الشمعة
+التالية**؛ وإذا احتوت شمعة واحدة الوقف والهدف معاً يُؤخذ الوقف؛ والرسوم والانزلاق
+تُحتسب في كل دخول وخروج. ومعها دائماً نتيجة الاحتفاظ البسيط على نفس النافذة.
 
 ---
 
-## Architecture
+## القاعدة التي تحكم كل شيء
 
-- **Next.js 15** (App Router) · **React 19** · **TypeScript** · **Tailwind v3** · **Framer Motion** · **TanStack Query**.
-- **Route handlers** (`src/app/api/*`) proxy/compute server-side: markets, klines, signals, validation, fear&greed, news, AI, telegram, whales, structure, backtest, cron.
-- **Signal engine** (`src/lib/signal-engine.ts`) — deterministic, auditable confluence scoring (trend, momentum, structure, volume, volatility) with HTF gating.
-- **Autonomous trader** (`src/lib/trader-engine.ts` + `JournalWatcher`) — strict strategy, max 3 positions, market-regime guard, staged take-profit, adaptive confidence, self-review lessons.
-- **Indicators** (`src/lib/indicators.ts`) — pure TA primitives (EMA/RSI/MACD/BB/ATR/VWAP/swings/FVG).
-- Client state via `useSyncExternalStore` + localStorage (journal, tracker, lessons).
-- API keys are **server-side only** — never shipped to the browser.
+**المنصة لا تخترع قيمة سوقية أبداً.**
 
-### Scripts
+حين تفشل كل المصادر ولا تبقى نسخة صالحة في الذاكرة المؤقتة، ترجع الـ API
+`503 no_reliable_market_data` — *"Insufficient reliable market data"* — **بلا أي
+حقل سعر إطلاقاً**. لا صفر، ولا آخر قيمة تصادف أنها محفوظة، ولا تخمين معقول.
 
-```bash
-npm run dev     # dev server
-npm run build   # production build
-npm start       # run the production build
-npm run lint    # lint
-```
+ثلاث حالات تبقى منفصلة، لأن دمجها هو بالضبط كيف ينتهي نظام تداول إلى التصرّف
+بناءً على رقم لم يكن حقيقياً قط:
 
-> **Windows + OneDrive:** the dev server can intermittently throw `EBUSY` on
-> `.next` because OneDrive locks the folder during sync. The production build is
-> unaffected. For a smooth dev experience, keep the project **outside** a synced
-> OneDrive folder.
+| الحالة | الاستجابة | المعنى |
+|---|---|---|
+| **حيّة** | `200` · `stale: false` | مصدر أجاب للتوّ |
+| **قديمة** | `200` · `stale: true` | المصادر متوقفة؛ هذه القيمة كانت حقيقية وقت جلبها، وهي **موسومة** ولا تُمرَّر على أنها حالية |
+| **غير متاحة** | `503` | لا يوجد شيء جدير بالثقة. لا يُرجَع أي رقم |
+
+ومن المرحلة ٥ فصاعداً، يتعامل مدير المخاطر مع `no_reliable_market_data` كمانع
+قاطع لفتح أي مركز جديد.
 
 ---
 
-## Disclaimer
+## ماذا لا يستطيع هذا النظام أن يقوله لك
 
-This software is for **education and research only**. It is **not financial
-advice**, not a solicitation, and makes no guarantee of profit. Crypto trading
-carries substantial risk of loss. You are solely responsible for your decisions.
+القسم الأهم في هذا الملف. كل ما تحته حدٌّ حقيقي، لا تحفّظ شكلي.
 
-<!-- deploy trigger -->
+**الانزلاق صار مقيساً، وما تبقّى من التكاليف ما زال مفترضاً.** عند فتح صفقة
+يُجلب دفتر الأوامر ويُحسب ما يكلّفه عبور السوق فعلاً بهذا الحجم: نصف الفارق
+السعري (يدفعه أي حجم) زائد الأثر (يدفعه من يأكل ما بعد أفضل سعر). الثابت القديم
+كان **ثلاثة أضعاف الكلفة الحقيقية** لأمر صغير في سوق عميق، و**سُبع** الكلفة
+الحقيقية لأمر كبير في سوق رقيق — وهذا الفارق هو الوهم الذي كان يصنعه.
+
+وما زال مفترضاً: الأوامر تُنفَّذ كاملة أو لا تُنفَّذ (لا تنفيذ جزئي)، والتمويل على
+المراكز المفتوحة غير مُنمذج، والدفتر لحظي بينما التنفيذ الحقيقي يستغرق وقتاً
+يتحرّك فيه.
+
+**الارتباط مُقاس الآن، لكنه يبقى تقديراً.** الارتباط يُحسب من **العوائد** لا الأسعار
+(عملتان تصعدان معاً على مدى سنة تُظهران ارتباط أسعار قرب ١ بلا أي علاقة يومية
+بينهما)، وعلى نافذة متحرّكة من ٢٤٠ شمعة. لكنه رقم ماضٍ: الارتباطات في الكريبتو
+تقفز نحو ١ في الانهيارات تحديداً، أي في اللحظة التي يصبح فيها القياس الهادئ
+مضلِّلاً. ولهذا الزوج غير المقيس يُفترض مرتبطاً (٠٫٩) لا مستقلاً.
+
+**بُعد الأخبار صامت.** لا يوجد تغذية أخبار موصولة، فالدرجة تُحسب من ستة أبعاد من
+سبعة والتغطية القصوى ٩٥٪. البُعد موجود ومحجوز، ولا يُختلق له محتوى.
+
+**درجة الثقة افتراض حتى تُثبت.** بُنيت لتفصل بين قوة الأدلة واتفاقها وتغطيتها،
+لكن كونها **تُرتّب النتائج فعلاً** مسألة تُقاس من السجل، لا تُفترض. شاشة التحليلات
+تعرض الأداء حسب نطاق الثقة تحديداً لهذا السبب، وتقول صراحةً إن كانت مقلوبة.
+
+**الاختبار التاريخي يعيد تشغيل عملة واحدة.** بلا ارتباط بين العملات، وبلا نموذج
+سيولة: يفترض أن الحجم كله يُنفَّذ بسعر واحد. وهذا يجعله متفائلاً بالضرورة على
+الأحجام الكبيرة أو العملات الرقيقة.
+
+**حدّ التراجع يوقف البوت ولا يُفرج عنه تلقائياً.** التراجع يُقاس من أعلى قمة بلغها
+الحساب، وحقوق الملكية لا ترتفع إلا بالتداول — والتداول هو ما أوقفه الحدّ. فالحالة
+ماصّة، ولذلك يظهر تنبيه صريح على اللوحة ويحتاج **إقراراً بشرياً يُسجَّل ولا يُمحى**.
+
+> محاكاة من ألفي صفقة باستراتيجية خاسرة (نسبة فوز ٢٠٪) تُظهر لماذا: الحساب الذي
+> توقّف بقي عند **9,017 دولاراً بعد ٣٣ صفقة**؛ والحساب الذي أُقرّ حدّه في كل مرة
+> استمر **١٣١٢ صفقة وانتهى عند 49 دولاراً**. الإقرار قرار بشري، وهذا سبب وجوده.
+
+**حدود الطلبات في الذاكرة ولكل عملية.** نسختان تعملان معاً تعني ضعف الميزانية.
+النقطة التي يجب أن تنتقل فيها إلى Redis هي النقطة التي تنشر فيها أكثر من نسخة.
+
+**البيانات التاريخية محدودة بألف شمعة.** أي نافذة أقدم من ذلك تُبلَّغ على أنها غير
+مغطّاة بدل أن تُقصّ بصمت.
+
+**وأخيراً: النتائج الورقية لا تقيس الجزء الأصعب.** لا يقيس السجل الورقي ما يفعله
+المتداول حين يرى تراجعاً ١٠٪ على مال حقيقي.
+
+---
+
+## الملاحظة الأهم عن سابق هذا المشروع
+
+كان المستودع يحتوي تطبيق Next.js لموقع توصيات. حُذف بناءً على طلب صريح، وهذه
+المنصة حلّت محلّه بالكامل. الكود القديم محفوظ في تاريخ git ويمكن استرجاعه في أي
+وقت من الالتزامات السابقة لهذا الالتزام.

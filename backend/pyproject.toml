@@ -1,0 +1,60 @@
+[project]
+name = "alslmany-paper-trading"
+version = "0.1.0"
+description = "AI-assisted cryptocurrency analysis and paper-trading platform. Simulated trades only."
+requires-python = ">=3.11"
+
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "httpx>=0.27",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "SQLAlchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "aiosqlite>=0.20",
+  "alembic>=1.14",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  # Drives the real FastAPI lifespan in tests, so startup wiring (schema
+  # creation, coin seeding, provider construction) is exercised rather than
+  # bypassed by a bare ASGI call.
+  "asgi-lifespan>=2.1",
+  "ruff>=0.7",
+]
+
+# Without this, a FRESH install fails outright: setuptools finds two top-level
+# directories here (`app` and `alembic`), refuses to guess which is the package,
+# and aborts. It never showed up locally because the checked-in virtualenv was
+# built before `alembic/` existed — so `pip install -e backend[dev]` worked on
+# every machine that already had it and failed on every machine that did not,
+# CI included. Naming the package is the fix; `alembic/` holds migration
+# scripts, not importable library code, and is deliberately excluded.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = [
+  # Our own deprecated usage is a test failure, deliberately.
+  "error::DeprecationWarning",
+  # These two fire while IMPORTING starlette's TestClient, from a dependency's
+  # lazy-import shim and from starlette's own httpx notice. Neither is
+  # reachable from this codebase, and both are named exactly so the rule above
+  # keeps its teeth for everything else.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
