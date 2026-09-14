@@ -32,7 +32,7 @@ body {
   font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-.num, td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.num, td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .mono, .price { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .muted { color: var(--ink-faint); font-size: 12px; }
 .up { color: var(--up); }
@@ -151,7 +151,7 @@ table { width: 100%; border-collapse: collapse; min-width: 760px; }
 th, td { padding: 10px 16px; border-bottom: 1px solid var(--rule); }
 th {
   font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--ink-faint); font-weight: 600; text-align: left;
+  color: var(--ink-faint); font-weight: 600; text-align: start;
 }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--panel-2); }
@@ -216,7 +216,7 @@ td.empty, .empty {
   /* A 2px surface gap keeps the fill from touching the midline rule. */
   box-shadow: 0 0 0 2px var(--panel-2);
 }
-.bar .mid { position: absolute; left: 50%; top: -2px; width: 1px; height: 10px; background: var(--rule); }
+.bar .mid { position: absolute; inset-inline-start: 50%; top: -2px; width: 1px; height: 10px; background: var(--rule); }
 .unavailable td { opacity: .5; }
 
 details.evidence { margin-top: 10px; }
@@ -246,7 +246,7 @@ details.evidence summary:focus-visible { outline: 2px solid var(--accent); outli
 .limits .value { font-family: ui-monospace, monospace; font-size: 16px; margin-top: 4px; }
 
 .tick-body { padding: 14px 16px; font-size: 13px; }
-.tick-body ul { margin: 6px 0 12px; padding-left: 18px; color: var(--ink-muted); }
+.tick-body ul { margin: 6px 0 12px; padding-inline-start: 18px; color: var(--ink-muted); }
 .tick-body li { margin: 2px 0; }
 
 footer {
@@ -271,15 +271,15 @@ footer p { max-width: 680px; margin: 0 auto; }
 .insights { display: grid; gap: 12px; padding: 14px; }
 
 .insight {
-  border: 1px solid var(--rule); border-left-width: 3px;
+  border: 1px solid var(--rule); border-inline-start-width: 3px;
   border-radius: 8px; padding: 12px 14px; background: var(--panel-2);
 }
 /* The left edge carries strength. It is never the only carrier — every card
    also prints the word and the sample size — because a reader who cannot
    distinguish the hues must still be able to read the confidence. */
-.insight-supported { border-left-color: var(--up); }
-.insight-suggestive { border-left-color: var(--accent); }
-.insight-insufficient { border-left-color: var(--ink-faint); }
+.insight-supported { border-inline-start-color: var(--up); }
+.insight-suggestive { border-inline-start-color: var(--accent); }
+.insight-insufficient { border-inline-start-color: var(--ink-faint); }
 
 .insight header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .insight .finding { margin: 0 0 6px; font-size: 14px; }
@@ -301,7 +301,7 @@ tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
 
 /* The halt banner. Loud on purpose: this is the one state where the system
    needs a person, and it must not read like the stale-feed warning. */
-.notice.halt { border-left-width: 4px; border-left-color: var(--down); }
+.notice.halt { border-inline-start-width: 4px; border-inline-start-color: var(--down); }
 .notice.halt ul { margin: 8px 0; padding-inline-start: 20px; }
 .notice.halt li { margin-bottom: 8px; }
 .notice.halt p { margin: 8px 0 0; }
@@ -382,7 +382,7 @@ tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
 }
 .ladder td:first-child, .ladder th:first-child { width: 22%; }
 .ladder th {
-  text-align: left; font-weight: 500; color: var(--ink-faint);
+  text-align: start; font-weight: 500; color: var(--ink-faint);
   padding: 4px 6px; border-bottom: 1px solid var(--rule);
   font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
 }
@@ -427,3 +427,54 @@ tr.note-row td { padding-top: 0; border-top: 0; font-size: 11px; }
   margin-top: 5px; font-size: 10px; letter-spacing: .03em;
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ---------- Arabic and RTL ---------- */
+
+/* A UI stack that actually ships an Arabic face. Without one the browser falls
+   back to a default that renders Arabic at a visibly smaller optical size than
+   the Latin beside it, and the two never line up on a mixed line. */
+:root[lang="ar"] body,
+:root[lang="ar"] button,
+:root[lang="ar"] select,
+:root[lang="ar"] input {
+  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", "Geeza Pro", system-ui, sans-serif;
+}
+
+/* Arabic script sits taller than Latin at the same size, so the tight leading
+   that suits the English screen crowds it. */
+:root[lang="ar"] { line-height: 1.7; }
+
+/* Prices, tickers and anything monospaced stay left-to-right inside an RTL
+   page. A ticker is not a word being read in Arabic — it is a token copied
+   against an exchange screen, and mirroring it would change what it says. */
+:root[dir="rtl"] .price,
+:root[dir="rtl"] .sym,
+:root[dir="rtl"] .num,
+:root[dir="rtl"] .value,
+:root[dir="rtl"] code {
+  direction: ltr;
+  /* `unicode-bidi: isolate` rather than `embed`: the run is treated as neutral
+     by the surrounding text so a minus sign or a percent cannot be dragged to
+     the far end of the cell. */
+  unicode-bidi: isolate;
+}
+
+/* Charts are drawn in SVG user space, where x grows to the right regardless of
+   the document. Time runs left-to-right on every venue's chart in every
+   language, so the plot is deliberately NOT mirrored — only the prose around
+   it flips. */
+:root[dir="rtl"] .chart-wrap svg { direction: ltr; }
+
+.lang-toggle {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lang-toggle:hover { color: var(--ink); border-color: var(--ink-faint); }
+.lang-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

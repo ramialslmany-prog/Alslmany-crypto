@@ -15,6 +15,11 @@
 
 const API = "/api";
 
+/* Arabic is the default and English is a choice; i18n.js owns both and is
+   loaded first. Destructured once here so every call site reads `t("key")`
+   rather than a three-part path. */
+const { t, term, isRTL } = window.I18N;
+
 const el = (id) => document.getElementById(id);
 const tooltip = () => el("tooltip");
 
@@ -42,10 +47,10 @@ async function getJson(path, options = {}) {
   try {
     payload = await response.json();
   } catch {
-    throw new Error(`${response.status} — the server did not return JSON`);
+    throw new Error(t("common.notJson", { status: response.status }));
   }
   if (!response.ok) {
-    const error = new Error(payload?.error?.message || `Request failed (${response.status})`);
+    const error = new Error(payload?.error?.message || t("common.requestFailed", { status: response.status }));
     error.code = payload?.error?.code;
     throw error;
   }
@@ -77,6 +82,37 @@ function fmtMoney(value) {
   const n = num(value);
   if (n === null) return "—";
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* Dates and times, in one format in both languages.
+
+   `toLocaleString()` with no locale follows the browser, which put "12:03:28 AM"
+   inside an otherwise Arabic page — and, on an Arabic browser, would put
+   Arabic-Indic digits into a timestamp beside Western-digit prices.
+
+   So: a fixed 24-hour clock, Latin digits, Gregorian calendar. The hour format
+   is not only a translation question — AM/PM is ambiguous on a screen where
+   sessions and funding windows are quoted in 24-hour time everywhere else. */
+const DATE_LOCALE = "en-GB";
+
+function fmtTime(value) {
+  const d = new Date(value);
+  return Number.isNaN(d.valueOf()) ? "—" : d.toLocaleTimeString(DATE_LOCALE, { hour12: false });
+}
+
+function fmtDateTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.valueOf())) return "—";
+  return d.toLocaleString(DATE_LOCALE, {
+    year: "numeric", month: "short", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+function fmtDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.valueOf())) return "—";
+  return d.toLocaleDateString(DATE_LOCALE, { year: "numeric", month: "short", day: "2-digit" });
 }
 
 function fmtCompact(value) {
@@ -132,7 +168,7 @@ function hideTooltip() {
 /** Equity curve. One series, so the panel title names it and no legend box is needed. */
 function renderEquity(points, starting) {
   if (points.length === 0) {
-    return `<p class="empty">No closed trades yet. The curve appears once the bot has taken and settled a position.</p>`;
+    return `<p class="empty">${esc(t("common.noClosedTradesCurve"))}</p>`;
   }
 
   const W = 1000;
@@ -169,17 +205,17 @@ function renderEquity(points, starting) {
     const balance = num(p.balance);
     const change = balance - starting;
     return `<circle class="pt" cx="${x(i).toFixed(1)}" cy="${y(balance).toFixed(1)}" r="10" fill="transparent"
-      data-tip="${esc(`<div class='t-title'>${new Date(p.at).toLocaleString()}</div><div class='t-value'>Balance ${fmtMoney(balance)}</div><div class='t-value'>${change >= 0 ? "+" : ""}${fmtMoney(change)} from start</div>`)}" />`;
+      data-tip="${esc(`<div class='t-title'>${fmtDateTime(p.at)}</div><div class='t-value'>${t("common.balanceAt", { value: fmtMoney(balance) })}</div><div class='t-value'>${t("common.fromStart", { value: `${change >= 0 ? "+" : ""}${fmtMoney(change)}` })}</div>`)}" />`;
   });
 
   const dots = points.map((p, i) =>
     `<circle cx="${x(i).toFixed(1)}" cy="${y(num(p.balance)).toFixed(1)}" r="3" fill="${stroke}" stroke="#141820" stroke-width="2" />`
   );
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Equity curve: balance after each of ${points.length} closed trades, starting from ${fmtMoney(starting)} and ending at ${fmtMoney(last)}.">
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("common.equityLabel", { n: points.length, from: fmtMoney(starting), to: fmtMoney(last) }))}">
     ${grid.join("")}
     <line x1="${pad.left}" y1="${startY.toFixed(1)}" x2="${pad.left + plotW}" y2="${startY.toFixed(1)}" stroke="#f0b429" stroke-width="1" opacity="0.5" />
-    <text x="${pad.left + 4}" y="${(startY - 5).toFixed(1)}" fill="#f0b429" font-size="9" opacity="0.8">start ${fmtCompact(starting)}</text>
+    <text x="${pad.left + 4}" y="${(startY - 5).toFixed(1)}" fill="#f0b429" font-size="9" opacity="0.8">${esc(t("common.start"))} ${fmtCompact(starting)}</text>
     <path d="${path}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" />
     ${dots.join("")}
     ${labels.join("")}
@@ -190,12 +226,12 @@ function renderEquity(points, starting) {
 /** Win / loss / breakeven. Status colours, each with a word beside it. */
 function renderOutcomes(perf) {
   const total = perf.total_trades;
-  if (!total) return `<p class="empty">No closed trades yet.</p>`;
+  if (!total) return `<p class="empty">${esc(t("common.noClosedTrades"))}</p>`;
 
   const rows = [
-    { label: "Wins", value: perf.wins, colour: "#3ecf8e" },
-    { label: "Losses", value: perf.losses, colour: "#f2555a" },
-    { label: "Breakeven", value: perf.breakeven, colour: "#7d8697" },
+    { label: t("common.wins"), value: perf.wins, colour: "#3ecf8e" },
+    { label: t("common.losses"), value: perf.losses, colour: "#f2555a" },
+    { label: t("common.breakeven"), value: perf.breakeven, colour: "#7d8697" },
   ].filter((r) => r.value > 0);
 
   const W = 480;
@@ -214,21 +250,21 @@ function renderOutcomes(perf) {
     return `
       <text x="0" y="${y + barH / 2 + 4}" fill="#a4adbd" font-size="12">${r.label}</text>
       <rect class="pt" x="${labelW}" y="${y + 5}" width="${w.toFixed(1)}" height="${barH - 10}" rx="4" fill="${r.colour}"
-        data-tip="${esc(`<div class='t-title'>${r.label}</div><div class='t-value'>${r.value} of ${total} · ${pct}%</div>`)}" />
+        data-tip="${esc(`<div class='t-title'>${r.label}</div><div class='t-value'>${t("common.ofTotal", { n: r.value, total, pct })}</div>`)}" />
       <text x="${labelW + w + 8}" y="${y + barH / 2 + 4}" fill="#e8ecf2" font-size="12" font-family="ui-monospace, monospace">${r.value}</text>`;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Outcome distribution: ${rows.map((r) => `${r.value} ${r.label}`).join(", ")} of ${total} closed trades.">${bars.join("")}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("common.outcomeLabel", { list: rows.map((r) => `${r.value} ${r.label}`).join("، "), total }))}">${bars.join("")}</svg>`;
 }
 
 /** Net result per symbol. Sign is polarity, so the two status hues apply. */
 function renderBySymbol(trades) {
-  if (trades.length === 0) return `<p class="empty">No closed trades yet.</p>`;
+  if (trades.length === 0) return `<p class="empty">${esc(t("common.noClosedTrades"))}</p>`;
 
   const totals = new Map();
-  for (const t of trades) {
-    const pnl = num(t.pnl) ?? 0;
-    totals.set(t.symbol, (totals.get(t.symbol) ?? 0) + pnl);
+  for (const trade of trades) {
+    const pnl = num(trade.pnl) ?? 0;
+    totals.set(trade.symbol, (totals.get(trade.symbol) ?? 0) + pnl);
   }
   const rows = [...totals.entries()].sort((a, b) => b[1] - a[1]);
 
@@ -254,7 +290,7 @@ function renderBySymbol(trades) {
       <text x="${labelW + plotW + 8}" y="${y + barH / 2 + 4}" fill="${value >= 0 ? "#3ecf8e" : "#f2555a"}" font-size="11" font-family="ui-monospace, monospace">${shown}</text>`;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Net result by symbol across ${trades.length} closed trades.">
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("common.bySymbolLabel", { n: trades.length }))}">
     <line x1="${zero}" y1="0" x2="${zero}" y2="${H}" stroke="#262d3a" stroke-width="1" />
     ${bars.join("")}
   </svg>`;
@@ -269,7 +305,7 @@ function renderCandles(candles) {
   let max = Math.max(...candles.map((c) => num(c.high)));
   let min = Math.min(...candles.map((c) => num(c.low)));
   if (!Number.isFinite(max) || !Number.isFinite(min)) {
-    return `<p class="empty">Candle data was not numeric.</p>`;
+    return `<p class="empty">${esc(t("market.notNumeric"))}</p>`;
   }
   if (max === min) { max += 1; min -= 1; }
   const span = max - min;
@@ -299,7 +335,7 @@ function renderCandles(candles) {
     const bottom = y(Math.min(open, close));
     const height = Math.max(1, bottom - top);
     const fill = c.closed ? colour : "none";
-    const tip = `<div class='t-title'>${new Date(c.open_time).toLocaleString()}${c.closed ? "" : " · forming"}</div>
+    const tip = `<div class='t-title'>${fmtDateTime(c.open_time)}${c.closed ? "" : t("market.formingTip")}</div>
       <div class='t-value'>O ${fmtPrice(c.open)}</div><div class='t-value'>H ${fmtPrice(c.high)}</div>
       <div class='t-value'>L ${fmtPrice(c.low)}</div><div class='t-value'>C ${fmtPrice(c.close)}</div>`;
     return (
@@ -309,10 +345,10 @@ function renderCandles(candles) {
     );
   });
 
-  const first = new Date(candles[0].open_time).toLocaleString();
-  const last = new Date(candles[candles.length - 1].open_time).toLocaleString();
+  const first = fmtDateTime(candles[0].open_time);
+  const last = fmtDateTime(candles[candles.length - 1].open_time);
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart, ${candles.length} bars from ${first} to ${last}.">
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("market.candleLabel", { n: candles.length, from: first, to: last }))}">
     ${grid.join("")}${bars.join("")}${labels.join("")}
     <text x="${pad.left}" y="${H - 6}" fill="#7d8697" font-size="10">${esc(first)}</text>
     <text x="${pad.left + plotW}" y="${H - 6}" fill="#7d8697" font-size="10" text-anchor="end">${esc(last)}</text>
@@ -336,17 +372,17 @@ function renderFactors(factors) {
     const positive = f.raw > 0;
     const colour = positive ? "#3ecf8e" : "#f2555a";
     const bar = f.available && f.raw !== 0
-      ? `<i style="${positive ? `left:50%;width:${pct}%` : `right:50%;width:${pct}%`};background:${colour}"></i>`
+      ? `<i style="${positive ? `inset-inline-start:50%` : `inset-inline-end:50%`};width:${pct}%;background:${colour}"></i>`
       : "";
     return `<tr class="${f.available ? "" : "unavailable"}">
-      <td>${esc(f.dimension.replace(/_/g, " "))}</td>
+      <td>${esc(term(f.dimension))}</td>
       <td class="num">${esc(f.weight)}%</td>
       <td class="bar-cell"><span class="bar"><span class="mid"></span>${bar}</span></td>
-      <td class="num">${f.available ? f.contribution.toFixed(1) : "n/a"}</td>
+      <td class="num">${f.available ? f.contribution.toFixed(1) : esc(t("factors.na"))}</td>
     </tr>`;
   });
   return `<table class="factors">
-    <thead><tr><th>Dimension</th><th class="num">Weight</th><th>Lean</th><th class="num">Points</th></tr></thead>
+    <thead><tr><th>${esc(t("factors.dimension"))}</th><th class="num">${esc(t("factors.weight"))}</th><th>${esc(t("factors.lean"))}</th><th class="num">${esc(t("factors.points"))}</th></tr></thead>
     <tbody>${rows.join("")}</tbody>
   </table>`;
 }
@@ -364,17 +400,17 @@ function renderConfluence(ev) {
   const cut = c.multiplier < 1;
 
   const label = {
-    aligned: "with the trend above",
-    against: "against the trend above",
-    "strongly-against": "against a strong trend above",
-    undecided: "the trend above is undecided",
-    unavailable: "not checked",
-  }[c.agreement] || c.agreement;
+    aligned: t("confluence.aligned"),
+    against: t("confluence.against"),
+    "strongly-against": t("confluence.stronglyAgainst"),
+    undecided: t("confluence.undecided"),
+    unavailable: t("confluence.unavailable"),
+  }[c.agreement] || term(c.agreement);
 
   return `<p class="confluence ${cut ? "cut" : ""}">
     <span class="tag">${esc(c.higher_timeframe || "—")}</span>
-    ${esc(label)}${c.higher_trend ? ` · ${esc(c.higher_trend.replace(/_/g, " "))}` : ""}
-    ${cut ? `<span class="muted"> — confidence cut from ${esc(before)} to ${esc(Math.round(before * c.multiplier * 100) / 100)}</span>` : ""}
+    ${esc(label)}${c.higher_trend ? ` · ${esc(term(c.higher_trend))}` : ""}
+    ${cut ? `<span class="muted">${esc(t("confluence.cut", { before, after: Math.round(before * c.multiplier * 100) / 100 }))}</span>` : ""}
   </p>`;
 }
 
@@ -385,14 +421,17 @@ function renderConfluence(ev) {
 function renderTicket(plan, symbol) {
   if (!plan) return "";
   const size = plan.size || {};
-  const verb = plan.direction === "LONG" ? "Buy" : "Sell short";
-  const base = esc(symbol.replace(/USDT$/, ""));
+  const verb = plan.direction === "LONG" ? t("ticket.buy") : t("ticket.sellShort");
+  /* <bdi> because a Latin ticker and a price sit inside an Arabic sentence:
+     without it the bidirectional algorithm reorders the run at the boundary
+     and "BTC 0.009" can render with the number on the wrong side of the name. */
+  const base = `<bdi>${esc(symbol.replace(/USDT$/, ""))}</bdi>`;
 
   return `<p class="ticket">
-    <strong>${verb} ${esc(size.quantity)} ${base}</strong> at ${esc(plan.entry_display)}
+    <strong>${esc(verb)} <bdi>${esc(size.quantity)}</bdi> ${base}</strong> ${esc(t("ticket.at"))} <bdi>${esc(plan.entry_display)}</bdi>
     <span class="muted">(${fmtMoney(size.notional)})</span><br />
-    Risk <strong class="down">${fmtMoney(plan.realistic_loss)}</strong> if ${esc(plan.stop_display)} is hit
-    · make <strong class="up">${fmtMoney(plan.max_profit)}</strong> if the plan runs in full.
+    ${t("ticket.risk", { loss: fmtMoney(plan.realistic_loss), stop: `<bdi>${esc(plan.stop_display)}</bdi>` })}
+    ${t("ticket.make", { profit: fmtMoney(plan.max_profit) })}
   </p>`;
 }
 
@@ -406,23 +445,80 @@ function renderLadder(plan) {
      columns of their own and overflowed a card this narrow — clipping "pays",
      which is the one column the table exists for. R rides along with the exit
      label, and the running total is the ticket's closing clause already. */
-  const rows = plan.targets.map((t, i) => `<tr>
-    <td>T${i + 1} <span class="muted">${esc(t.r_multiple)}R</span></td>
-    <td class="num">${esc(t.price_display)}</td>
-    <td class="num">${esc(t.allocation_pct)}%</td>
-    <td class="num up">+${fmtMoney(t.profit)}</td>
+  const rows = plan.targets.map((rung, i) => `<tr>
+    <td>T${i + 1} <span class="muted">${esc(rung.r_multiple)}R</span></td>
+    <td class="num">${esc(rung.price_display)}</td>
+    <td class="num">${esc(rung.allocation_pct)}%</td>
+    <td class="num up">+${fmtMoney(rung.profit)}</td>
   </tr>`).join("");
 
   return `<table class="ladder">
-    <caption>Exit is staged &mdash; each rung sells only its own slice</caption>
+    <caption>${esc(t("ladder.caption"))}</caption>
     <thead><tr>
-      <th scope="col">Exit</th>
-      <th scope="col" class="num">Price</th>
-      <th scope="col" class="num">Sells</th>
-      <th scope="col" class="num">Pays</th>
+      <th scope="col">${esc(t("ladder.exit"))}</th>
+      <th scope="col" class="num">${esc(t("ladder.price"))}</th>
+      <th scope="col" class="num">${esc(t("ladder.sells"))}</th>
+      <th scope="col" class="num">${esc(t("ladder.pays"))}</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+}
+
+/* Three sentences the server writes in English, restated here from the numbers
+   it now publishes alongside them. Restating beats translating: the English
+   stays exactly as the engine wrote it, and the Arabic is built from the same
+   values rather than from a parse of the prose. */
+function invalidation(s) {
+  if (!isRTL()) return s.invalidation;
+  const p = s.plan;
+  if (!p) return "لا خطة، فلا مستوى نقض.";
+  const atr = p.atr_multiple;
+  return atr
+    ? `إغلاق تحت ${p.stop_display} (قرابة ${atr} من متوسط المدى الحقيقي) ينقض الفكرة`
+    : `إغلاق تحت ${p.stop_display} ينقض الفكرة`;
+}
+
+function capNote(size) {
+  if (!isRTL()) return size.cap_note;
+  return `الوقف يبعد ${size.stop_distance_pct}%، فالمخاطرة بكامل ${size.requested_risk_amount} ` +
+         `تحتاج انكشافاً أكبر مما يسمح به التحجيم الفوري. خُفّضت المخاطرة إلى ${size.risk_amount}.`;
+}
+
+function costNote() {
+  if (!isRTL()) return null;
+  return "الخسارة تشمل رسوم التنفيذ والانزلاق المعاكس على الطرفين. أرباح الأهداف لا تشملها: " +
+         "تكاليف الخروج تقع عند أسعار غير معروفة بعد.";
+}
+
+/* The engine's own sentence is English prose, assembled on the server from the
+   same factor keys the payload already carries. Translating that sentence would
+   mean parsing it back apart; composing it here from `evidence` instead means
+   both languages are generated from the identical structured evidence and
+   neither can drift into claiming something the analyser did not find. */
+function composeReason(s) {
+  if (!isRTL()) return s.reason;
+
+  const ev = s.evidence || {};
+  const up = s.signal === "LONG";
+  const supporting = (up ? ev.bullish : ev.bearish) || [];
+  const against = (up ? ev.bearish : ev.bullish) || [];
+
+  if (s.decision !== "TRADE") {
+    const parts = [];
+    if (Number(s.confidence) < 75) {
+      parts.push(`الثقة ${Number(s.confidence).toFixed(0)} دون عتبة 75`);
+    }
+    if (s.risk_level === "EXTREME") parts.push("التذبذب شديد");
+    if (supporting.length) {
+      parts.push(`الأدلة حتى الآن: ${supporting.slice(0, 3).map(term).join("، ")}`);
+    }
+    return `لا صفقة: ${parts.length ? parts.join("؛ ") : "لا فرصة مؤهّلة."}`;
+  }
+
+  const side = up ? "شراء" : "بيع";
+  let sentence = `${side}: ${supporting.slice(0, 4).map(term).join("، ")}.`;
+  if (against.length) sentence += ` ما يعارضها: ${against.slice(0, 3).map(term).join("، ")}.`;
+  return sentence;
 }
 
 function renderSignalCard(s) {
@@ -435,48 +531,48 @@ function renderSignalCard(s) {
      one is what this ladder pays; the headline one is what holding everything
      to the last target would pay, and it is the number the entry gate checks. */
   const ratios = p
-    ? `<div class="kv"><dt>Reward / risk</dt><dd>
-         ${esc(p.blended_reward_risk)}<span class="muted"> as staged · ${esc(p.reward_risk)} to last target</span>
+    ? `<div class="kv"><dt>${esc(t("signals.rewardRisk"))}</dt><dd>
+         ${esc(p.blended_reward_risk)}<span class="muted">${esc(t("signals.asStaged", { headline: p.reward_risk }))}</span>
        </dd></div>`
-    : `<div class="kv"><dt>Reward / risk</dt><dd>${esc(s.risk_reward ?? "—")}</dd></div>`;
+    : `<div class="kv"><dt>${esc(t("signals.rewardRisk"))}</dt><dd>${esc(s.risk_reward ?? "—")}</dd></div>`;
 
   const plan = isTrade
     ? `${renderTicket(p, s.symbol)}
        <dl class="kv-list">
-        <div class="kv"><dt>Entry</dt><dd>${fmtPrice(s.entry)}</dd></div>
-        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(s.stop_loss)}${
+        <div class="kv"><dt>${esc(t("signals.entry"))}</dt><dd>${fmtPrice(s.entry)}</dd></div>
+        <div class="kv"><dt>${esc(t("signals.stopLoss"))}</dt><dd class="down">${fmtPrice(s.stop_loss)}${
           p ? ` <span class="muted">−${esc(p.size.stop_distance_pct)}%</span>` : ""
         }</dd></div>
         ${ratios}
-        <div class="kv"><dt>Risk level</dt><dd>${esc(s.risk_level)}</dd></div>
+        <div class="kv"><dt>${esc(t("signals.riskLevel"))}</dt><dd>${esc(term(s.risk_level))}</dd></div>
        </dl>
        ${renderLadder(p)}
-       ${p && p.size.cap_note ? `<p class="cap-note">${esc(p.size.cap_note)}</p>` : ""}
-       ${p ? `<p class="muted cost-note">${esc(p.cost_note)}</p>` : ""}`
-    : `<p class="muted" style="margin:0">No entry, stop or target is shown for a NO_TRADE. Publishing levels beside a decision not to trade invites taking it anyway.</p>`;
+       ${p && p.size.cap_note ? `<p class="cap-note">${esc(capNote(p.size))}</p>` : ""}
+       ${p ? `<p class="muted cost-note">${esc(costNote() ?? p.cost_note)}</p>` : ""}`
+    : `<p class="muted" style="margin:0">${esc(t("signals.noLevels"))}</p>`;
 
   const warnings = (s.warnings || []).length
-    ? `<ul class="warnings">${s.warnings.map((w) => `<li>${esc(w.replace(/-/g, " "))}</li>`).join("")}</ul>`
+    ? `<ul class="warnings">${s.warnings.map((w) => `<li>${esc(term(w))}</li>`).join("")}</ul>`
     : "";
 
   return `<article class="card ${isTrade ? "is-trade" : ""}">
     <header class="card-head">
       <span class="sym">${esc(s.symbol)}</span>
       <span>
-        ${sideTag ? `<span class="tag ${sideTag}">${esc(s.signal)}</span>` : `<span class="tag">NO TRADE</span>`}
-        <span class="tag">${Number(s.confidence).toFixed(1)}% conf</span>
+        ${sideTag ? `<span class="tag ${sideTag}">${esc(term(s.signal))}</span>` : `<span class="tag">${esc(t("signals.noTrade"))}</span>`}
+        <span class="tag">${esc(t("signals.confidence", { value: Number(s.confidence).toFixed(1) }))}</span>
       </span>
     </header>
     <div class="card-body">
       ${plan}
-      <p class="card-reason">${esc(s.reason)}</p>
-      ${isTrade ? `<p class="muted" style="margin:6px 0 0">Invalidation: ${esc(s.invalidation)}</p>` : ""}
+      <p class="card-reason">${esc(composeReason(s))}</p>
+      ${isTrade ? `<p class="muted" style="margin:6px 0 0">${esc(t("signals.invalidation", { text: invalidation(s) }))}</p>` : ""}
       ${warnings}
       ${renderConfluence(ev)}
       <details class="evidence">
-        <summary>Evidence · ${(ev.detected || []).length} patterns detected</summary>
+        <summary>${esc(t("signals.evidence", { n: (ev.detected || []).length }))}</summary>
         ${renderFactors(ev.factors)}
-        ${(ev.detected || []).length ? `<p class="muted" style="margin-top:8px">Detected: ${esc((ev.detected || []).join(", "))}</p>` : ""}
+        ${(ev.detected || []).length ? `<p class="muted" style="margin-top:8px">${esc(t("signals.detected", { list: (ev.detected || []).map(term).join("، ") }))}</p>` : ""}
       </details>
     </div>
   </article>`;
@@ -488,18 +584,18 @@ function renderSignalCard(s) {
    only question being asked while a position is open, which is "how close am I
    to either end". The bar is that answer, and the two distances beside it are
    the same answer for anyone who cannot see it. */
-function renderProgress(t) {
-  const entry = Number(t.entry);
-  const stop = Number(t.stop_loss);
-  const target = Number(t.take_profit);
-  const now = Number(t.current_price);
+function renderProgress(pos) {
+  const entry = Number(pos.entry);
+  const stop = Number(pos.stop_loss);
+  const target = Number(pos.take_profit);
+  const now = Number(pos.current_price);
   if (![entry, stop, target, now].every(Number.isFinite)) return "";
 
-  const span = t.direction === "LONG" ? target - stop : stop - target;
+  const span = pos.direction === "LONG" ? target - stop : stop - target;
   if (!(span > 0)) return "";
 
   const at = (price) => {
-    const raw = t.direction === "LONG" ? (price - stop) / span : (stop - price) / span;
+    const raw = pos.direction === "LONG" ? (price - stop) / span : (stop - price) / span;
     return Math.max(0, Math.min(1, raw)) * 100;
   };
 
@@ -510,51 +606,51 @@ function renderProgress(t) {
      side green would show profit on a position that is down. */
   const left = Math.min(entryPct, nowPct);
   const width = Math.abs(nowPct - entryPct);
-  const winning = t.direction === "LONG" ? now >= entry : now <= entry;
+  const winning = pos.direction === "LONG" ? now >= entry : now <= entry;
 
   const away = (price) => (Math.abs(now - price) / now * 100).toFixed(2);
 
   return `<div class="progress" role="img"
-      aria-label="Price is ${away(stop)} percent from the stop and ${away(target)} percent from the target.">
+      aria-label="${esc(t("progress.label", { stop: away(stop), target: away(target) }))}">
     <span class="track">
-      <i class="fill ${winning ? "up" : "down"}" style="left:${left}%;width:${width}%"></i>
-      <i class="mark entry" style="left:${entryPct}%"></i>
-      <i class="mark now" style="left:${nowPct}%"></i>
+      <i class="fill ${winning ? "up" : "down"}" style="inset-inline-start:${left}%;width:${width}%"></i>
+      <i class="mark entry" style="inset-inline-start:${entryPct}%"></i>
+      <i class="mark now" style="inset-inline-start:${nowPct}%"></i>
     </span>
     <span class="ends">
-      <span class="down">Stop &middot; ${away(stop)}% away</span>
-      <span class="up">${away(target)}% away &middot; Target</span>
+      <span class="down">${esc(t("progress.stopAway", { pct: away(stop) }))}</span>
+      <span class="up">${esc(t("progress.targetAway", { pct: away(target) }))}</span>
     </span>
   </div>`;
 }
 
-function renderPositionCard(t) {
-  const pnl = signed(t.unrealised_pnl);
-  const r = signed(t.unrealised_r, "R");
+function renderPositionCard(trade) {
+  const pnl = signed(trade.unrealised_pnl);
+  const r = signed(trade.unrealised_r, "R");
   return `<article class="card">
     <header class="card-head">
-      <span class="sym">${esc(t.symbol)}</span>
+      <span class="sym">${esc(trade.symbol)}</span>
       <span>
-        <span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span>
-        <span class="tag">PAPER</span>
+        <span class="tag ${trade.direction === "LONG" ? "long" : "short"}">${esc(term(trade.direction))}</span>
+        <span class="tag">${esc(t("positions.paper"))}</span>
       </span>
     </header>
     <div class="card-body">
       <!-- A dl, not loose dt/dd in divs. Outside a list they are invalid and a
            screen reader reads eight labels and eight numbers with nothing
            joining them. -->
-      ${renderProgress(t)}
+      ${renderProgress(trade)}
       <dl class="kv-list">
-        <div class="kv"><dt>Entry</dt><dd>${fmtPrice(t.entry)}</dd></div>
-        <div class="kv"><dt>Current</dt><dd>${fmtPrice(t.current_price)}</dd></div>
-        <div class="kv"><dt>Stop loss</dt><dd class="down">${fmtPrice(t.stop_loss)}</dd></div>
-        <div class="kv"><dt>Take profit</dt><dd class="up">${fmtPrice(t.take_profit)}</dd></div>
-        <div class="kv"><dt>Quantity</dt><dd>${esc(t.quantity)}</dd></div>
-        <div class="kv"><dt>Risked</dt><dd>${fmtMoney(t.risk_amount)}</dd></div>
-        <div class="kv"><dt>Unrealised</dt><dd class="${pnl.cls}">${pnl.text} <span class="muted">(${r.text})</span></dd></div>
-        <div class="kv"><dt>Opened</dt><dd>${t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</dd></div>
+        <div class="kv"><dt>${esc(t("signals.entry"))}</dt><dd>${fmtPrice(trade.entry)}</dd></div>
+        <div class="kv"><dt>${esc(t("positions.current"))}</dt><dd>${fmtPrice(trade.current_price)}</dd></div>
+        <div class="kv"><dt>${esc(t("signals.stopLoss"))}</dt><dd class="down">${fmtPrice(trade.stop_loss)}</dd></div>
+        <div class="kv"><dt>${esc(t("signals.takeProfit"))}</dt><dd class="up">${fmtPrice(trade.take_profit)}</dd></div>
+        <div class="kv"><dt>${esc(t("positions.quantity"))}</dt><dd>${esc(trade.quantity)}</dd></div>
+        <div class="kv"><dt>${esc(t("positions.risked"))}</dt><dd>${fmtMoney(trade.risk_amount)}</dd></div>
+        <div class="kv"><dt>${esc(t("positions.unrealised"))}</dt><dd class="${pnl.cls}">${pnl.text} <span class="muted">(${r.text})</span></dd></div>
+        <div class="kv"><dt>${esc(t("positions.opened"))}</dt><dd>${esc(fmtDateTime(trade.opened_at))}</dd></div>
       </dl>
-      <p class="card-reason">${esc(t.reason)}</p>
+      <p class="card-reason">${esc(trade.reason)}</p>
     </div>
   </article>`;
 }
@@ -576,16 +672,20 @@ function renderHalt(halt, lastReset) {
   node.hidden = false;
   node.className = "notice halt";
   node.innerHTML = `
-    <h3>The bot has stopped trading</h3>
+    <h3>${esc(t("halt.title"))}</h3>
     <ul>${halt.blocks.map((b) => `<li>
-      <strong>${esc(b.limit.replace(/_/g, " "))}</strong> —
-      ${esc(b.value)}% against a ${esc(b.threshold)}% limit.
-      Clears: ${esc(b.clears)}.<br />
+      <strong>${esc(term(b.limit))}</strong> —
+      ${esc(t("halt.against", { value: b.value, threshold: b.threshold }))}
+      ${esc(t("halt.clears", { how: term(b.clears) }))}<br />
       <span class="muted">${esc(b.explanation)}</span>
     </li>`).join("")}</ul>
-    ${lastReset ? `<p class="muted">Last acknowledged ${esc(new Date(lastReset.at).toLocaleString())} at ${fmtMoney(lastReset.baseline_equity)}, after a ${esc(lastReset.drawdown_pct_at_reset)}% drawdown.</p>` : ""}
-    ${manual ? `<p><button id="ack-drawdown" type="button" class="primary">Acknowledge and resume</button>
-      <span class="muted">Recorded permanently. The previous peak is not restored.</span></p>` : ""}`;
+    ${lastReset ? `<p class="muted">${esc(t("halt.lastAck", {
+        at: fmtDateTime(lastReset.at),
+        equity: fmtMoney(lastReset.baseline_equity),
+        pct: lastReset.drawdown_pct_at_reset,
+      }))}</p>` : ""}
+    ${manual ? `<p><button id="ack-drawdown" type="button" class="primary">${esc(t("halt.acknowledge"))}</button>
+      <span class="muted">${esc(t("halt.permanent"))}</span></p>` : ""}`;
 
   const button = el("ack-drawdown");
   if (button) button.addEventListener("click", acknowledgeDrawdown);
@@ -594,17 +694,17 @@ function renderHalt(halt, lastReset) {
 async function acknowledgeDrawdown() {
   const button = el("ack-drawdown");
   button.disabled = true;
-  button.textContent = "Recording…";
+  button.textContent = t("halt.recording");
   try {
     const result = await getJson("/bot/risk/acknowledge-drawdown", { method: "POST" });
     if (!result.acknowledged) {
-      setNotice("warn", "Nothing to acknowledge", esc(result.reason));
+      setNotice("warn", t("halt.nothingToAck"), esc(term(result.reason)));
     }
     await loadPortfolio();
   } catch (error) {
-    setNotice("warn", "The acknowledgement was not recorded", esc(error.message));
+    setNotice("warn", t("halt.ackFailed"), esc(error.message));
     button.disabled = false;
-    button.textContent = "Acknowledge and resume";
+    button.textContent = t("halt.acknowledge");
   }
 }
 
@@ -612,7 +712,7 @@ async function acknowledgeDrawdown() {
     position count says "5 of 5"; only this says what is actually at stake. */
 function renderHeat(heat, limitPct) {
   if (!heat || num(heat.naive_risk) === 0) {
-    return `<p class="empty">No open positions, so nothing is concentrated.</p>`;
+    return `<p class="empty">${esc(t("heat.none"))}</p>`;
   }
 
   const effective = num(heat.effective_pct);
@@ -625,36 +725,34 @@ function renderHeat(heat, limitPct) {
   const filled = Math.min((effective / limit) * 100, 100);
 
   const pair = heat.worst_pair
-    ? `<div class="kv"><dt>Most correlated pair</dt><dd>${esc(heat.worst_pair.a)} &amp; ${esc(heat.worst_pair.b)} · ${esc(heat.worst_pair.correlation)}</dd></div>`
+    ? `<div class="kv"><dt>${esc(t("heat.worstPair"))}</dt><dd><bdi>${esc(heat.worst_pair.a)}</bdi> &amp; <bdi>${esc(heat.worst_pair.b)}</bdi> · ${esc(heat.worst_pair.correlation)}</dd></div>`
     : "";
 
   const assumed = (heat.assumed_pairs || []).length
-    ? `<p class="muted assumed">Not measured, so assumed correlated: ${esc(heat.assumed_pairs.join(", "))}.
-       Too little shared history to compute these, and guessing them apart would
-       report a concentrated book as a diversified one.</p>`
+    ? `<p class="muted assumed">${esc(t("heat.assumed", { pairs: heat.assumed_pairs.join("، ") }))}</p>`
     : "";
 
   return `
     <div class="heat-head">
       <div>
-        <p class="label">At risk together</p>
+        <p class="label">${esc(t("heat.atRisk"))}</p>
         <p class="value ${over ? "down" : ""}">${esc(heat.effective_pct)}%</p>
-        <p class="sub">limit ${esc(limitPct)}% · ${fmtMoney(heat.effective_risk)} of the account</p>
+        <p class="sub">${esc(t("heat.limitOf", { limit: limitPct, amount: fmtMoney(heat.effective_risk) }))}</p>
       </div>
       <div>
-        <p class="label">Sum of the positions</p>
+        <p class="label">${esc(t("heat.sum"))}</p>
         <p class="value">${fmtMoney(heat.naive_risk)}</p>
-        <p class="sub">what they risk if nothing moves together</p>
+        <p class="sub">${esc(t("heat.sumSub"))}</p>
       </div>
     </div>
     <div class="heat-bar" role="img"
-         aria-label="Combined risk ${esc(heat.effective_pct)} percent of the account against a limit of ${esc(limitPct)} percent.">
+         aria-label="${esc(t("heat.bar", { value: heat.effective_pct, limit: limitPct }))}">
       <span class="fill ${over ? "over" : ""}" style="width:${filled.toFixed(1)}%"></span>
     </div>
     <dl class="kv-list">
-      <div class="kv"><dt>Concentration</dt><dd>${esc(heat.concentration)} ${
-        concentration > 0.9 ? "— effectively one position" :
-        concentration > 0.6 ? "— partly the same bet" : "— genuinely spread"}</dd></div>
+      <div class="kv"><dt>${esc(t("heat.concentration"))}</dt><dd>${esc(heat.concentration)} ${
+        esc(concentration > 0.9 ? t("heat.oneBet") :
+            concentration > 0.6 ? t("heat.partly") : t("heat.spread"))}</dd></div>
       ${pair}
     </dl>
     ${assumed}`;
@@ -668,39 +766,34 @@ async function loadAlerts() {
     const on = config.alerts_configured;
     el("alerts").innerHTML = `
       <p class="alerts-state">
-        <span class="tag ${on ? "win" : ""}">${on ? "CONFIGURED" : "OFF"}</span>
-        ${on
-          ? "Open, close and halt notifications are sent to the configured chat."
-          : "Set <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> on the server to turn these on. Nothing else is affected."}
+        <span class="tag ${on ? "win" : ""}">${esc(on ? t("alerts.configured") : t("alerts.off"))}</span>
+        ${on ? esc(t("alerts.on")) : t("alerts.setEnv")}
       </p>
-      <p class="muted">
-        The bot only sends. It reads no messages and accepts no commands, so a
-        stolen token leaks the fact that a paper position opened — and nothing else.
-      </p>
-      ${on ? `<p><button id="test-alert" type="button" class="primary">Send a test message</button>
+      <p class="muted">${esc(t("alerts.sendOnly"))}</p>
+      ${on ? `<p><button id="test-alert" type="button" class="primary">${esc(t("alerts.test"))}</button>
         <span id="alert-result" class="muted"></span></p>` : ""}`;
 
     const button = el("test-alert");
     if (button) button.addEventListener("click", sendTestAlert);
   } catch (error) {
-    el("alerts").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+    el("alerts").innerHTML = `<p class="empty">${esc(t("common.unavailable", { message: error.message }))}</p>`;
   }
 }
 
 async function sendTestAlert() {
   const button = el("test-alert");
   button.disabled = true;
-  button.textContent = "Sending…";
+  button.textContent = t("alerts.sending");
   try {
     const result = await getJson("/bot/alerts/test", { method: "POST" });
     el("alert-result").textContent = result.sent
-      ? "Sent."
-      : `Not sent — ${result.reason || "Telegram refused it."}`;
+      ? t("alerts.sent")
+      : t("alerts.notSent", { reason: result.reason || t("alerts.refused") });
   } catch (error) {
-    el("alert-result").textContent = `Failed — ${error.message}`;
+    el("alert-result").textContent = t("alerts.failed", { message: error.message });
   } finally {
     button.disabled = false;
-    button.textContent = "Send a test message";
+    button.textContent = t("alerts.test");
   }
 }
 
@@ -717,18 +810,18 @@ async function loadPortfolio() {
     const today = signed(p.realised_today);
 
     el("tiles").innerHTML = [
-      { label: "Balance", value: fmtMoney(p.balance), sub: `started at ${fmtMoney(p.starting_balance)}` },
-      { label: "Equity", value: fmtMoney(p.equity), sub: `${p.open_positions} open` },
-      { label: "Total P/L", value: pnl.text, cls: pnl.cls, sub: `${perf.total_trades} trades` },
-      { label: "Today", value: today.text, cls: today.cls, sub: `limit ${esc(p.limits.max_daily_loss_pct)}%` },
-      { label: "Win rate", value: `${perf.win_rate}%`, sub: `${perf.wins}W / ${perf.losses}L` },
-      { label: "Profit factor", value: perf.profit_factor ?? "—", sub: perf.profit_factor ? "gross win ÷ gross loss" : "no losses yet" },
-      { label: "Expectancy", value: `${perf.expectancy_r}R`, sub: "per trade, in R" },
-      { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `limit ${esc(p.limits.max_drawdown_pct)}%` },
-    ].map((t) => `<div class="tile">
-        <p class="label">${esc(t.label)}</p>
-        <p class="value ${t.cls || ""}">${esc(t.value)}</p>
-        <p class="sub">${esc(t.sub)}</p>
+      { label: t("tile.balance"), value: fmtMoney(p.balance), sub: t("tile.startedAt", { value: fmtMoney(p.starting_balance) }) },
+      { label: t("tile.equity"), value: fmtMoney(p.equity), sub: t("tile.openCount", { n: p.open_positions }) },
+      { label: t("tile.totalPnl"), value: pnl.text, cls: pnl.cls, sub: t("tile.tradesCount", { n: perf.total_trades }) },
+      { label: t("tile.today"), value: today.text, cls: today.cls, sub: t("tile.limitPct", { value: p.limits.max_daily_loss_pct }) },
+      { label: t("tile.winRate"), value: `${perf.win_rate}%`, sub: t("tile.winLoss", { w: perf.wins, l: perf.losses }) },
+      { label: t("tile.profitFactor"), value: perf.profit_factor ?? "—", sub: perf.profit_factor ? t("tile.grossRatio") : t("tile.noLossesYet") },
+      { label: t("tile.expectancy"), value: `${perf.expectancy_r}R`, sub: t("tile.perTradeR") },
+      { label: t("tile.maxDrawdown"), value: `${perf.max_drawdown_pct}%`, sub: t("tile.limitPct", { value: p.limits.max_drawdown_pct }) },
+    ].map((tile) => `<div class="tile">
+        <p class="label">${esc(tile.label)}</p>
+        <p class="value ${tile.cls || ""}">${esc(tile.value)}</p>
+        <p class="sub">${esc(tile.sub)}</p>
       </div>`).join("");
 
     renderHalt(p.halt, p.last_drawdown_reset);
@@ -740,63 +833,62 @@ async function loadPortfolio() {
     el("by-symbol").innerHTML = renderBySymbol(hist.data);
 
     el("limits").innerHTML = [
-      ["Risk per trade", `${esc(p.limits.risk_per_trade_pct)}%`],
-      ["Max open trades", p.limits.max_open_trades],
-      ["Max daily loss", `${esc(p.limits.max_daily_loss_pct)}%`],
-      ["Max drawdown", `${esc(p.limits.max_drawdown_pct)}%`],
-      ["Max combined risk", `${esc(p.limits.max_portfolio_heat_pct)}%`],
-      ["Longest losing streak", perf.longest_losing_streak],
-      ["Fees paid", fmtMoney(perf.total_fees)],
-    ].map(([label, value]) => `<div><div class="label">${label}</div><div class="value">${esc(value)}</div></div>`).join("");
+      [t("limits.riskPerTrade"), `${esc(p.limits.risk_per_trade_pct)}%`],
+      [t("limits.maxOpenTrades"), p.limits.max_open_trades],
+      [t("limits.maxDailyLoss"), `${esc(p.limits.max_daily_loss_pct)}%`],
+      [t("limits.maxDrawdown"), `${esc(p.limits.max_drawdown_pct)}%`],
+      [t("limits.maxCombinedRisk"), `${esc(p.limits.max_portfolio_heat_pct)}%`],
+      [t("limits.longestLosingStreak"), perf.longest_losing_streak],
+      [t("limits.feesPaid"), fmtMoney(perf.total_fees)],
+    ].map(([label, value]) => `<div><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`).join("");
 
     wireTooltips(document.querySelector('[data-view="portfolio"]'));
   } catch (error) {
-    el("tiles").innerHTML = `<p class="empty">Portfolio unavailable — ${esc(error.message)}</p>`;
+    el("tiles").innerHTML = `<p class="empty">${esc(t("portfolio.unavailable"))} — ${esc(error.message)}</p>`;
   }
 }
 
 async function loadSignals() {
   const timeframe = el("sig-tf").value;
-  el("signals").innerHTML = `<p class="empty">Scanning…</p>`;
+  el("signals").innerHTML = `<p class="empty">${esc(t("signals.scanning"))}</p>`;
   try {
     const payload = await getJson(`/signals?timeframe=${timeframe}`);
     const cards = payload.data.map(renderSignalCard);
     const failed = payload.failures.map((f) =>
       `<article class="card"><header class="card-head"><span class="sym">${esc(f.symbol)}</span>
-        <span class="tag stale">unavailable</span></header>
-        <div class="card-body"><p class="reason">${esc(f.code)}</p></div></article>`);
-    el("signals").innerHTML = [...cards, ...failed].join("") || `<p class="empty">No symbols configured.</p>`;
+        <span class="tag stale">${esc(t("signals.unavailableTag"))}</span></header>
+        <div class="card-body"><p class="reason">${esc(term(f.code))}</p></div></article>`);
+    el("signals").innerHTML = [...cards, ...failed].join("") || `<p class="empty">${esc(t("signals.noSymbols"))}</p>`;
   } catch (error) {
-    el("signals").innerHTML = `<p class="empty">Signals unavailable — ${esc(error.message)}</p>`;
+    el("signals").innerHTML = `<p class="empty">${esc(t("signals.unavailable"))} — ${esc(error.message)}</p>`;
   }
 }
 
 async function runTick() {
   const button = el("run-tick");
   button.disabled = true;
-  button.textContent = "Running…";
+  button.textContent = t("signals.running");
   try {
     const report = await getJson(`/bot/tick?timeframe=${el("sig-tf").value}`, { method: "POST" });
     const rejected = report.rejected.map((r) =>
-      `<li><strong>${esc(r.symbol)}</strong> — ${esc((r.reasons || []).join(", "))}${
+      `<li><strong><bdi>${esc(r.symbol)}</bdi></strong> — ${esc((r.reasons || []).map(term).join("، "))}${
         r.notes?.length ? `<br><span class="muted">${esc(r.notes.join(" "))}</span>` : ""}</li>`);
 
     el("tick-body").innerHTML = `
-      <p>Scanned ${report.scanned.length} symbols.
-         Opened <strong>${report.opened.length}</strong>, closed <strong>${report.closed.length}</strong>.</p>
-      ${report.opened.length ? `<p class="up">Opened: ${esc(report.opened.join(", "))}</p>` : ""}
-      ${report.closed.length ? `<p>Closed: ${report.closed.map((c) => `${esc(c.symbol)} ${esc(c.result)} ${esc(c.pnl)} (${esc(c.r)}R)`).join(", ")}</p>` : ""}
-      ${rejected.length ? `<p class="muted">Declined, with reasons:</p><ul>${rejected.join("")}</ul>` : ""}
-      ${report.errors.length ? `<p class="reason">Errors: ${report.errors.map((e) => `${esc(e.symbol)} (${esc(e.code)})`).join(", ")}</p>` : ""}`;
+      <p>${t("tick.scanned", { n: report.scanned.length, opened: report.opened.length, closed: report.closed.length })}</p>
+      ${report.opened.length ? `<p class="up">${esc(t("tick.opened", { list: report.opened.join("، ") }))}</p>` : ""}
+      ${report.closed.length ? `<p>${esc(t("tick.closed", { list: report.closed.map((c) => `${c.symbol} ${term(c.result)} ${c.pnl} (${c.r}R)`).join("، ") }))}</p>` : ""}
+      ${rejected.length ? `<p class="muted">${esc(t("tick.declined"))}</p><ul>${rejected.join("")}</ul>` : ""}
+      ${report.errors.length ? `<p class="reason">${esc(t("tick.errors", { list: report.errors.map((e) => `${e.symbol} (${term(e.code)})`).join("، ") }))}</p>` : ""}`;
     el("tick-report").hidden = false;
 
     await Promise.all([loadSignals(), loadPortfolio()]);
   } catch (error) {
-    el("tick-body").innerHTML = `<p class="reason">Tick failed — ${esc(error.message)}</p>`;
+    el("tick-body").innerHTML = `<p class="reason">${esc(t("tick.failed", { message: error.message }))}</p>`;
     el("tick-report").hidden = false;
   } finally {
     button.disabled = false;
-    button.textContent = "Run bot tick";
+    button.textContent = t("signals.runTick");
   }
 }
 
@@ -805,9 +897,9 @@ async function loadPositions() {
     const payload = await getJson("/bot/trades/open");
     el("positions").innerHTML = payload.data.length
       ? payload.data.map(renderPositionCard).join("")
-      : `<p class="empty">No open positions.</p>`;
+      : `<p class="empty">${esc(t("positions.none"))}</p>`;
   } catch (error) {
-    el("positions").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+    el("positions").innerHTML = `<p class="empty">${esc(t("common.unavailable", { message: error.message }))}</p>`;
   }
 }
 
@@ -820,24 +912,24 @@ async function loadHistory() {
   try {
     const payload = await getJson(`/bot/trades/history?${params}`);
     el("history-body").innerHTML = payload.data.length
-      ? payload.data.map((t) => {
-          const pnl = signed(t.pnl);
-          const r = signed(t.r_multiple, "R");
+      ? payload.data.map((row) => {
+          const pnl = signed(row.pnl);
+          const r = signed(row.r_multiple, "R");
           return `<tr>
-            <td class="sym">${esc(t.symbol)}</td>
-            <td><span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span></td>
-            <td class="num price">${fmtPrice(t.entry)}</td>
-            <td class="num price">${fmtPrice(t.exit_price)}</td>
+            <td class="sym">${esc(row.symbol)}</td>
+            <td><span class="tag ${row.direction === "LONG" ? "long" : "short"}">${esc(term(row.direction))}</span></td>
+            <td class="num price">${fmtPrice(row.entry)}</td>
+            <td class="num price">${fmtPrice(row.exit_price)}</td>
             <td class="num ${pnl.cls}">${pnl.text}</td>
             <td class="num ${r.cls}">${r.text}</td>
-            <td><span class="tag ${t.result === "WIN" ? "win" : t.result === "LOSS" ? "loss" : ""}">${esc(t.result || "—")}</span></td>
-            <td class="muted">${esc((t.exit_reason || "").replace(/_/g, " "))}</td>
-            <td class="num">${Number(t.confidence).toFixed(0)}</td>
+            <td><span class="tag ${row.result === "WIN" ? "win" : row.result === "LOSS" ? "loss" : ""}">${esc(row.result ? term(row.result) : "—")}</span></td>
+            <td class="muted">${esc(term(row.exit_reason || ""))}</td>
+            <td class="num">${Number(row.confidence).toFixed(0)}</td>
           </tr>`;
         }).join("")
-      : `<tr><td colspan="9" class="empty">No trades match these filters.</td></tr>`;
+      : `<tr><td colspan="9" class="empty">${esc(t("history.noMatch"))}</td></tr>`;
   } catch (error) {
-    el("history-body").innerHTML = `<tr><td colspan="9" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+    el("history-body").innerHTML = `<tr><td colspan="9" class="empty">${esc(t("common.unavailable", { message: error.message }))}</td></tr>`;
   }
 }
 
@@ -848,54 +940,54 @@ async function loadOverview() {
     const staleCount = summary.stale ?? 0;
 
     if (summary.feed_healthy) {
-      el("feed-state").textContent = "FEED LIVE";
+      el("feed-state").textContent = t("feed.live");
       el("feed-state").className = "badge badge-ok";
       setNotice(null);
     } else if (failures.length === 0 && staleCount > 0) {
-      el("feed-state").textContent = "FEED STALE";
+      el("feed-state").textContent = t("feed.stale");
       el("feed-state").className = "badge badge-bad";
-      setNotice("warn", `Showing last known prices for ${staleCount} of ${summary.tracked} symbols`,
-        `The providers are not responding. These values were real when they were fetched, but they are not current.`);
+      setNotice("warn", t("market.showingLast", { n: staleCount, total: summary.tracked }),
+        esc(t("market.providersDown")));
     } else {
-      el("feed-state").textContent = data.length ? "FEED PARTIAL" : "FEED DOWN";
+      el("feed-state").textContent = data.length ? t("feed.partial") : t("feed.down");
       el("feed-state").className = "badge badge-bad";
-      setNotice("bad", data.length ? `${failures.length} of ${summary.tracked} symbols could not be quoted` : "No symbol could be quoted",
-        `Missing symbols are listed as unavailable rather than filled in.`);
+      setNotice("bad", data.length ? t("market.someFailed", { n: failures.length, total: summary.tracked }) : t("market.noneQuoted"),
+        esc(t("market.missingListed")));
     }
 
     const rows = data.map((row) => {
-      const t = row.ticker;
-      const change = signed(t.change_24h_pct, "%");
+      const quote = row.ticker;
+      const change = signed(quote.change_24h_pct, "%");
       const tags = [];
-      if (row.meta.stale) tags.push('<span class="tag stale">stale</span>');
-      if (row.meta.fallback_used) tags.push('<span class="tag">fallback</span>');
+      if (row.meta.stale) tags.push(`<span class="tag stale">${esc(t("market.stale"))}</span>`);
+      if (row.meta.fallback_used) tags.push(`<span class="tag">${esc(t("market.fallback"))}</span>`);
       // The symbol and field hooks let the live feed update a row in place.
       // Rebuilding the table on every tick would destroy focus and scroll
       // position several times a minute.
-      return `<tr data-symbol="${esc(t.symbol)}">
-        <td class="sym">${esc(t.symbol)}</td>
-        <td class="num price" data-field="price">${fmtPrice(t.price)}</td>
+      return `<tr data-symbol="${esc(quote.symbol)}">
+        <td class="sym"><bdi>${esc(quote.symbol)}</bdi></td>
+        <td class="num price" data-field="price">${fmtPrice(quote.price)}</td>
         <td class="num ${change.cls}" data-field="change">${change.text}</td>
-        <td class="num price">${fmtPrice(t.high_24h)}</td>
-        <td class="num price">${fmtPrice(t.low_24h)}</td>
-        <td class="num">${fmtCompact(t.volume_24h)}</td>
+        <td class="num price">${fmtPrice(quote.high_24h)}</td>
+        <td class="num price">${fmtPrice(quote.low_24h)}</td>
+        <td class="num">${fmtCompact(quote.volume_24h)}</td>
         <td>${esc(row.meta.source)} ${tags.join(" ")}</td>
       </tr>`;
     });
 
     for (const f of failures) {
-      rows.push(`<tr class="row-failed"><td class="sym">${esc(f.symbol)}</td>
-        <td colspan="6" class="reason">unavailable — ${esc(f.code)}</td></tr>`);
+      rows.push(`<tr class="row-failed"><td class="sym"><bdi>${esc(f.symbol)}</bdi></td>
+        <td colspan="6" class="reason">${esc(t("common.unavailableWord"))} — ${esc(term(f.code))}</td></tr>`);
     }
 
-    el("overview-body").innerHTML = rows.join("") || `<tr><td colspan="7" class="empty">No symbols configured.</td></tr>`;
-    el("updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
+    el("overview-body").innerHTML = rows.join("") || `<tr><td colspan="7" class="empty">${esc(t("signals.noSymbols"))}</td></tr>`;
+    el("updated").textContent = t("market.updated", { time: fmtTime(Date.now()) });
   } catch (error) {
-    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").textContent = t("feed.down");
     el("feed-state").className = "badge badge-bad";
-    el("overview-body").innerHTML = `<tr><td colspan="7" class="empty">No market data.</td></tr>`;
-    setNotice("bad", "Market data is unavailable",
-      `${esc(error.message)}<br />No prices are shown, because none could be obtained.`);
+    el("overview-body").innerHTML = `<tr><td colspan="7" class="empty">${esc(t("market.noData"))}</td></tr>`;
+    setNotice("bad", t("market.dataUnavailable"),
+      t("market.noneShown", { message: esc(error.message) }));
   }
 }
 
@@ -904,13 +996,13 @@ async function loadCandles() {
   const timeframe = el("timeframe").value;
   if (!symbol) return;
 
-  el("chart-wrap").innerHTML = `<p class="empty">Loading…</p>`;
+  el("chart-wrap").innerHTML = `<p class="empty">${esc(t("common.loading"))}</p>`;
   el("chart-meta").textContent = "";
   try {
     const payload = await getJson(`/market/${encodeURIComponent(symbol)}/candles?timeframe=${timeframe}&limit=120`);
     const candles = payload.data ?? [];
     if (candles.length === 0) {
-      el("chart-wrap").innerHTML = `<p class="empty">No candles returned.</p>`;
+      el("chart-wrap").innerHTML = `<p class="empty">${esc(t("market.noCandles"))}</p>`;
       return;
     }
     el("chart-wrap").innerHTML = renderCandles(candles);
@@ -918,20 +1010,19 @@ async function loadCandles() {
     const m = payload.meta;
     const forming = candles.filter((c) => !c.closed).length;
     el("chart-meta").textContent =
-      `${candles.length} bars · ${symbol} ${timeframe} · source ${m.source}` +
-      `${m.cached ? " · cached" : ""}${m.stale ? " · STALE" : ""}${forming ? ` · ${forming} still forming` : ""}`;
+      t("market.chartMeta", { n: candles.length, symbol, tf: timeframe, source: m.source }) +
+      `${m.cached ? t("market.cached") : ""}${m.stale ? t("market.staleFlag") : ""}` +
+      `${forming ? t("market.forming", { n: forming }) : ""}`;
   } catch (error) {
-    el("chart-wrap").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+    el("chart-wrap").innerHTML = `<p class="empty">${esc(t("common.unavailable", { message: error.message }))}</p>`;
   }
 }
 
 /* ---------- analytics ---------- */
 
-const STRENGTH_LABEL = {
-  insufficient: "not enough data",
-  suggestive: "suggestive",
-  supported: "supported",
-};
+const strengthLabel = (key) =>
+  ({ insufficient: t("strength.insufficient"), suggestive: t("strength.suggestive"),
+     supported: t("strength.supported") }[key] || term(key));
 
 async function loadAnalytics() {
   await Promise.all([loadInsights(), loadBreakdown(), loadBenchmark()]);
@@ -944,16 +1035,16 @@ async function loadInsights() {
       <article class="insight insight-${esc(o.strength)}">
         <header>
           <span class="tag">${esc(o.topic)}</span>
-          <span class="tag strength">${esc(STRENGTH_LABEL[o.strength] || o.strength)}</span>
+          <span class="tag strength">${esc(strengthLabel(o.strength))}</span>
           <span class="muted">n = ${esc(o.sample)}</span>
         </header>
         <p class="finding">${esc(o.finding)}</p>
         <p class="muted">${esc(o.evidence)}</p>
-        <p class="consider"><strong>Consider:</strong> ${esc(o.consider)}</p>
-        <p class="muted applied">Applied automatically: <strong>no</strong>. ${esc(o.requires)}</p>
+        <p class="consider"><strong>${esc(t("analytics.consider"))}</strong> ${esc(o.consider)}</p>
+        <p class="muted applied">${t("analytics.appliedAuto")} ${esc(o.requires)}</p>
       </article>`).join("");
   } catch (error) {
-    el("insights").innerHTML = `<p class="empty">Unavailable — ${esc(error.message)}</p>`;
+    el("insights").innerHTML = `<p class="empty">${esc(t("common.unavailable", { message: error.message }))}</p>`;
   }
 }
 
@@ -964,10 +1055,7 @@ async function loadBreakdown() {
   try {
     const payload = await getJson(`/analytics/breakdown?by=${by}`);
     el("an-floor").textContent =
-      `${payload.total_closed} closed trades. A group needs ${payload.min_sample} ` +
-      `before it is ranked; smaller groups are still shown, set in italic and ` +
-      `marked THIN, because hiding them would distort the picture as surely ` +
-      `as ranking them would.`;
+      t("analytics.floor", { n: payload.total_closed, min: payload.min_sample });
 
     el("an-body").innerHTML = payload.data.length
       ? payload.data.map((g) => {
@@ -979,7 +1067,7 @@ async function loadBreakdown() {
             ? `${g.win_rate_ci[0]}–${g.win_rate_ci[1]}%`
             : "—";
           return `<tr class="${g.reliable ? "" : "thin"}" ${g.note ? `title="${esc(g.note)}"` : ""}>
-            <td class="sym">${esc(g.key)}${g.reliable ? "" : ` <span class="tag thin-tag">thin</span>`}</td>
+            <td class="sym"><bdi>${esc(term(g.key))}</bdi>${g.reliable ? "" : ` <span class="tag thin-tag">${esc(t("analytics.thin"))}</span>`}</td>
             <td class="num">${esc(p.total_trades)}</td>
             <td class="num">${esc(g.share_pct)}%</td>
             <td class="num">${g.win_rate_ci ? `${esc(p.win_rate)}%` : "—"}</td>
@@ -990,9 +1078,9 @@ async function loadBreakdown() {
             <td class="num">${esc(p.profit_factor ?? "—")}</td>
           </tr>` + (g.note ? `<tr class="note-row"><td colspan="9" class="muted">${esc(g.note)}</td></tr>` : "");
         }).join("")
-      : `<tr><td colspan="9" class="empty">No closed trades yet.</td></tr>`;
+      : `<tr><td colspan="9" class="empty">${esc(t("common.noClosedTrades"))}</td></tr>`;
   } catch (error) {
-    el("an-body").innerHTML = `<tr><td colspan="9" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+    el("an-body").innerHTML = `<tr><td colspan="9" class="empty">${esc(t("common.unavailable", { message: error.message }))}</td></tr>`;
   }
 }
 
@@ -1008,7 +1096,7 @@ async function loadBenchmark() {
       const hold = signed(b.hold_return_pct, "%");
       const pnl = signed(b.strategy_pnl);
       const acct = signed(b.strategy_return_pct, "%");
-      const window = `${new Date(b.window.from).toLocaleDateString()} → ${new Date(b.window.to).toLocaleDateString()}`;
+      const window = `${fmtDate(b.window.from)} → ${fmtDate(b.window.to)}`;
       return `<tr>
         <td class="sym">${esc(b.symbol)}</td>
         <td class="num">${esc(b.trades)}</td>
@@ -1020,12 +1108,12 @@ async function loadBenchmark() {
     });
 
     const failed = (payload.failures || []).map((f) =>
-      `<tr class="note-row"><td colspan="6" class="muted">${esc(f.symbol)} — price history unavailable (${esc(f.code)}), so no comparison is shown.</td></tr>`);
+      `<tr class="note-row"><td colspan="6" class="muted">${esc(t("analytics.noHistory", { symbol: f.symbol, code: term(f.code) }))}</td></tr>`);
 
     el("benchmark-body").innerHTML = [...rows, ...failed].join("")
-      || `<tr><td colspan="6" class="empty">No closed trades to compare yet.</td></tr>`;
+      || `<tr><td colspan="6" class="empty">${esc(t("analytics.noCompare"))}</td></tr>`;
   } catch (error) {
-    el("benchmark-body").innerHTML = `<tr><td colspan="6" class="empty">Unavailable — ${esc(error.message)}</td></tr>`;
+    el("benchmark-body").innerHTML = `<tr><td colspan="6" class="empty">${esc(t("common.unavailable", { message: error.message }))}</td></tr>`;
   }
 }
 
@@ -1041,12 +1129,14 @@ async function runBacktest() {
 
   const button = el("run-backtest");
   button.disabled = true;
-  button.textContent = "Replaying…";
+  button.textContent = t("backtest.replaying");
   el("bt-status").hidden = false;
   el("bt-status").className = "notice info";
-  el("bt-status").innerHTML = `<strong>Replaying ${
-    scope === "portfolio" ? "the whole portfolio" : esc(symbol)
-  } ${esc(timeframe)} over ${esc(bars)} bars…</strong>`;
+  el("bt-status").innerHTML = t("backtest.replayingOf", {
+    what: scope === "portfolio" ? esc(t("backtest.thePortfolio")) : esc(symbol),
+    tf: esc(timeframe),
+    bars: esc(bars),
+  });
 
   try {
     const path = scope === "portfolio"
@@ -1057,10 +1147,10 @@ async function runBacktest() {
   } catch (error) {
     el("bt-results").hidden = true;
     el("bt-status").className = "notice bad";
-    el("bt-status").innerHTML = `<strong>The replay could not run</strong><br />${esc(error.message)}`;
+    el("bt-status").innerHTML = `<strong>${esc(t("backtest.couldNotRun"))}</strong><br />${esc(error.message)}`;
   } finally {
     button.disabled = false;
-    button.textContent = "Run replay";
+    button.textContent = t("backtest.run");
   }
 }
 
@@ -1077,60 +1167,65 @@ function renderBacktest(r) {
   const caveats = (r.caveats || []).map((c) => `<li>${esc(c)}</li>`).join("");
   el("bt-status").className = caveats ? "notice warn" : "notice info";
   el("bt-status").innerHTML =
-    `<strong>Simulated result — ${
-      portfolio ? `${r.symbols.length} symbols on one account` : esc(r.symbol)
-    } ${esc(r.timeframe)}</strong><br />` +
+    t("backtest.simulated", {
+      what: portfolio ? esc(t("backtest.symbolsOnAccount", { n: r.symbols.length })) : esc(r.symbol),
+      tf: esc(r.timeframe),
+    }) +
     (portfolio
-      ? `${esc(r.bars_replayed)} bars replayed across ${esc(r.symbols.join(", "))} · ` +
-        `${esc(r.signals_generated)} qualified · ${esc(perf.total_trades)} trades · ` +
-        `peak ${esc(r.peak_open_positions)} open at once`
-      : `${esc(r.meta.bars_received)} bars received of ${esc(r.meta.bars_requested)} asked for · ` +
-        `${esc(r.bars_analysed)} reached the analyser · ${esc(r.signals_generated)} qualified · ` +
-        `${esc(perf.total_trades)} trades taken · source ${esc(r.meta.source)}`) +
+      ? esc(t("backtest.portfolioLine", {
+          bars: r.bars_replayed, symbols: r.symbols.join("، "),
+          qualified: r.signals_generated, trades: perf.total_trades,
+          peak: r.peak_open_positions,
+        }))
+      : esc(t("backtest.symbolLine", {
+          received: r.meta.bars_received, requested: r.meta.bars_requested,
+          analysed: r.bars_analysed, qualified: r.signals_generated,
+          trades: perf.total_trades, source: r.meta.source,
+        }))) +
     (caveats ? `<ul>${caveats}</ul>` : "");
 
   el("bt-tiles").innerHTML = [
-    { label: "Strategy return", value: ret.text, cls: ret.cls, sub: `from ${fmtMoney(r.starting_balance)} · risk ${r.risk_pct}%/trade` },
-    { label: "Buy and hold", value: hold.text, cls: hold.cls,
-      sub: portfolio ? "equal-weight basket, same window" : "same window, no trading" },
-    { label: "Versus holding", value: vs.text, cls: vs.cls, sub: beat >= 0 ? "the strategy added this" : "holding would have won" },
-    { label: "Trades", value: perf.total_trades, sub: `${perf.wins}W / ${perf.losses}L` },
-    { label: "Win rate", value: `${perf.win_rate}%`, sub: `longest losing streak ${perf.longest_losing_streak}` },
-    { label: "Profit factor", value: perf.profit_factor ?? "—", sub: perf.profit_factor ? "gross win ÷ gross loss" : "no losses recorded" },
-    { label: "Expectancy", value: `${perf.expectancy_r}R`, sub: "per trade, in R" },
-    { label: "Max drawdown", value: `${perf.max_drawdown_pct}%`, sub: `fees paid ${fmtMoney(perf.total_fees)}` },
-  ].map((t) => `<div class="tile">
-      <p class="label">${t.label}</p>
-      <p class="value ${t.cls || ""}">${esc(t.value)}</p>
-      <p class="sub">${esc(t.sub)}</p>
+    { label: t("backtest.strategyReturn"), value: ret.text, cls: ret.cls, sub: t("backtest.fromRisk", { balance: fmtMoney(r.starting_balance), pct: r.risk_pct }) },
+    { label: t("backtest.buyHold"), value: hold.text, cls: hold.cls,
+      sub: portfolio ? t("backtest.basket") : t("backtest.sameWindowNoTrade") },
+    { label: t("backtest.versusHolding"), value: vs.text, cls: vs.cls, sub: beat >= 0 ? t("backtest.strategyAdded") : t("backtest.holdingWon") },
+    { label: t("analytics.trades"), value: perf.total_trades, sub: t("tile.winLoss", { w: perf.wins, l: perf.losses }) },
+    { label: t("tile.winRate"), value: `${perf.win_rate}%`, sub: t("backtest.longestStreak", { n: perf.longest_losing_streak }) },
+    { label: t("tile.profitFactor"), value: perf.profit_factor ?? "—", sub: perf.profit_factor ? t("tile.grossRatio") : t("tile.noLossesRecorded") },
+    { label: t("tile.expectancy"), value: `${perf.expectancy_r}R`, sub: t("tile.perTradeR") },
+    { label: t("tile.maxDrawdown"), value: `${perf.max_drawdown_pct}%`, sub: t("tile.feesPaid", { value: fmtMoney(perf.total_fees) }) },
+  ].map((tile) => `<div class="tile">
+      <p class="label">${esc(tile.label)}</p>
+      <p class="value ${tile.cls || ""}">${esc(tile.value)}</p>
+      <p class="sub">${esc(tile.sub)}</p>
     </div>`).join("");
 
   el("bt-equity").innerHTML = renderEquity(r.equity, num(r.starting_balance));
   wireTooltips(el("bt-equity"));
 
-  el("bt-count").textContent = `${r.trades.length} closed`;
+  el("bt-count").textContent = t("backtest.closedN", { n: r.trades.length });
   // The symbol column only earns its place when there is more than one symbol.
   document.querySelectorAll("#bt-trades .symbol-col").forEach((cell) => {
     cell.hidden = !portfolio;
   });
   el("bt-trades-body").innerHTML = r.trades.length
-    ? r.trades.map((t) => {
-        const pnl = signed(t.pnl);
-        const rr = signed(t.r_multiple, "R");
+    ? r.trades.map((row) => {
+        const pnl = signed(row.pnl);
+        const rr = signed(row.r_multiple, "R");
         return `<tr>
-          <td class="muted">${t.opened_at ? esc(new Date(t.opened_at).toLocaleString()) : "—"}</td>
-          <td class="sym symbol-col" ${portfolio ? "" : "hidden"}>${esc(t.symbol || "—")}</td>
-          <td><span class="tag ${t.direction === "LONG" ? "long" : "short"}">${esc(t.direction)}</span></td>
-          <td class="num price">${fmtPrice(t.entry)}</td>
-          <td class="num price">${fmtPrice(t.exit)}</td>
+          <td class="muted">${esc(fmtDateTime(row.opened_at))}</td>
+          <td class="sym symbol-col" ${portfolio ? "" : "hidden"}>${esc(row.symbol || "—")}</td>
+          <td><span class="tag ${row.direction === "LONG" ? "long" : "short"}">${esc(term(row.direction))}</span></td>
+          <td class="num price">${fmtPrice(row.entry)}</td>
+          <td class="num price">${fmtPrice(row.exit)}</td>
           <td class="num ${pnl.cls}">${pnl.text}</td>
           <td class="num ${rr.cls}">${rr.text}</td>
-          <td><span class="tag ${t.result === "WIN" ? "win" : t.result === "LOSS" ? "loss" : ""}">${esc(t.result || "—")}</span></td>
-          <td class="muted">${esc((t.exit_reason || "").replace(/_/g, " "))}</td>
-          <td class="num">${Number(t.confidence).toFixed(0)}</td>
+          <td><span class="tag ${row.result === "WIN" ? "win" : row.result === "LOSS" ? "loss" : ""}">${esc(row.result ? term(row.result) : "—")}</span></td>
+          <td class="muted">${esc(term(row.exit_reason || ""))}</td>
+          <td class="num">${Number(row.confidence).toFixed(0)}</td>
         </tr>`;
       }).join("")
-    : `<tr><td colspan="10" class="empty">The strategy took no trade in this window. That is a result, not a failure — it declined every setup on offer.</td></tr>`;
+    : `<tr><td colspan="10" class="empty">${esc(t("backtest.noTrades"))}</td></tr>`;
 
   renderRefusals(portfolio ? r.refusals : null);
   el("bt-results").hidden = false;
@@ -1156,15 +1251,13 @@ function renderRefusals(refusals) {
 
   node.hidden = false;
   node.innerHTML = `
-    <h3>Why it declined</h3>
+    <h3>${esc(t("backtest.whyDeclined"))}</h3>
     <ul>${rows.map(([reason, count]) => `<li>
       <span class="tag ${ACCOUNT.has(reason) ? "account" : ""}">${
-        ACCOUNT.has(reason) ? "account" : "setup"}</span>
-      <strong>${esc(count)}</strong> ${esc(reason.replace(/_/g, " "))}
+        esc(ACCOUNT.has(reason) ? t("backtest.account") : t("backtest.setup"))}</span>
+      <strong>${esc(count)}</strong> ${esc(term(reason))}
     </li>`).join("")}</ul>
-    <p class="muted">A setup refusal means nothing qualified. An account refusal
-    means the trade was good enough and the book would not carry it — which is
-    the only thing a single-symbol replay can never tell you.</p>`;
+    <p class="muted">${esc(t("backtest.refusalNote"))}</p>`;
 }
 
 /* ---------- live feed ---------- */
@@ -1217,7 +1310,7 @@ function connectLive() {
 
 function applyLiveFrame(frame) {
   if (frame.kind === "error") {
-    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").textContent = t("feed.down");
     el("feed-state").className = "badge badge-bad";
     return;
   }
@@ -1227,20 +1320,20 @@ function applyLiveFrame(frame) {
   const down = (frame.unavailable || []).length;
 
   if (frame.feed_healthy) {
-    el("feed-state").textContent = "LIVE";
+    el("feed-state").textContent = t("feed.liveShort");
     el("feed-state").className = "badge badge-ok";
     setNotice(null);
   } else if (frame.prices.length) {
-    el("feed-state").textContent = stale ? "LIVE · STALE" : "LIVE · PARTIAL";
+    el("feed-state").textContent = stale ? t("feed.liveStale") : t("feed.livePartial");
     el("feed-state").className = "badge badge-bad";
   } else {
-    el("feed-state").textContent = "FEED DOWN";
+    el("feed-state").textContent = t("feed.down");
     el("feed-state").className = "badge badge-bad";
   }
   if (down) {
-    setNotice("warn", `${down} of ${down + frame.prices.length} symbols unavailable`,
-      frame.unavailable.map((u) => `${esc(u.symbol)} (${esc(u.code)})`).join(", ") +
-      "<br />No price is shown for these, because none could be obtained.");
+    setNotice("warn", t("market.someUnavailable", { n: down, total: down + frame.prices.length }),
+      frame.unavailable.map((u) => `<bdi>${esc(u.symbol)}</bdi> (${esc(term(u.code))})`).join("، ") +
+      t("market.noPriceShown"));
   }
 
   // Prices are written into the rows already on screen rather than rebuilding
@@ -1259,7 +1352,7 @@ function applyLiveFrame(frame) {
     }
   }
 
-  el("updated").textContent = `updated ${new Date(frame.at).toLocaleTimeString()}`;
+  el("updated").textContent = t("market.updated", { time: fmtTime(frame.at) });
 
   const account = frame.account;
   if (account && state.view === "portfolio") {
@@ -1307,21 +1400,46 @@ function show(view) {
   LOADERS[view]?.();
 }
 
+/** Re-render everything that is on screen in the new language.
+
+    The static labels are swapped by the dictionary, but every table row, card
+    and chart was built as a string at fetch time — so the view has to be
+    rebuilt rather than relabelled. Cheap: the data is already cached upstream
+    and the backtest is deliberately excluded, since a replay costs real CPU and
+    must stay something the reader asks for. */
+function switchLang(next) {
+  window.I18N.setLang(next);
+  document.querySelectorAll("[data-i18n-swap]").forEach((node) => {
+    node.textContent = t(node.dataset.i18nSwap);
+  });
+  loadOverview();
+  LOADERS[state.view]?.();
+}
+
 async function boot() {
+  // Whatever the inline head script settled on: adopt it without writing it
+  // back, so a first visit stays unpinned until the reader actually chooses.
+  window.I18N.setLang(window.I18N.stored() || "ar", { persist: false });
+
   try {
     const coins = await getJson("/market/symbols");
     state.symbols = coins.map((c) => c.symbol);
     const options = state.symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
     el("symbol").innerHTML = options;
-    el("f-symbol").innerHTML = `<option value="">All symbols</option>${options}`;
+    el("f-symbol").innerHTML =
+      `<option value="" data-i18n-swap="history.allSymbols">${esc(t("history.allSymbols"))}</option>${options}`;
     el("bt-symbol").innerHTML = options;
   } catch {
-    el("symbol").innerHTML = `<option value="">unavailable</option>`;
-    el("bt-symbol").innerHTML = `<option value="">unavailable</option>`;
+    const none = `<option value="" data-i18n-swap="common.unavailableWord">${esc(t("common.unavailableWord"))}</option>`;
+    el("symbol").innerHTML = none;
+    el("bt-symbol").innerHTML = none;
   }
 
   document.querySelectorAll(".tab").forEach((tab) =>
     tab.addEventListener("click", () => show(tab.dataset.view)));
+
+  el("lang-toggle").addEventListener("click", () =>
+    switchLang(window.I18N.lang() === "ar" ? "en" : "ar"));
 
   el("run-tick").addEventListener("click", runTick);
   el("run-backtest").addEventListener("click", runBacktest);

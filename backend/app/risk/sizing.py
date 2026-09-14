@@ -53,6 +53,10 @@ class PositionSize:
             "stop_distance_pct": str(self.stop_distance_pct),
             "capped": self.capped,
             "cap_note": self.cap_note,
+            # The parts the note is built from. A translated screen has to be
+            # able to state this fact itself; parsing it back out of the
+            # English sentence would be the alternative.
+            "requested_risk_amount": str(self.requested_risk_amount),
         }
 
     @property
@@ -184,6 +188,10 @@ class TradePlan:
     reward_risk: Decimal
     size: PositionSize
     invalidation: str
+    # How many ATRs the stop sits away, when volatility was measurable. The
+    # invalidation sentence is built from it, and a second language needs the
+    # number rather than the finished English clause.
+    atr_multiple: Decimal | None = None
 
     @property
     def take_profit(self) -> Decimal:
@@ -282,6 +290,7 @@ class TradePlan:
             "reward_risk": str(self.reward_risk),
             "blended_reward_risk": str(self.blended_reward_risk),
             "invalidation": self.invalidation,
+            "atr_multiple": str(self.atr_multiple) if self.atr_multiple is not None else None,
             "size": self.size.to_dict(),
             "targets": ladder,
             "max_profit": ladder[-1]["banked"] if ladder else "0",
@@ -367,6 +376,9 @@ def build_plan(
         targets=tuple(targets),
         reward_risk=reward_risk,
         size=size,
+        atr_multiple=(
+            (distance / atr).quantize(Decimal("0.1")) if atr is not None and atr > 0 else None
+        ),
         invalidation=(
             f"Close beyond {format_price(stop)} invalidates the idea"
             if atr is None or atr <= 0

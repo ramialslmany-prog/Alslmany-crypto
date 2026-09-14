@@ -1,35 +1,51 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Alslmany · Paper Trading Desk</title>
+<title>السلماني · منصة تداول ورقي</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="./styles.css" />
+<script>
+  /* Before the first paint, not after. The markup below ships Arabic, so a
+     reader who chose English would otherwise see Arabic render and then flip —
+     and the layout would visibly swap sides with it. Inline and synchronous is
+     the only placement that runs early enough to prevent that. */
+  try {
+    var saved = localStorage.getItem("alslmany.lang");
+    if (saved === "en") {
+      document.documentElement.lang = "en";
+      document.documentElement.dir = "ltr";
+    }
+  } catch (e) { /* blocked storage: Arabic, as the markup already is */ }
+</script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="mark" aria-hidden="true"></span>
       <div>
-        <h1>Alslmany</h1>
-        <p class="sub">Analysis &amp; paper trading</p>
+        <h1>السلماني</h1>
+        <p class="sub" data-i18n="app.tagline">تحليل وتداول ورقي</p>
       </div>
     </div>
-    <nav class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" class="tab is-active" data-view="portfolio" aria-selected="true">Portfolio</button>
-      <button role="tab" class="tab" data-view="signals" aria-selected="false">Signals</button>
-      <button role="tab" class="tab" data-view="positions" aria-selected="false">Open</button>
-      <button role="tab" class="tab" data-view="history" aria-selected="false">History</button>
-      <button role="tab" class="tab" data-view="market" aria-selected="false">Market</button>
-      <button role="tab" class="tab" data-view="analytics" aria-selected="false">Analytics</button>
-      <button role="tab" class="tab" data-view="backtest" aria-selected="false">Backtest</button>
+    <nav class="tabs" role="tablist" data-i18n-label="app.sections" aria-label="الأقسام">
+      <button role="tab" class="tab is-active" data-view="portfolio" aria-selected="true" data-i18n="tab.portfolio">المحفظة</button>
+      <button role="tab" class="tab" data-view="signals" aria-selected="false" data-i18n="tab.signals">الإشارات</button>
+      <button role="tab" class="tab" data-view="positions" aria-selected="false" data-i18n="tab.positions">المفتوحة</button>
+      <button role="tab" class="tab" data-view="history" aria-selected="false" data-i18n="tab.history">السجل</button>
+      <button role="tab" class="tab" data-view="market" aria-selected="false" data-i18n="tab.market">السوق</button>
+      <button role="tab" class="tab" data-view="analytics" aria-selected="false" data-i18n="tab.analytics">التحليلات</button>
+      <button role="tab" class="tab" data-view="backtest" aria-selected="false" data-i18n="tab.backtest">الاختبار التاريخي</button>
     </nav>
     <div class="topbar-right">
-      <span class="badge badge-paper" title="This platform holds no exchange credentials and has no order-placement code path.">
-        PAPER ONLY
+      <button id="lang-toggle" type="button" class="lang-toggle"
+              data-i18n="app.switchLang" data-i18n-title="app.switchLangTitle" title="Switch to English">English</button>
+      <span class="badge badge-paper" data-i18n-title="app.paperTitle"
+            title="هذه المنصّة لا تحمل أي مفاتيح منصّات تداول، ولا يوجد فيها مسار برمجي لإرسال أمر.">
+        <span data-i18n="app.paperOnly">ورقي فقط</span>
       </span>
-      <span id="feed-state" class="badge badge-unknown">CHECKING</span>
+      <span id="feed-state" class="badge badge-unknown" data-i18n="app.checking">جارٍ الفحص</span>
     </div>
   </header>
 
@@ -43,43 +59,43 @@
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Equity curve</h2>
-          <span class="muted">Balance after each closed trade</span>
+          <h2 data-i18n="portfolio.equityCurve">منحنى رأس المال</h2>
+          <span class="muted" data-i18n="portfolio.equitySub">الرصيد بعد كل صفقة مغلقة</span>
         </div>
-        <div id="equity" class="chart-wrap"><p class="empty">Loading…</p></div>
+        <div id="equity" class="chart-wrap"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
 
       <div class="grid-2">
         <div class="panel">
-          <div class="panel-head"><h2>Outcome distribution</h2></div>
-          <div id="outcomes" class="chart-wrap"><p class="empty">Loading…</p></div>
+          <div class="panel-head"><h2 data-i18n="portfolio.outcomes">توزيع النتائج</h2></div>
+          <div id="outcomes" class="chart-wrap"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
         </div>
         <div class="panel">
-          <div class="panel-head"><h2>Result by symbol</h2></div>
-          <div id="by-symbol" class="chart-wrap"><p class="empty">Loading…</p></div>
+          <div class="panel-head"><h2 data-i18n="portfolio.bySymbol">النتيجة حسب الرمز</h2></div>
+          <div id="by-symbol" class="chart-wrap"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
         </div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Concentration</h2>
-          <span class="muted">What the open book loses together</span>
+          <h2 data-i18n="portfolio.concentration">التركّز</h2>
+          <span class="muted" data-i18n="portfolio.concentrationSub">ما تخسره المراكز المفتوحة معاً</span>
         </div>
-        <div id="heat" class="heat"><p class="empty">Loading&hellip;</p></div>
+        <div id="heat" class="heat"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Alerts</h2>
-          <span class="muted">Telegram &mdash; sends only, never receives</span>
+          <h2 data-i18n="portfolio.alerts">التنبيهات</h2>
+          <span class="muted" data-i18n="portfolio.alertsSub">تيليجرام — يُرسل فقط ولا يستقبل أبداً</span>
         </div>
-        <div id="alerts" class="alerts"><p class="empty">Loading&hellip;</p></div>
+        <div id="alerts" class="alerts"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Risk limits</h2>
-          <span class="muted">Compiled in — shown as facts, not toggles</span>
+          <h2 data-i18n="portfolio.limits">حدود المخاطرة</h2>
+          <span class="muted" data-i18n="portfolio.limitsSub">مضمّنة في الكود — تُعرض كحقائق لا كمفاتيح</span>
         </div>
         <div id="limits" class="limits"></div>
       </div>
@@ -89,22 +105,22 @@
     <section class="view" data-view="signals">
       <div class="panel">
         <div class="panel-head">
-          <h2>AI signals</h2>
+          <h2 data-i18n="signals.title">إشارات التحليل</h2>
           <div class="panel-actions">
-            <label for="sig-tf" class="sr-only">Timeframe</label>
+            <label for="sig-tf" class="sr-only" data-i18n="signals.timeframe">الإطار الزمني</label>
             <select id="sig-tf">
               <option value="15m">15m</option>
               <option value="1h" selected>1h</option>
               <option value="4h">4h</option>
               <option value="1d">1D</option>
             </select>
-            <button id="run-tick" type="button" class="primary">Run bot tick</button>
+            <button id="run-tick" type="button" class="primary" data-i18n="signals.runTick">شغّل دورة البوت</button>
           </div>
         </div>
-        <div id="signals" class="cards"><p class="empty">Loading…</p></div>
+        <div id="signals" class="cards"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
       <div id="tick-report" class="panel" hidden>
-        <div class="panel-head"><h2>Last tick</h2></div>
+        <div class="panel-head"><h2 data-i18n="signals.lastTick">آخر دورة</h2></div>
         <div id="tick-body" class="tick-body"></div>
       </div>
     </section>
@@ -112,8 +128,8 @@
     <!-- ============ OPEN POSITIONS ============ -->
     <section class="view" data-view="positions">
       <div class="panel">
-        <div class="panel-head"><h2>Open positions</h2></div>
-        <div id="positions" class="cards"><p class="empty">Loading…</p></div>
+        <div class="panel-head"><h2 data-i18n="positions.title">المراكز المفتوحة</h2></div>
+        <div id="positions" class="cards"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
     </section>
 
@@ -121,21 +137,21 @@
     <section class="view" data-view="history">
       <div class="panel">
         <div class="panel-head">
-          <h2>Trade history</h2>
+          <h2 data-i18n="history.title">سجل الصفقات</h2>
           <div class="panel-actions">
-            <label for="f-symbol" class="sr-only">Symbol</label>
-            <select id="f-symbol"><option value="">All symbols</option></select>
-            <label for="f-direction" class="sr-only">Direction</label>
+            <label for="f-symbol" class="sr-only" data-i18n="history.symbol">الرمز</label>
+            <select id="f-symbol"><option value="" data-i18n="history.allSymbols">كل الرموز</option></select>
+            <label for="f-direction" class="sr-only" data-i18n="history.direction">الاتجاه</label>
             <select id="f-direction">
-              <option value="">Long &amp; short</option>
-              <option value="LONG">Long</option>
-              <option value="SHORT">Short</option>
+              <option value="" data-i18n="history.longShort">شراء وبيع</option>
+              <option value="LONG" data-i18n="history.long">شراء</option>
+              <option value="SHORT" data-i18n="history.short">بيع</option>
             </select>
-            <label for="f-result" class="sr-only">Result</label>
+            <label for="f-result" class="sr-only" data-i18n="history.result">النتيجة</label>
             <select id="f-result">
-              <option value="">Wins &amp; losses</option>
-              <option value="WIN">Wins</option>
-              <option value="LOSS">Losses</option>
+              <option value="" data-i18n="history.winsLosses">أرباح وخسائر</option>
+              <option value="WIN" data-i18n="history.wins">الأرباح</option>
+              <option value="LOSS" data-i18n="history.losses">الخسائر</option>
             </select>
           </div>
         </div>
@@ -143,19 +159,19 @@
           <table id="history">
             <thead>
               <tr>
-                <th scope="col">Symbol</th>
-                <th scope="col">Side</th>
-                <th scope="col" class="num">Entry</th>
-                <th scope="col" class="num">Exit</th>
-                <th scope="col" class="num">P/L</th>
-                <th scope="col" class="num">R</th>
-                <th scope="col">Result</th>
-                <th scope="col">Exit reason</th>
-                <th scope="col" class="num">Conf.</th>
+                <th scope="col" data-i18n="history.symbol">الرمز</th>
+                <th scope="col" data-i18n="history.side">الجهة</th>
+                <th scope="col" class="num" data-i18n="signals.entry">الدخول</th>
+                <th scope="col" class="num" data-i18n="history.exit">الخروج</th>
+                <th scope="col" class="num" data-i18n="history.pnl">الربح/الخسارة</th>
+                <th scope="col" class="num" data-i18n="history.r">R</th>
+                <th scope="col" data-i18n="history.result">النتيجة</th>
+                <th scope="col" data-i18n="history.exitReason">سبب الخروج</th>
+                <th scope="col" class="num" data-i18n="history.conf">الثقة</th>
               </tr>
             </thead>
             <tbody id="history-body">
-              <tr><td colspan="9" class="empty">Loading…</td></tr>
+              <tr><td colspan="9" class="empty" data-i18n="common.loading">جارٍ التحميل…</td></tr>
             </tbody>
           </table>
         </div>
@@ -166,24 +182,24 @@
     <section class="view" data-view="market">
       <div class="panel">
         <div class="panel-head">
-          <h2>Market overview</h2>
+          <h2 data-i18n="market.overview">نظرة على السوق</h2>
           <span id="updated" class="muted" aria-live="polite"></span>
         </div>
         <div class="table-scroll">
           <table id="overview">
             <thead>
               <tr>
-                <th scope="col">Symbol</th>
-                <th scope="col" class="num">Price</th>
-                <th scope="col" class="num">24h</th>
-                <th scope="col" class="num">24h high</th>
-                <th scope="col" class="num">24h low</th>
-                <th scope="col" class="num">Volume</th>
-                <th scope="col">Source</th>
+                <th scope="col" data-i18n="history.symbol">الرمز</th>
+                <th scope="col" class="num" data-i18n="market.price">السعر</th>
+                <th scope="col" class="num" data-i18n="market.change24">٢٤ ساعة</th>
+                <th scope="col" class="num" data-i18n="market.high24">أعلى ٢٤ س</th>
+                <th scope="col" class="num" data-i18n="market.low24">أدنى ٢٤ س</th>
+                <th scope="col" class="num" data-i18n="market.volume">الحجم</th>
+                <th scope="col" data-i18n="market.source">المصدر</th>
               </tr>
             </thead>
             <tbody id="overview-body">
-              <tr><td colspan="7" class="empty">Loading…</td></tr>
+              <tr><td colspan="7" class="empty" data-i18n="common.loading">جارٍ التحميل…</td></tr>
             </tbody>
           </table>
         </div>
@@ -191,11 +207,11 @@
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Candles</h2>
+          <h2 data-i18n="market.candles">الشموع</h2>
           <div class="panel-actions">
-            <label for="symbol" class="sr-only">Symbol</label>
+            <label for="symbol" class="sr-only" data-i18n="history.symbol">الرمز</label>
             <select id="symbol"></select>
-            <label for="timeframe" class="sr-only">Timeframe</label>
+            <label for="timeframe" class="sr-only" data-i18n="signals.timeframe">الإطار الزمني</label>
             <select id="timeframe">
               <option value="15m">15m</option>
               <option value="1h" selected>1h</option>
@@ -204,7 +220,7 @@
             </select>
           </div>
         </div>
-        <div id="chart-wrap" class="chart-wrap"><p class="empty">Select a symbol.</p></div>
+        <div id="chart-wrap" class="chart-wrap"><p class="empty" data-i18n="market.selectSymbol">اختر رمزاً.</p></div>
         <p id="chart-meta" class="muted meta-line"></p>
       </div>
     </section>
@@ -213,30 +229,29 @@
     <section class="view" data-view="analytics">
       <div class="panel">
         <div class="panel-head">
-          <h2>Observations</h2>
-          <span class="muted">Read by a human, applied by nobody</span>
+          <h2 data-i18n="analytics.observations">الملاحظات</h2>
+          <span class="muted" data-i18n="analytics.observationsSub">يقرأها إنسان، ولا يطبّقها أحد</span>
         </div>
-        <p class="muted meta-line">
-          Nothing on this page changes the engine. A strategy that retunes itself on
-          the trades it already took is fitting noise &mdash; the sample it learns from
-          is the sample it chose &mdash; so every observation here is advisory and says
-          so.
+        <p class="muted meta-line" data-i18n="analytics.advisory">
+          لا شيء في هذه الصفحة يغيّر المحرّك. استراتيجية تعيد ضبط نفسها على الصفقات التي
+          أخذتها تُلائم الضجيج — فالعيّنة التي تتعلّم منها هي العيّنة التي اختارتها — لذا كل
+          ملاحظة هنا استشارية وتقول ذلك صراحةً.
         </p>
-        <div id="insights" class="insights"><p class="empty">Loading&hellip;</p></div>
+        <div id="insights" class="insights"><p class="empty" data-i18n="common.loading">جارٍ التحميل…</p></div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Performance breakdown</h2>
+          <h2 data-i18n="analytics.breakdown">تفصيل الأداء</h2>
           <div class="panel-actions">
-            <label for="an-by" class="sr-only">Group by</label>
+            <label for="an-by" class="sr-only" data-i18n="analytics.groupBy">التجميع حسب</label>
             <select id="an-by">
-              <option value="symbol" selected>By symbol</option>
-              <option value="confidence">By confidence band</option>
-              <option value="timeframe">By timeframe</option>
-              <option value="direction">By direction</option>
-              <option value="exit_reason">By exit reason</option>
-              <option value="strategy">By strategy</option>
+              <option value="symbol" selected data-i18n="analytics.bySymbol">حسب الرمز</option>
+              <option value="confidence" data-i18n="analytics.byConfidence">حسب نطاق الثقة</option>
+              <option value="timeframe" data-i18n="analytics.byTimeframe">حسب الإطار الزمني</option>
+              <option value="direction" data-i18n="analytics.byDirection">حسب الاتجاه</option>
+              <option value="exit_reason" data-i18n="analytics.byExitReason">حسب سبب الخروج</option>
+              <option value="strategy" data-i18n="analytics.byStrategy">حسب الاستراتيجية</option>
             </select>
           </div>
         </div>
@@ -245,43 +260,43 @@
           <table id="an-table">
             <thead>
               <tr>
-                <th scope="col">Group</th>
-                <th scope="col" class="num">Trades</th>
-                <th scope="col" class="num">Share</th>
-                <th scope="col" class="num">Win rate</th>
-                <th scope="col">95% interval</th>
-                <th scope="col" class="num">Expectancy</th>
-                <th scope="col" class="num">Total R</th>
-                <th scope="col" class="num">P/L</th>
-                <th scope="col" class="num">Profit factor</th>
+                <th scope="col" data-i18n="analytics.group">المجموعة</th>
+                <th scope="col" class="num" data-i18n="analytics.trades">الصفقات</th>
+                <th scope="col" class="num" data-i18n="analytics.share">الحصة</th>
+                <th scope="col" class="num" data-i18n="tile.winRate">نسبة الربح</th>
+                <th scope="col" data-i18n="analytics.interval">مجال ثقة ٩٥٪</th>
+                <th scope="col" class="num" data-i18n="tile.expectancy">التوقّع</th>
+                <th scope="col" class="num" data-i18n="analytics.totalR">إجمالي R</th>
+                <th scope="col" class="num" data-i18n="history.pnl">الربح/الخسارة</th>
+                <th scope="col" class="num" data-i18n="tile.profitFactor">معامل الربح</th>
               </tr>
             </thead>
             <tbody id="an-body">
-              <tr><td colspan="9" class="empty">Loading&hellip;</td></tr>
+              <tr><td colspan="9" class="empty" data-i18n="common.loading">جارٍ التحميل…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2>Against simply holding</h2>
-          <span class="muted">Same window, per symbol</span>
+          <h2 data-i18n="analytics.versusHolding">مقابل الاحتفاظ فقط</h2>
+          <span class="muted" data-i18n="analytics.sameWindow">نفس النافذة، لكل رمز</span>
         </div>
         <p id="bench-note" class="muted meta-line"></p>
         <div class="table-scroll">
           <table id="benchmark">
             <thead>
               <tr>
-                <th scope="col">Symbol</th>
-                <th scope="col" class="num">Trades</th>
-                <th scope="col">Window traded</th>
-                <th scope="col" class="num">Holding returned</th>
-                <th scope="col" class="num">Strategy P/L</th>
-                <th scope="col" class="num">of account</th>
+                <th scope="col" data-i18n="history.symbol">الرمز</th>
+                <th scope="col" class="num" data-i18n="analytics.trades">الصفقات</th>
+                <th scope="col" data-i18n="analytics.windowTraded">النافذة المتداوَلة</th>
+                <th scope="col" class="num" data-i18n="analytics.holdingReturned">عائد الاحتفاظ</th>
+                <th scope="col" class="num" data-i18n="analytics.strategyPnl">ربح الاستراتيجية</th>
+                <th scope="col" class="num" data-i18n="analytics.ofAccount">من الحساب</th>
               </tr>
             </thead>
             <tbody id="benchmark-body">
-              <tr><td colspan="6" class="empty">Loading&hellip;</td></tr>
+              <tr><td colspan="6" class="empty" data-i18n="common.loading">جارٍ التحميل…</td></tr>
             </tbody>
           </table>
         </div>
@@ -292,37 +307,36 @@
     <section class="view" data-view="backtest">
       <div class="panel">
         <div class="panel-head">
-          <h2>Historical replay</h2>
+          <h2 data-i18n="backtest.title">إعادة التشغيل التاريخية</h2>
           <div class="panel-actions">
-            <label for="bt-scope" class="sr-only">Scope</label>
+            <label for="bt-scope" class="sr-only" data-i18n="backtest.scope">النطاق</label>
             <select id="bt-scope">
-              <option value="symbol" selected>One symbol</option>
-              <option value="portfolio">Whole portfolio</option>
+              <option value="symbol" selected data-i18n="backtest.oneSymbol">رمز واحد</option>
+              <option value="portfolio" data-i18n="backtest.wholePortfolio">المحفظة كاملة</option>
             </select>
-            <label for="bt-symbol" class="sr-only">Symbol</label>
+            <label for="bt-symbol" class="sr-only" data-i18n="history.symbol">الرمز</label>
             <select id="bt-symbol"></select>
-            <label for="bt-tf" class="sr-only">Timeframe</label>
+            <label for="bt-tf" class="sr-only" data-i18n="signals.timeframe">الإطار الزمني</label>
             <select id="bt-tf">
               <option value="15m">15m</option>
               <option value="1h" selected>1h</option>
               <option value="4h">4h</option>
               <option value="1d">1D</option>
             </select>
-            <label for="bt-bars" class="sr-only">Bars</label>
+            <label for="bt-bars" class="sr-only" data-i18n="backtest.bars">الشموع</label>
             <select id="bt-bars">
-              <option value="300">300 bars</option>
-              <option value="500" selected>500 bars</option>
-              <option value="1000">1000 bars</option>
+              <option value="300">300</option>
+              <option value="500" selected>500</option>
+              <option value="1000">1000</option>
             </select>
-            <button id="run-backtest" type="button" class="primary">Run replay</button>
+            <button id="run-backtest" type="button" class="primary" data-i18n="backtest.run">شغّل الإعادة</button>
           </div>
         </div>
-        <p class="muted meta-line">
-          The replay runs the same analyser, the same risk manager and the same broker the
-          live bot uses. It decides on a bar&rsquo;s close and fills on the <em>next</em> bar&rsquo;s
-          open; when one bar contains both the stop and the target it takes the stop; and it
-          charges fees and adverse slippage on every entry and exit. These make the result
-          worse than a naive backtest, which is the point.
+        <p class="muted meta-line" data-i18n="backtest.method" data-i18n-html>
+          تستخدم الإعادة نفس المحلّل ونفس مدير المخاطر ونفس الوسيط الذي يستخدمه البوت الحيّ.
+          تقرّر عند إغلاق الشمعة وتنفّذ عند فتح الشمعة <em>التالية</em>؛ وحين تحتوي شمعة واحدة
+          على الوقف والهدف معاً تأخذ الوقف؛ وتحتسب الرسوم والانزلاق المعاكس على كل دخول وخروج.
+          هذه كلها تجعل النتيجة أسوأ من اختبار ساذج، وهذا هو المقصود.
         </p>
         <div id="bt-status" class="notice" hidden></div>
         <div id="bt-refusals" class="refusals" hidden></div>
@@ -333,31 +347,31 @@
 
         <div class="panel">
           <div class="panel-head">
-            <h2>Replay equity curve</h2>
-            <span class="muted">Balance after each closed trade &mdash; simulated</span>
+            <h2 data-i18n="backtest.equityTitle">منحنى رأس المال في الإعادة</h2>
+            <span class="muted" data-i18n="backtest.equitySub">الرصيد بعد كل صفقة مغلقة — محاكاة</span>
           </div>
           <div id="bt-equity" class="chart-wrap"></div>
         </div>
 
         <div class="panel">
           <div class="panel-head">
-            <h2>Replay trades</h2>
+            <h2 data-i18n="backtest.tradesTitle">صفقات الإعادة</h2>
             <span id="bt-count" class="muted"></span>
           </div>
           <div class="table-scroll">
             <table id="bt-trades">
               <thead>
                 <tr>
-                  <th scope="col">Opened</th>
-                  <th scope="col" class="symbol-col" hidden>Symbol</th>
-                  <th scope="col">Side</th>
-                  <th scope="col" class="num">Entry</th>
-                  <th scope="col" class="num">Exit</th>
-                  <th scope="col" class="num">P/L</th>
-                  <th scope="col" class="num">R</th>
-                  <th scope="col">Result</th>
-                  <th scope="col">Exit reason</th>
-                  <th scope="col" class="num">Conf.</th>
+                  <th scope="col" data-i18n="backtest.opened">فُتحت</th>
+                  <th scope="col" class="symbol-col" hidden data-i18n="history.symbol">الرمز</th>
+                  <th scope="col" data-i18n="history.side">الجهة</th>
+                  <th scope="col" class="num" data-i18n="signals.entry">الدخول</th>
+                  <th scope="col" class="num" data-i18n="history.exit">الخروج</th>
+                  <th scope="col" class="num" data-i18n="history.pnl">الربح/الخسارة</th>
+                  <th scope="col" class="num" data-i18n="history.r">R</th>
+                  <th scope="col" data-i18n="history.result">النتيجة</th>
+                  <th scope="col" data-i18n="history.exitReason">سبب الخروج</th>
+                  <th scope="col" class="num" data-i18n="history.conf">الثقة</th>
                 </tr>
               </thead>
               <tbody id="bt-trades-body"></tbody>
@@ -371,13 +385,13 @@
   <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
 
   <footer>
-    <p>
-      Educational research tool, not financial advice. Every trade in this system is
-      simulated against a virtual balance. No exchange credentials are held and no
-      order can be placed.
+    <p data-i18n="app.disclaimer">
+      أداة بحث تعليمية، وليست نصيحة مالية. كل صفقة هنا محاكاة على رصيد افتراضي.
+      لا تُحفظ أي مفاتيح منصّات ولا يمكن إرسال أي أمر.
     </p>
   </footer>
 
+  <script src="./i18n.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

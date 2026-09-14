@@ -183,23 +183,59 @@ def test_every_dynamic_value_in_the_page_passes_through_the_escaper():
 
     # Free text from the server — reasons, warnings, symbols, exit reasons — is
     # the input that could ever carry markup, and each is escaped at its site.
+    #
+    # Stage 18 moved three of these behind helpers: the Arabic screen composes
+    # the reason, the invalidation and the cap note from structured evidence
+    # rather than showing the server's English sentence, and `term()` renders
+    # the engine's own tokens. The VALUES are the same untrusted input, so the
+    # expressions changed and the requirement did not.
     for field in (
-        "s.reason",
+        "composeReason(s)",
         "s.symbol",
-        "s.invalidation",
+        # Escaped as one unit: the untrusted sentence is interpolated into the
+        # dictionary string first, and `esc` wraps the result.
+        'esc(t("signals.invalidation", { text: invalidation(s) }))',
         "o.finding",
-        "g.key",
+        "term(g.key)",
+        "capNote(p.size)",
+        "costNote() ?? p.cost_note",
         # The plan, from stage 17. Prices and sizes are server-formatted
         # STRINGS rather than numbers the page recomputes, so they reach the
         # DOM the same way a reason does and need the same treatment.
         "size.quantity",
         "plan.entry_display",
         "plan.stop_display",
-        "t.price_display",
-        "p.size.cap_note",
-        "p.cost_note",
+        "rung.price_display",
     ):
-        assert f"esc({field})" in app_js, f"{field} reaches the DOM unescaped"
+        expression = field if field.startswith("esc(") else f"esc({field})"
+        assert expression in app_js, f"{field} reaches the DOM unescaped"
+
+
+def test_the_translated_screen_cannot_smuggle_markup_through_a_placeholder():
+    """Stage 18 added a second way into the DOM.
+
+    Most `t()` results are escaped at the call site, but a few carry deliberate
+    markup of our own (`<strong>`, `<code>`) and so are inserted raw. Those are
+    only safe while every value interpolated into them is a number, an already
+    escaped string, or bound for `textContent` — so the dictionary itself must
+    never be reachable by server text that skipped the escaper.
+    """
+    import re
+
+    app_js = (Path(__file__).resolve().parents[2] / "frontend" / "app.js").read_text()
+    app_js = re.sub(r"/\*.*?\*/", "", app_js, flags=re.S)
+
+    # Placeholders are substituted by plain string replacement, so a dictionary
+    # entry that pasted one into an attribute would be an injection point of its
+    # own regardless of the value. None does.
+    i18n = (Path(__file__).resolve().parents[2] / "frontend" / "i18n.js").read_text()
+    assert 'href="{' not in i18n and 'src="{' not in i18n
+    assert "javascript:" not in i18n
+
+    # The notice banner inserts its body as HTML and its title through the
+    # escaper. Both halves are asserted, because the title is where server
+    # error text lands.
+    assert "node.innerHTML = `<h3>${esc(title)}</h3><div>${body}</div>`" in app_js
 
 
 # --- state-changing routes --------------------------------------------------
