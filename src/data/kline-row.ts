@@ -15,9 +15,17 @@
 import type { Candle } from "@/core/types";
 import { type Timeframe, tfMillis } from "@/shared/time";
 
+/**
+ * Strict numeric coercion.
+ *
+ * `Number("")` is 0, not NaN — so an empty CSV column would silently become a
+ * real zero. For quote volume that reads as "no liquidity" and gets a healthy
+ * coin rejected by the eligibility filter. Absent must stay absent.
+ */
 const num = (v: unknown): number => {
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
   if (typeof v === "string") {
+    if (v.trim() === "") return NaN;
     const n = Number(v);
     return Number.isFinite(n) ? n : NaN;
   }

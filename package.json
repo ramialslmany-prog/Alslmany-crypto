@@ -2,12 +2,17 @@
   "name": "alslmany-crypto",
   "version": "0.1.0",
   "private": true,
-  "description": "Alslmany Crypto — AI-powered crypto trading intelligence platform",
+  "description": "Alslmany Crypto \u2014 AI-powered crypto trading intelligence platform",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "doctor": "tsx src/worker/doctor.ts",
+    "backfill": "tsx src/worker/backfill.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.0",
