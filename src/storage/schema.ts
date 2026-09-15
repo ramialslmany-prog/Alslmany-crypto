@@ -120,4 +120,121 @@ CREATE INDEX IF NOT EXISTS idx_gaps_open ON data_gaps (symbol, timeframe) WHERE 
 CREATE INDEX IF NOT EXISTS idx_archive_status ON archive_files (status, symbol);
 `,
   },
+  {
+    id: 2,
+    name: "recommendations_immutable",
+    sql: `
+-- ── recommendations: APPEND ONLY ─────────────────────────────────────────
+-- Immutability is enforced by the DATABASE, not by convention. The triggers
+-- below make UPDATE and DELETE raise an error, so no future code path — not
+-- a bug, not a well-meaning "fix", not a migration written in a hurry — can
+-- quietly revise a losing call. A bot that can edit its own history has no
+-- track record, and the track record is the only thing that makes the rest
+-- of this worth anything.
+CREATE TABLE IF NOT EXISTS recommendations (
+  id                TEXT PRIMARY KEY,
+  symbol            TEXT    NOT NULL,
+  direction         TEXT    NOT NULL CHECK (direction IN ('long','short')),
+  setup             TEXT    NOT NULL,
+  regime            TEXT    NOT NULL,
+  timeframe         TEXT    NOT NULL,
+  exchange          TEXT    NOT NULL,
+  generated_at      INTEGER NOT NULL,
+  as_of_candle      INTEGER NOT NULL,
+
+  entry_low         REAL    NOT NULL,
+  entry_high        REAL    NOT NULL,
+  entry_mid         REAL    NOT NULL,
+  stop              REAL    NOT NULL,
+  stop_basis        TEXT    NOT NULL,
+  -- Targets as JSON: they are read as a unit and never queried individually.
+  targets_json      TEXT    NOT NULL,
+
+  risk_reward       REAL    NOT NULL,
+  position_size     REAL    NOT NULL,
+  position_notional REAL    NOT NULL,
+  risk_amount       REAL    NOT NULL,
+  risk_percent      REAL    NOT NULL,
+
+  confidence        REAL    NOT NULL,
+  final_score       REAL    NOT NULL,
+  confidence_components_json TEXT NOT NULL,
+  invalidation_json TEXT    NOT NULL,
+  expires_at        INTEGER NOT NULL,
+
+  report            TEXT    NOT NULL,
+  -- SHA-256 over the defining fields; a row that no longer hashes to this
+  -- was altered outside the append-only path.
+  integrity_hash    TEXT    NOT NULL,
+
+  -- The full pipeline run that produced it, for the audit page.
+  pipeline_json     TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rec_symbol ON recommendations (symbol, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rec_generated ON recommendations (generated_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS recommendations_no_update
+BEFORE UPDATE ON recommendations
+BEGIN
+  SELECT RAISE(ABORT, 'recommendations are immutable: record a recommendation_events row instead');
+END;
+
+CREATE TRIGGER IF NOT EXISTS recommendations_no_delete
+BEFORE DELETE ON recommendations
+BEGIN
+  SELECT RAISE(ABORT, 'recommendations are immutable: they are never deleted');
+END;
+
+-- ── every subsequent fact about a recommendation ─────────────────────────
+-- Also append-only. The current state of a trade is DERIVED by replaying its
+-- events, never by mutating a status column — which is what makes the
+-- history reconstructible and the backtest reproducible.
+CREATE TABLE IF NOT EXISTS recommendation_events (
+  id                TEXT PRIMARY KEY,
+  recommendation_id TEXT    NOT NULL REFERENCES recommendations(id),
+  kind              TEXT    NOT NULL,
+  at                INTEGER NOT NULL,
+  candle_time       INTEGER,
+  price             REAL,
+  payload_json      TEXT    NOT NULL DEFAULT '{}',
+  arabic            TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_rec ON recommendation_events (recommendation_id, at);
+CREATE INDEX IF NOT EXISTS idx_events_kind ON recommendation_events (kind, at DESC);
+
+CREATE TRIGGER IF NOT EXISTS recommendation_events_no_update
+BEFORE UPDATE ON recommendation_events
+BEGIN
+  SELECT RAISE(ABORT, 'recommendation events are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS recommendation_events_no_delete
+BEFORE DELETE ON recommendation_events
+BEGIN
+  SELECT RAISE(ABORT, 'recommendation events are immutable');
+END;
+
+-- ── rejected analyses: the bad shown as plainly as the good ──────────────
+-- Section 7 rule 4. Every coin analysed that produced NO recommendation is
+-- recorded with the stage it died at and exactly why.
+CREATE TABLE IF NOT EXISTS rejected_analyses (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol         TEXT    NOT NULL,
+  timeframe      TEXT    NOT NULL,
+  analyzed_at    INTEGER NOT NULL,
+  failed_stage   TEXT    NOT NULL,
+  failed_number  INTEGER NOT NULL,
+  reason         TEXT    NOT NULL,
+  final_score    REAL,
+  vetoes_json    TEXT    NOT NULL DEFAULT '[]',
+  pipeline_json  TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_time ON rejected_analyses (analyzed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rejected_stage ON rejected_analyses (failed_stage, analyzed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rejected_symbol ON rejected_analyses (symbol, analyzed_at DESC);
+`,
+  },
 ];
