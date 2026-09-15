@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "doctor": "tsx src/worker/doctor.ts",
-    "backfill": "tsx src/worker/backfill.ts"
+    "backfill": "tsx src/worker/backfill.ts",
+    "tv": "tsx src/worker/tv-compare.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.0",
