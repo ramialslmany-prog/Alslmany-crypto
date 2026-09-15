@@ -237,4 +237,97 @@ CREATE INDEX IF NOT EXISTS idx_rejected_stage ON rejected_analyses (failed_stage
 CREATE INDEX IF NOT EXISTS idx_rejected_symbol ON rejected_analyses (symbol, analyzed_at DESC);
 `,
   },
+  {
+    id: 3,
+    name: "positions_and_equity",
+    sql: `
+-- ── paper positions ──────────────────────────────────────────────────────
+-- Positions ARE mutable, unlike recommendations: a position is live state
+-- that legitimately changes as the stop moves and targets fill. Its history
+-- is preserved in recommendation_events, which is append-only, so the audit
+-- trail survives even though the row itself is updated.
+CREATE TABLE IF NOT EXISTS positions (
+  id                 TEXT PRIMARY KEY,
+  recommendation_id  TEXT    NOT NULL REFERENCES recommendations(id),
+  symbol             TEXT    NOT NULL,
+  direction          TEXT    NOT NULL CHECK (direction IN ('long','short')),
+  timeframe          TEXT    NOT NULL,
+  status             TEXT    NOT NULL,
+
+  planned_entry_low  REAL    NOT NULL,
+  planned_entry_high REAL    NOT NULL,
+  planned_entry_mid  REAL    NOT NULL,
+  planned_stop       REAL    NOT NULL,
+  planned_targets_json TEXT  NOT NULL,
+  planned_size       REAL    NOT NULL,
+  planned_risk       REAL    NOT NULL,
+
+  current_stop       REAL    NOT NULL,
+  stop_at_breakeven  INTEGER NOT NULL DEFAULT 0,
+  trailing_active    INTEGER NOT NULL DEFAULT 0,
+
+  fills_json         TEXT    NOT NULL DEFAULT '[]',
+  open_quantity      REAL    NOT NULL DEFAULT 0,
+  average_entry      REAL    NOT NULL DEFAULT 0,
+  targets_hit_json   TEXT    NOT NULL DEFAULT '[]',
+
+  opened_at          INTEGER,
+  closed_at          INTEGER,
+  exit_reason        TEXT,
+
+  realized_pnl       REAL    NOT NULL DEFAULT 0,
+  realized_r         REAL    NOT NULL DEFAULT 0,
+  max_favorable_r    REAL    NOT NULL DEFAULT 0,
+  max_adverse_r      REAL    NOT NULL DEFAULT 0,
+  bars_held          INTEGER NOT NULL DEFAULT 0,
+
+  expires_at         INTEGER NOT NULL,
+  notes_json         TEXT    NOT NULL DEFAULT '[]',
+  updated_at         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_positions_status ON positions (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions (symbol, opened_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_rec ON positions (recommendation_id);
+
+-- ── the equity curve ─────────────────────────────────────────────────────
+-- Append-only: every point the portfolio was ever worth. This is what the
+-- dashboard plots against buy-and-hold, and what the drawdown breaker reads.
+CREATE TABLE IF NOT EXISTS equity_curve (
+  at               INTEGER PRIMARY KEY,
+  equity           REAL    NOT NULL,
+  cash             REAL    NOT NULL,
+  open_positions   INTEGER NOT NULL,
+  exposure         REAL    NOT NULL,
+  peak_equity      REAL    NOT NULL,
+  drawdown_pct     REAL    NOT NULL,
+  day_start_equity REAL    NOT NULL,
+  day_pnl_pct      REAL    NOT NULL,
+  -- Bitcoin's price at the same instant, so buy-and-hold is comparable
+  -- without re-fetching history later.
+  btc_price        REAL
+);
+
+CREATE TRIGGER IF NOT EXISTS equity_curve_no_delete
+BEFORE DELETE ON equity_curve
+BEGIN
+  SELECT RAISE(ABORT, 'the equity curve is append-only');
+END;
+
+-- ── circuit breakers ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS circuit_breakers (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind                  TEXT    NOT NULL,
+  tripped_at            INTEGER NOT NULL,
+  resumes_at            INTEGER,
+  requires_manual_reset INTEGER NOT NULL DEFAULT 0,
+  cleared_at            INTEGER,
+  cleared_by            TEXT,
+  reason                TEXT    NOT NULL,
+  arabic                TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_breakers_open ON circuit_breakers (kind, cleared_at);
+`,
+  },
 ];
