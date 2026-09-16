@@ -1,12 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Images from external CDNs (coin logos, etc.) can be whitelisted here later.
-  images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "**" },
-    ],
-  },
+  // better-sqlite3 is a native module: it must stay external to the server
+  // bundle or the .node binary cannot be resolved at runtime.
+  serverExternalPackages: ["better-sqlite3"],
 };
 
 export default nextConfig;

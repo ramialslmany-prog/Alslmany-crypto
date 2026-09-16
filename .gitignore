@@ -36,3 +36,5 @@ next-env.d.ts
 /data/*.db
 /data/*.db-*
 /data/archive/
+/data/demo.db
+/data/demo.db-*

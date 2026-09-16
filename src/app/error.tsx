@@ -1,18 +1,26 @@
 "use client";
 
-export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+import { Topbar } from "@/web/components/Topbar";
+
+/**
+ * The error boundary states what failed rather than apologising. An operator
+ * needs the reason; "something went wrong" is not one.
+ */
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <div className="grid min-h-screen place-items-center p-6 text-center">
-      <div>
-        <div className="font-display text-5xl font-bold text-bear">Something broke</div>
-        <p className="mt-3 text-ink-muted">An unexpected error occurred. Try again.</p>
-        <button
-          onClick={reset}
-          className="mt-6 inline-block rounded-xl bg-cyan-violet px-6 py-2.5 text-sm font-bold text-base-950 transition-transform hover:scale-[1.02]"
-        >
-          Retry
-        </button>
+    <>
+      <Topbar title="خطأ" />
+      <div className="content">
+        <div className="empty">
+          <strong>تعذّر عرض هذه الصفحة.</strong>
+          <span className="num" style={{ display: "block", color: "var(--loss)", margin: "8px 0" }}>
+            {error.message}
+          </span>
+          السبب الأغلب أن العامل لم يُنشئ الجداول بعد، أو أن قاعدة البيانات قيد الكتابة.
+          <br /><br />
+          <button className="btn" onClick={reset}>إعادة المحاولة</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
