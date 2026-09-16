@@ -866,11 +866,40 @@ describe("the eight-stage run", () => {
     expect(run.stages.length).toBeLessThanOrEqual(3);
   });
 
-  it("records stages 5–7 as UNAVAILABLE, not as passing", () => {
+  it("RUNS stage 5 when flow inputs are supplied, instead of skipping it", () => {
+    const { run } = runPipeline(baseRun({
+      flowsInput: {
+        trades: null,
+        bookSnapshots: null,
+        funding: { symbol: "BTCUSDT", rate: 0.0001, fundingTime: NOW, intervalHours: 8 },
+        fundingHistory: Array.from({ length: 200 }, (_, i) => ({
+          symbol: "BTCUSDT", rate: 0.00005 + (i % 20) * 0.000005,
+          fundingTime: NOW - i * 28_800_000, intervalHours: 8,
+        })),
+        openInterest: Array.from({ length: 24 }, (_, i) => ({
+          symbol: "BTCUSDT", openInterest: 1000 + i,
+          openInterestValue: (1000 + i) * 50_000, numberOfTrades: 0,
+          timestamp: NOW - (24 - i) * 3_600_000,
+        })),
+        longShort: null,
+      },
+    }) as never);
+    const flows = run.stages.find((s) => s.id === "flows");
+    expect(flows).toBeDefined();
+    if (!flows) return;
+
+    // It actually ran: it produced factors and did not report "no inputs".
+    expect(flows.factors.length).toBeGreaterThan(0);
+    expect(flows.unavailableReason ?? "").not.toContain("لم تُمرَّر");
+    // And it read the funding it was given.
+    expect(flows.factors.some((f) => f.id === "funding" && f.value !== null)).toBe(true);
+  });
+
+  it("records stages 6–7 as UNAVAILABLE, not as passing", () => {
     const { run } = runPipeline(baseRun() as never);
     const ids = run.stages.map((s) => s.id);
     if (ids.includes("flows")) {
-      for (const id of ["flows", "onchain", "sentiment"]) {
+      for (const id of ["onchain", "sentiment"]) {
         const s = run.stages.find((x) => x.id === id)!;
         expect(s.status).toBe("unavailable");
         expect(s.confidencePenalty).toBeGreaterThan(0);

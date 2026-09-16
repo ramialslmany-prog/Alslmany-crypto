@@ -18,6 +18,7 @@ import {
 import { runEligibility, type EligibilityInput, type EligibilityThresholds } from "@/core/pipeline/stage1-eligibility";
 import { runMacro, type MacroInput } from "@/core/pipeline/stage2-macro";
 import { runCouncil, type CouncilThresholds, type PortfolioState, type SetupHistory } from "@/core/pipeline/stage8-council";
+import { runFlows, type FlowsInput } from "@/core/pipeline/stage5-flows";
 import { analyzeTechnical } from "@/core/analysis/technical";
 import { analyzeStructureStage } from "@/core/analysis/structure-stage";
 import {
@@ -38,7 +39,12 @@ export interface RunInput {
   readonly eligibilityThresholds: EligibilityThresholds;
   readonly macro: Omit<MacroInput, "symbol" | "assetDaily" | "now" | "correlationCeiling">;
   readonly correlationCeiling: number;
-  /** Stages 5–7 are wired in later phases; pass their results when available. */
+  /**
+   * Stage 5 inputs. When present the pipeline runs the flows stage itself;
+   * `flows` may still be passed directly (the backtester supplies a
+   * pre-computed result rather than re-reading books it does not have).
+   */
+  readonly flowsInput?: Omit<FlowsInput, "symbol" | "candles" | "hasTakerBreakdown" | "direction" | "now">;
   readonly flows?: StageResult;
   readonly onchain?: StageResult;
   readonly sentiment?: StageResult;
@@ -124,6 +130,8 @@ export function runPipeline(input: RunInput): RunOutput {
     macro.allowedDirection === "none" ? "both" : (macro.allowedDirection as "long" | "short" | "both");
 
   // ── Stage 3: technical ───────────────────────────────────────────────────
+  const tradingCandles = input.candles[input.tradingTimeframe] ?? [];
+
   const technical = analyzeTechnical({
     symbol: input.symbol,
     candles: input.candles,
@@ -177,7 +185,6 @@ export function runPipeline(input: RunInput): RunOutput {
   }
 
   // ── Stage 4: structure ───────────────────────────────────────────────────
-  const tradingCandles = input.candles[input.tradingTimeframe] ?? [];
   const structure = analyzeStructureStage(tradingCandles, input.tradingTimeframe);
   const structureStage: StageResult =
     structure.verdict === "fail"
@@ -198,11 +205,28 @@ export function runPipeline(input: RunInput): RunOutput {
     return finish(summarize(input.symbol, stages, structureStage));
   }
 
-  // ── Stages 5–7: wired in later phases; declared unavailable until then ───
-  stages.push(
+  // ── Stage 5: flows and derivatives ───────────────────────────────────────
+  // The direction under consideration is not known until the council picks a
+  // setup, but the crowding veto needs one. We evaluate against the technical
+  // bias, which is what the setup will follow: a stage that guessed the
+  // opposite direction would apply the veto backwards.
+  const flowsDirection: "long" | "short" =
+    (tradingTf?.score ?? 0) >= 0 ? "long" : "short";
+
+  const flowsStage: StageResult =
     input.flows ??
-      stageUnavailable("flows", "مرحلة التدفّقات والمشتقّات لم تُبنَ بعد", UNAVAILABLE_PENALTY.flows),
-  );
+    (input.flowsInput
+      ? runFlows({
+          ...input.flowsInput,
+          symbol: input.symbol,
+          candles: tradingCandles,
+          hasTakerBreakdown: input.hasTakerBreakdown,
+          direction: flowsDirection,
+          now: input.now,
+        })
+      : stageUnavailable("flows", "لم تُمرَّر مُدخلات التدفّقات لهذه الدورة", UNAVAILABLE_PENALTY.flows));
+
+  stages.push(flowsStage);
   stages.push(
     input.onchain ??
       stageUnavailable("onchain", "لا مزوّد لبيانات السلسلة — ضع CRYPTOQUANT_API_KEY", UNAVAILABLE_PENALTY.onchain),
