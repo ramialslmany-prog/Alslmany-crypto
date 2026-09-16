@@ -19,6 +19,7 @@ import { runEligibility, type EligibilityInput, type EligibilityThresholds } fro
 import { runMacro, type MacroInput } from "@/core/pipeline/stage2-macro";
 import { runCouncil, type CouncilThresholds, type PortfolioState, type SetupHistory } from "@/core/pipeline/stage8-council";
 import { runFlows, type FlowsInput } from "@/core/pipeline/stage5-flows";
+import { runSentiment, type SentimentInput } from "@/core/pipeline/stage7-sentiment";
 import { analyzeTechnical } from "@/core/analysis/technical";
 import { analyzeStructureStage } from "@/core/analysis/structure-stage";
 import {
@@ -46,8 +47,10 @@ export interface RunInput {
    */
   readonly flowsInput?: Omit<FlowsInput, "symbol" | "candles" | "hasTakerBreakdown" | "direction" | "now">;
   readonly flows?: StageResult;
-  readonly onchain?: StageResult;
+  /** Stage 7 inputs. When present the pipeline runs the sentiment stage. */
+  readonly sentimentInput?: Omit<SentimentInput, "asset" | "direction" | "now">;
   readonly sentiment?: StageResult;
+  readonly onchain?: StageResult;
   readonly council: CouncilThresholds;
   readonly portfolio: PortfolioState;
   readonly setupHistory: SetupHistory | null;
@@ -231,9 +234,18 @@ export function runPipeline(input: RunInput): RunOutput {
     input.onchain ??
       stageUnavailable("onchain", "لا مزوّد لبيانات السلسلة — ضع CRYPTOQUANT_API_KEY", UNAVAILABLE_PENALTY.onchain),
   );
+  // ── Stage 7: sentiment, news and risk ────────────────────────────────────
+  const ticker = input.symbol.replace(/USDT$|USD$|BUSD$/i, "").toUpperCase();
   stages.push(
     input.sentiment ??
-      stageUnavailable("sentiment", "مرحلة المشاعر والأخبار لم تُبنَ بعد", UNAVAILABLE_PENALTY.sentiment),
+      (input.sentimentInput
+        ? runSentiment({
+            ...input.sentimentInput,
+            asset: { symbol: input.symbol, ticker },
+            direction: flowsDirection,
+            now: input.now,
+          })
+        : stageUnavailable("sentiment", "لم تُمرَّر مُدخلات المشاعر لهذه الدورة", UNAVAILABLE_PENALTY.sentiment)),
   );
 
   for (const s of [stages[4], stages[5], stages[6]]) {
