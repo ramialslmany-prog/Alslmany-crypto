@@ -1,0 +1,443 @@
+<title>طاولة السلماني</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   The design system, exactly as specified.
+
+   Single theme by deliberate commitment: a trading terminal is dark, and a
+   light variant would be a different product. Every colour is painted
+   explicitly so the page holds on any host ground.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #0B1117;
+  --surface: #121A22;
+  --surface-2: #18222C;
+  --divider: #26323E;
+  --text: #E4EDF4;
+  --text-2: #9BAAB9;
+  --text-3: #6C7C8C;
+  --accent: #E0A93F;
+  --accent-dim: rgba(224,169,63,.14);
+  --profit: #4FC195;
+  --loss: #E2695A;
+  --info: #6BA6DA;
+  --info-dim: rgba(107,166,218,.12);
+  --radius: 3px;
+  --font-display: "Readex Pro", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: start;
+  direction: rtl;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 28px 64px;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.25; margin: 0; text-wrap: balance; }
+
+/* Latin digits stay LTR inside Arabic. `isolate` stops the bidi algorithm
+   from reordering adjacent punctuation — the bug that moves a minus sign to
+   the wrong end of a negative number. */
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+.profit { color: var(--profit); }
+.loss { color: var(--loss); }
+
+.section-label {
+  font-size: 10px; font-weight: 600; letter-spacing: .14em;
+  color: var(--text-3); text-transform: uppercase;
+}
+
+.panel { background: var(--surface); border: 1px solid var(--divider); border-radius: var(--radius); }
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; border-bottom: 1px solid var(--divider); background: var(--surface-2);
+}
+
+/* ── page header ────────────────────────────────────────────────────────── */
+.masthead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--divider); margin-bottom: 8px;
+}
+.masthead h1 { font-size: 19px; letter-spacing: -.01em; }
+.masthead .sub { color: var(--text-2); font-size: 12px; }
+.masthead .stamp {
+  margin-inline-start: auto; color: var(--text-3); font-size: 11px;
+}
+
+section { margin-top: 40px; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.sec-head h2 { font-size: 14px; }
+.sec-head .note { color: var(--text-3); font-size: 11px; }
+
+/* ── palette ────────────────────────────────────────────────────────────── */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 1px; background: var(--divider); border: 1px solid var(--divider); border-radius: var(--radius); overflow: hidden; }
+.sw { background: var(--surface); padding: 0; }
+.sw .chip { height: 46px; border-bottom: 1px solid var(--divider); }
+.sw .meta { padding: 8px 10px; }
+.sw .name { font-size: 12px; color: var(--text); }
+.sw .hex { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); direction: ltr; unicode-bidi: isolate; display: block; margin-top: 2px; }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+.rule { border-inline-start: 2px solid var(--divider); padding-inline-start: 12px; }
+.rule.amber { border-color: var(--accent); }
+.rule.money { border-color: var(--profit); }
+.rule strong { display: block; font-size: 12px; margin-bottom: 3px; color: var(--text); }
+.rule span { color: var(--text-2); font-size: 12px; }
+
+/* ── typography specimen ────────────────────────────────────────────────── */
+.type-rows { display: grid; gap: 1px; background: var(--divider); border: 1px solid var(--divider); border-radius: var(--radius); overflow: hidden; }
+.type-row { background: var(--surface); padding: 14px 16px; display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: baseline; }
+.type-row .role { color: var(--text-3); font-size: 11px; }
+.type-row .role em { display: block; font-style: normal; color: var(--text-2); font-size: 10px; margin-top: 2px; direction: ltr; unicode-bidi: isolate; text-align: start; }
+.spec-display { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+.spec-body { font-family: var(--font-body); font-size: 14px; color: var(--text-2); }
+.spec-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 17px; direction: ltr; unicode-bidi: isolate; }
+
+/* ── the recommendation card ────────────────────────────────────────────── */
+.rec { max-width: 720px; }
+.rec-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--divider); background: var(--surface-2); }
+.rec-sym { font-family: var(--font-display); font-size: 16px; font-weight: 700; direction: ltr; unicode-bidi: isolate; }
+
+/* Direction is carried by a WORD plus an arrow, never by colour alone. */
+.dir {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 2px;
+  border: 1px solid var(--profit); color: var(--profit);
+}
+.dir .arrow { font-family: var(--font-mono); }
+
+.rec-meta { margin-inline-start: auto; display: flex; gap: 14px; color: var(--text-3); font-size: 11px; }
+
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); }
+.level { padding: 11px 12px; border-inline-start: 1px solid var(--divider); }
+.level:first-child { border-inline-start: 0; }
+.level .k { font-size: 10px; letter-spacing: .1em; color: var(--text-3); text-transform: uppercase; }
+.level .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; margin-top: 3px; direction: ltr; unicode-bidi: isolate; }
+.level .why { font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.45; }
+
+.tg-table td.pct { color: var(--text-3); }
+.tg-table .r { color: var(--profit); }
+
+.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table th { font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--text-3); text-align: start; padding: 7px 12px; border-bottom: 1px solid var(--divider); background: var(--surface-2); white-space: nowrap; }
+.table td { padding: 0 12px; height: 30px; border-bottom: 1px solid var(--divider); color: var(--text-2); white-space: nowrap; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover td { background: var(--surface-2); }
+.table td.primary { color: var(--text); }
+.table-scroll { overflow-x: auto; }
+
+/* Confidence: a bar per stage, so the number is decomposed not asserted. */
+.conf { padding: 12px; border-top: 1px solid var(--divider); }
+.conf-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.conf-num { font-family: var(--font-mono); font-size: 24px; font-weight: 600; color: var(--accent); direction: ltr; unicode-bidi: isolate; }
+.conf-of { color: var(--text-3); font-size: 11px; }
+.stages { display: grid; gap: 5px; }
+.stage { display: grid; grid-template-columns: 116px 1fr 46px; gap: 10px; align-items: center; font-size: 11px; }
+.stage .nm { color: var(--text-2); }
+.stage .bar { height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.stage .fill { height: 100%; background: var(--info); }
+.stage .fill.na { background: repeating-linear-gradient(90deg, var(--divider) 0 4px, transparent 4px 8px); }
+.stage .val { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); text-align: end; direction: ltr; unicode-bidi: isolate; }
+.stage.na .nm { color: var(--text-3); }
+
+.report { padding: 12px; border-top: 1px solid var(--divider); color: var(--text-2); font-size: 12px; line-height: 1.75; }
+.report strong { color: var(--text); font-weight: 600; }
+
+/* ── banned list ────────────────────────────────────────────────────────── */
+.bans { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--divider); border: 1px solid var(--divider); border-radius: var(--radius); overflow: hidden; }
+.ban { background: var(--surface); padding: 11px 13px; }
+.ban .x { color: var(--loss); font-family: var(--font-mono); margin-inline-end: 6px; }
+.ban .t { color: var(--text); font-size: 12px; }
+.ban .d { color: var(--text-3); font-size: 11px; margin-top: 3px; line-height: 1.5; }
+
+/* ── the one permitted motion ───────────────────────────────────────────── */
+@keyframes tick-flash { 0% { background-color: var(--accent-dim); } 100% { background-color: transparent; } }
+.tick { animation: tick-flash 420ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .tick { animation: none; } }
+
+.btn { font-family: var(--font-body); font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--divider); border-radius: var(--radius); padding: 6px 11px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@media (max-width: 640px) {
+  .levels { grid-template-columns: 1fr; }
+  .level { border-inline-start: 0; border-top: 1px solid var(--divider); }
+  .level:first-child { border-top: 0; }
+  .type-row { grid-template-columns: 1fr; gap: 6px; }
+  .stage { grid-template-columns: 96px 1fr 42px; }
+  .rec-meta { margin-inline-start: 0; width: 100%; }
+}
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <h1>طاولة السلماني</h1>
+    <span class="sub">نظام التصميم — بوّابة موافقة قبل بناء الصفحات</span>
+    <span class="stamp">المرحلة <span class="num">6</span> · المواصفة منفَّذة حرفياً</span>
+  </div>
+
+  <!-- ── palette ────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>الألوان</h2>
+      <span class="note">أحد عشر لوناً. لا نيون، لا تدرّجات.</span>
+    </div>
+
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#0B1117"></div><div class="meta"><div class="name">خلفية</div><span class="hex">#0B1117</span></div></div>
+      <div class="sw"><div class="chip" style="background:#121A22"></div><div class="meta"><div class="name">أسطح</div><span class="hex">#121A22</span></div></div>
+      <div class="sw"><div class="chip" style="background:#18222C"></div><div class="meta"><div class="name">أسطح ثانية</div><span class="hex">#18222C</span></div></div>
+      <div class="sw"><div class="chip" style="background:#26323E"></div><div class="meta"><div class="name">فواصل</div><span class="hex">#26323E</span></div></div>
+      <div class="sw"><div class="chip" style="background:#E4EDF4"></div><div class="meta"><div class="name">نص أساسي</div><span class="hex">#E4EDF4</span></div></div>
+      <div class="sw"><div class="chip" style="background:#9BAAB9"></div><div class="meta"><div class="name">نص ثانوي</div><span class="hex">#9BAAB9</span></div></div>
+      <div class="sw"><div class="chip" style="background:#6C7C8C"></div><div class="meta"><div class="name">نص خافت</div><span class="hex">#6C7C8C</span></div></div>
+      <div class="sw"><div class="chip" style="background:#E0A93F"></div><div class="meta"><div class="name">مميّز</div><span class="hex">#E0A93F</span></div></div>
+      <div class="sw"><div class="chip" style="background:#4FC195"></div><div class="meta"><div class="name">ربح</div><span class="hex">#4FC195</span></div></div>
+      <div class="sw"><div class="chip" style="background:#E2695A"></div><div class="meta"><div class="name">خسارة</div><span class="hex">#E2695A</span></div></div>
+      <div class="sw"><div class="chip" style="background:#6BA6DA"></div><div class="meta"><div class="name">معلومة</div><span class="hex">#6BA6DA</span></div></div>
+    </div>
+
+    <div class="rules">
+      <div class="rule amber">
+        <strong>الكهرماني للمهمّ والتفاعلي فقط</strong>
+        <span>الأزرار، الروابط، الرقم الذي يجب أن تراه أولاً. استخدامه للزينة هو ما يحوّل الطرفية إلى لعبة.</span>
+      </div>
+      <div class="rule money">
+        <strong>الأخضر والأحمر للأرقام المالية فقط</strong>
+        <span>ليس لحالة نجاح، ولا لشارة ليست ربحاً أو خسارة. وإلا فقد اللونان معناهما حين تحتاجهما.</span>
+      </div>
+      <div class="rule">
+        <strong>الأزرق للتأكيد الذي ليس مالاً</strong>
+        <span>درجات المراحل، أشرطة الثقة، أي رقم يجب ألّا يُقرأ ربحاً أو خسارة.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── typography ─────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>الخطوط</h2>
+      <span class="note">ثلاثة وجوه، لكلٍّ دور واحد.</span>
+    </div>
+
+    <div class="type-rows">
+      <div class="type-row">
+        <div class="role">العناوين<em>Readex Pro</em></div>
+        <div class="spec-display">استمرار اتجاه بعد ارتداد</div>
+      </div>
+      <div class="type-row">
+        <div class="role">النصوص<em>IBM Plex Sans Arabic</em></div>
+        <div class="spec-body">الاتجاه صاعد على الأربع ساعات وARDX عند ٣١، والسعر ارتدّ إلى منطقة دعم صمدت ثلاث مرات بحجم أعلى من متوسطه.</div>
+      </div>
+      <div class="type-row">
+        <div class="role">الأرقام<em>IBM Plex Mono · tabular</em></div>
+        <div class="spec-mono">143.50 · 138.60 · 152.40<br>161.00 · 170.50 · 2.76R</div>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <strong>أرقام جدولية تتحاذى عمودياً</strong>
+        <span>الأرقام المتناسبة تجعل عمود الأسعار مهلهلاً وغير قابل للمسح بنظرة — وهذا هو عمل عمود الأسعار كلّه.</span>
+      </div>
+      <div class="rule">
+        <strong>الأرقام والرموز اللاتينية تبقى من اليسار لليمين</strong>
+        <span>معزولة عن سياقها، وإلا نقلت خوارزمية الاتجاهين إشارة السالب إلى الطرف الخطأ داخل الجملة العربية.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── the sample card ────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>بطاقة توصية — النموذج</h2>
+      <span class="note">أرقام متّسقة حسابياً، مأخوذة من مخرَج خط التحليل الفعلي.</span>
+    </div>
+
+    <div class="panel rec">
+      <div class="rec-head">
+        <span class="rec-sym">SOL/USDT</span>
+        <span class="dir"><span class="arrow">▲</span> شراء</span>
+        <span style="color:var(--text-2);font-size:12px">استمرار اتجاه بعد ارتداد</span>
+        <div class="rec-meta">
+          <span>إطار <span class="num">4h</span></span>
+          <span>مُولَّدة <span class="num">2026-09-16 08:00</span> UTC</span>
+        </div>
+      </div>
+
+      <div class="levels">
+        <div class="level">
+          <div class="k">منطقة الدخول</div>
+          <div class="v">142.80 – 144.20</div>
+          <div class="why">نطاق من منطقة دعم فعلية، لا سعر واحد</div>
+        </div>
+        <div class="level">
+          <div class="k">الوقف</div>
+          <div class="v loss">138.60</div>
+          <div class="why">خلف آخر قاع هيكلي مؤكّد عند <span class="num">140.10</span> + هامش <span class="num">0.35</span> ATR</div>
+        </div>
+        <div class="level">
+          <div class="k">العائد للمخاطرة</div>
+          <div class="v profit">3.08R</div>
+          <div class="why">مرجّح عبر الخروج التدريجي، لا مقيس إلى الهدف الثالث</div>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="table tg-table">
+          <thead>
+            <tr><th>الهدف</th><th>السعر</th><th>الإغلاق</th><th>العائد</th><th>الأساس</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="primary">الأول</td><td class="num primary">152.40</td><td class="num pct">50%</td><td class="num r">1.82R</td><td>مقاومة بقوّة <span class="num">71</span> · اختُبرت <span class="num">4</span> مرات</td></tr>
+            <tr><td class="primary">الثاني</td><td class="num primary">161.00</td><td class="num pct">30%</td><td class="num r">3.57R</td><td>مقاومة بقوّة <span class="num">64</span> · اختُبرت <span class="num">3</span> مرات</td></tr>
+            <tr><td class="primary">الثالث</td><td class="num primary">170.50</td><td class="num pct">20%</td><td class="num r">5.51R</td><td>قمة الشهر السابق</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-scroll">
+        <table class="table">
+          <tbody>
+            <tr><td>حجم المركز</td><td class="num primary">20.408 SOL</td><td>القيمة الاسمية</td><td class="num primary">2,928.55</td></tr>
+            <tr><td>المخاطرة</td><td class="num primary">100.00</td><td>من رأس المال</td><td class="num primary">1.00%</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="conf">
+        <div class="conf-top">
+          <span class="section-label">الثقة</span>
+          <span class="conf-num">68</span>
+          <span class="conf-of">من <span class="num">100</span> · مفكَّكة بمساهمة كل مرحلة</span>
+        </div>
+        <div class="stages">
+          <div class="stage"><span class="nm">الأهلية</span><span class="bar"><span class="fill" style="width:100%"></span></span><span class="val">مرّت</span></div>
+          <div class="stage"><span class="nm">السياق الكلي</span><span class="bar"><span class="fill" style="width:62%"></span></span><span class="val">+42</span></div>
+          <div class="stage"><span class="nm">التحليل الفني</span><span class="bar"><span class="fill" style="width:78%"></span></span><span class="val">+56</span></div>
+          <div class="stage"><span class="nm">الهيكل</span><span class="bar"><span class="fill" style="width:71%"></span></span><span class="val">+49</span></div>
+          <div class="stage na"><span class="nm">التدفّقات</span><span class="bar"><span class="fill na" style="width:100%"></span></span><span class="val">−20%</span></div>
+          <div class="stage na"><span class="nm">بيانات السلسلة</span><span class="bar"><span class="fill na" style="width:100%"></span></span><span class="val">−15%</span></div>
+          <div class="stage na"><span class="nm">المشاعر</span><span class="bar"><span class="fill na" style="width:100%"></span></span><span class="val">−10%</span></div>
+        </div>
+      </div>
+
+      <div class="report">
+        <strong>لماذا هذه الصفقة.</strong>
+        الأربع ساعات في اتجاه صاعد مؤكّد بثلاثة تأرجحات متتالية، والإطار المرجعي اليومي يوافق — فلا تعارض قاتل.
+        ارتدّ السعر إلى منطقة دعم بقوّة <span class="num">68</span> صمدت ثلاث مرات من أربع، وتشكّلت عندها مطرقة بوزن
+        <span class="num">74%</span>. الانحراف الصعودي على RSI مُلغى الوزن تماماً لأن النظام السوقي اتجاهي —
+        ومؤشرات الانعكاس لا تصوّت في الاتجاهات.
+        <strong>وما يخفض الثقة:</strong> ثلاث مراحل غير متاحة خفضت الثقة بنسبة معلومة مجموعها
+        <span class="num">45%</span>، وهي معروضة أعلاه ولم تُخفَ.
+      </div>
+    </div>
+  </section>
+
+  <!-- ── density specimen ───────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>الكثافة</h2>
+      <span class="note">الجداول تبقى جداول. صفوف بارتفاع <span class="num">30</span> بكسل.</span>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="section-label">الماسح — أعلى الإشارات</span>
+        <button class="btn" id="tickBtn">حاكِ تحديثاً حيّاً</button>
+      </div>
+      <div class="table-scroll">
+        <table class="table" id="scan">
+          <thead>
+            <tr><th>العملة</th><th>السعر</th><th>24 ساعة</th><th>النتيجة</th><th>النظام</th><th>النمط</th><th>الإطار</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="primary num">SOLUSDT</td><td class="num primary px">143.51</td><td class="num profit">+4.22%</td><td class="num primary">68</td><td>اتجاه صاعد</td><td>استمرار بعد ارتداد</td><td class="num">4h</td></tr>
+            <tr><td class="primary num">ETHUSDT</td><td class="num primary px">3,842.10</td><td class="num profit">+1.08%</td><td class="num primary">64</td><td>اتجاه صاعد</td><td>اختراق وإعادة اختبار</td><td class="num">1h</td></tr>
+            <tr><td class="primary num">LINKUSDT</td><td class="num primary px">22.847</td><td class="num loss">−2.31%</td><td class="num primary">61</td><td>عرضي</td><td>انعكاس نطاق</td><td class="num">1h</td></tr>
+            <tr><td class="primary num">AVAXUSDT</td><td class="num primary px">41.093</td><td class="num loss">−0.74%</td><td class="num primary">58</td><td>عرضي</td><td>—</td><td class="num">4h</td></tr>
+            <tr><td class="primary num">ADAUSDT</td><td class="num primary px">0.8841</td><td class="num profit">+0.19%</td><td class="num primary">54</td><td>تقلّب عالٍ</td><td>—</td><td class="num">1d</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <strong>كل حالة ربح أو خسارة تُفهم بدون اللون</strong>
+        <span>الإشارة <span class="num">+</span> أو <span class="num">−</span> ترافق كل نسبة، والاتجاه يحمل كلمة «شراء» وسهماً لا لوناً وحده. من لا يميّز الأحمر من الأخضر يقرأ الصفحة كاملة.</span>
+      </div>
+      <div class="rule amber">
+        <strong>الحركة الوحيدة المسموحة</strong>
+        <span>وميض خفيف عند تحديث رقم حيّ — وظيفته أن ترى <em>أيّ</em> صف تحرّك دون أن تحدّق فيه. اضغط الزرّ أعلاه لتراه.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── banned ─────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>ممنوع</h2>
+      <span class="note">قيود بقدر ما هي اختيارات.</span>
+    </div>
+
+    <div class="bans">
+      <div class="ban"><div class="t"><span class="x">✕</span>هيرو بارتفاع الشاشة</div><div class="d">يدفع الصفحة نفسها خارج أول إطار يراه القارئ.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>إيموجي كعناوين</div><div class="d">علامة فارقة للتصميم المولَّد آلياً.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>رسوم متحركة زخرفية</div><div class="d">الحركة تعني «انظر هنا». إنفاقها على الزينة يُفقدها معناها.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>Inter و Space Grotesk</div><div class="d">الوجهان الافتراضيان «الآمنان» لكل واجهة مولَّدة.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>زوايا أكبر من <span class="num">3</span> بكسل</div><div class="d">الزوايا الناعمة تُقرأ برمجيات استهلاكية.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>ظلال</div><div class="d">الفصل بخطوط بعرض بكسل واحد. الظلّ يوحي بعمق لا وجود له.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>توسيط النصوص</div><div class="d">كل نص يبدأ من حافة البداية. التوسيط للدعوات لا للبيانات.</div></div>
+      <div class="ban"><div class="t"><span class="x">✕</span>بطاقة لكل شيء</div><div class="d">تثليث ارتفاع الصف وتدمير محاذاة الأعمدة.</div></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// The only scripted behaviour on the page: demonstrate the one permitted
+// animation. A live price updates, and the row flashes so the eye finds it.
+(function () {
+  var btn = document.getElementById("tickBtn");
+  var cells = Array.prototype.slice.call(document.querySelectorAll("#scan .px"));
+  if (!btn || cells.length === 0) return;
+
+  btn.addEventListener("click", function () {
+    var cell = cells[Math.floor(Math.random() * cells.length)];
+    var current = parseFloat(cell.textContent.replace(/,/g, ""));
+    if (!isFinite(current)) return;
+
+    var next = current * (1 + (Math.random() - 0.5) * 0.004);
+    var decimals = current >= 1000 ? 2 : current >= 1 ? 3 : 4;
+    cell.textContent = next.toLocaleString("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+
+    var row = cell.closest("tr");
+    row.classList.remove("tick");
+    // Force a reflow so the animation restarts on a repeated click.
+    void row.offsetWidth;
+    row.classList.add("tick");
+  });
+})();
+</script>

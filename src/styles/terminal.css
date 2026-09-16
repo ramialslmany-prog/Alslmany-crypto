@@ -1,0 +1,231 @@
+/**
+ * The design system.
+ *
+ * Identity: a professional trader's desk, not a startup dashboard.
+ * Reference: a Bloomberg terminal — information density, visual calm, trust.
+ *
+ * Every value here is fixed by the specification. This file is the single
+ * place they are declared, so nothing downstream ever writes a raw hex.
+ *
+ * SINGLE THEME BY DESIGN. A trading terminal is dark; a light variant would
+ * be a different product. Every colour is therefore painted explicitly rather
+ * than inherited, so the page holds whatever ground it lands on.
+ */
+
+:root {
+  /* ── surfaces ─────────────────────────────────────────────────────────── */
+  --bg: #0B1117;          /* the page itself */
+  --surface: #121A22;     /* panels sitting on the page */
+  --surface-2: #18222C;   /* rows, headers, inputs inside a panel */
+  --divider: #26323E;     /* every separation — lines, not shadows */
+
+  /* ── text ─────────────────────────────────────────────────────────────── */
+  --text: #E4EDF4;        /* primary */
+  --text-2: #9BAAB9;      /* secondary — labels, captions */
+  --text-3: #6C7C8C;      /* muted — metadata, disabled */
+
+  /* ── semantic ─────────────────────────────────────────────────────────── */
+  /* Amber marks IMPORTANT and INTERACTIVE elements. Nothing else. Using it
+     decoratively is what turns a terminal into a toy. */
+  --accent: #E0A93F;
+  --accent-dim: rgba(224, 169, 63, 0.14);
+
+  /* Green and red are for FINANCIAL NUMBERS ONLY — never for a success
+     toast, never for a status chip that is not a P&L. */
+  --profit: #4FC195;
+  --loss: #E2695A;
+  --profit-dim: rgba(79, 193, 149, 0.12);
+  --loss-dim: rgba(226, 105, 90, 0.12);
+
+  /* Informational, for neutral emphasis that must not read as money. */
+  --info: #6BA6DA;
+  --info-dim: rgba(107, 166, 218, 0.12);
+
+  /* ── type ─────────────────────────────────────────────────────────────── */
+  --font-display: "Readex Pro", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  /* Numbers get their own face with TABULAR figures, so columns of digits
+     align vertically. Proportional figures make a price column ragged and
+     unreadable at a glance, which is the whole job of a price column. */
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── geometry ─────────────────────────────────────────────────────────── */
+  /* 3px is the maximum. Softer corners read as consumer software. */
+  --radius: 3px;
+  --radius-sm: 2px;
+
+  /* Density: tight rows, because a trader scans many of them. */
+  --row-h: 30px;
+  --row-h-lg: 36px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+
+/* ── base ───────────────────────────────────────────────────────────────── */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.55;
+  /* Every text block starts at the start edge. Centred body text is for
+     invitations, not for data. */
+  text-align: start;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+  margin: 0;
+}
+
+/* ── the section heading ────────────────────────────────────────────────── */
+/* Small, letter-spaced, quiet. It labels a region; it does not announce one. */
+.section-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+/* ── numbers ────────────────────────────────────────────────────────────── */
+/**
+ * Latin digits and symbols stay LEFT-TO-RIGHT inside Arabic text.
+ *
+ * `isolate` rather than `embed`: an isolated run cannot have its surrounding
+ * punctuation reordered by the bidi algorithm, which is exactly the bug that
+ * puts a minus sign on the wrong end of a negative number in an Arabic
+ * sentence.
+ */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.profit { color: var(--profit); }
+.loss { color: var(--loss); }
+
+/* ── panels ─────────────────────────────────────────────────────────────── */
+/**
+ * Shadows are effectively absent. Separation is done with 1px lines.
+ *
+ * And not everything is a panel: border, fill and radius each say "a separate
+ * object", and stamping them on every block flattens the hierarchy instead of
+ * creating one.
+ */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-2);
+}
+
+/* ── tables stay tables ─────────────────────────────────────────────────── */
+/* A table of numbers is the densest, most scannable form there is. Turning
+   each row into a card triples its height and destroys column alignment. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  text-align: start;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0 var(--space-3);
+  height: var(--row-h);
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.table td.primary { color: var(--text); }
+
+/* ── the only motion allowed ────────────────────────────────────────────── */
+/**
+ * A brief flash when a live number changes. Nothing else animates: no
+ * entrance transitions, no decorative movement, no easing on hover.
+ *
+ * The purpose is functional — a trader watching twenty rows needs to see
+ * WHICH one just moved without staring at it.
+ */
+@keyframes tick-flash {
+  0% { background-color: var(--accent-dim); }
+  100% { background-color: transparent; }
+}
+
+.tick {
+  animation: tick-flash 420ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick { animation: none; }
+}
+
+/* ── interactive ────────────────────────────────────────────────────────── */
+
+.btn {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn-primary {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
