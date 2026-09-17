@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "doctor": "tsx src/worker/doctor.ts",
     "backfill": "tsx src/worker/backfill.ts",
+    "backtest": "tsx src/worker/backtest.ts",
     "tv": "tsx src/worker/tv-compare.ts",
     "seed": "DB_FILE=demo.db tsx scripts/seed-demo.ts",
     "dev:demo": "DB_FILE=demo.db next dev"

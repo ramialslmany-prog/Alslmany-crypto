@@ -38,3 +38,6 @@ next-env.d.ts
 /data/archive/
 /data/demo.db
 /data/demo.db-*
+
+# the backtest holdout ledger is local evidence, not shared state
+.holdout-log.json
