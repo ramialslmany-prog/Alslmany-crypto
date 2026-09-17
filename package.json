@@ -2,7 +2,10 @@
   "name": "alslmany-crypto",
   "version": "0.1.0",
   "private": true,
-  "description": "Alslmany Crypto \u2014 AI-powered crypto trading intelligence platform",
+  "description": "Alslmany Crypto — AI-powered crypto trading intelligence platform",
+  "engines": {
+    "node": ">=20 <27"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -20,7 +23,7 @@
     "dev:demo": "DB_FILE=demo.db next dev"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.6.1",
     "fflate": "^0.8.3",
     "next": "^15.5.19",
@@ -30,7 +33,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
