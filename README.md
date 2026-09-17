@@ -1,140 +1,186 @@
-# Alslmany Crypto — AI Trading Intelligence
+# منصّة السلماني للتحليل
 
-An AI-powered crypto trading & market-intelligence platform. Live multi-exchange
-data, a deterministic + AI signal engine, an **autonomous spot trader** that
-enters/manages/reviews its own trades, a walk-forward **backtester**,
-**smart-money** market-structure analysis, a real **whale feed**, and instant
-**Telegram alerts** — fully bilingual (English / العربية, RTL-aware).
+بوت تحليل عملات رقمية يمرّ بثماني مراحل إلزامية قبل أن يفتح أي صفقة، وموقع
+يعرض كل مرحلة كما حدثت — بما في ذلك المراحل التي سقطت والبيانات التي لم تتوفّر.
 
-> ⚠️ Educational tool, **not financial advice**. Trade at your own risk.
+التنفيذ **ورقي** بالكامل. طبقة التداول الحقيقي موجودة منذ اليوم الأول لكنها
+مقفلة، ولا تُفتح إلا بقرار صريح منك (انظر «التداول الحقيقي» أدناه).
 
----
-
-## Features
-
-| Section | What it does | Data source |
-|---|---|---|
-| **Overview** | Market snapshot, Fear & Greed, KPIs, whale flow | CoinGecko + alternative.me |
-| **Markets** | 300 coins, spot/futures, search, sparklines | CoinGecko |
-| **Manual Signals** | Rule-based recommendations (auditable confluences) | Binance/OKX/Bybit klines |
-| **Tracker** | Track picks, entry amount, live P&L | local |
-| **AI Signals** | Deep per-coin AI analysis + market brief | LLM (Groq/OpenAI) |
-| **AI Trader** | Autonomous: enters → staged TP/stop → self-reviews → learns | engine + LLM |
-| **Smart Money** | Market structure (BOS/CHoCH/FVG), key levels per major | klines |
-| **Whales** | Large single prints (accumulation/distribution), live | Binance aggTrades |
-| **Backtest** | Walk-forward the spot strategy on real history | klines |
-| **News** | Live crypto headlines + AI market-impact read | RSS + LLM |
-| **Settings** | Language, Telegram status/test, data, risk params | — |
-
-Everything runs on **real data** with graceful fallbacks. No keys are required
-to run it — the AI falls back to a built-in local engine, and signals come from
-public exchange APIs.
+> أداة بحثية وتعليمية. ليست نصيحة استثمارية.
 
 ---
 
-## Quick start (local)
+## القواعد التي لا يُتنازل عنها
+
+هذه ليست شعارات — كل واحدة منها مفروضة في الكود ومغطّاة باختبارات:
+
+1. **الشموع المغلقة فقط.** كل قرار يُبنى على شمعة أغلقت فعلاً. `dropUnclosed`
+   هي نقطة الاختناق الوحيدة، والاختبار يرفض شمعة تغلق بعد لحظة القرار بجزء من
+   الألف من الثانية.
+2. **التوصيات لا تُعدَّل ولا تُحذف.** محارس في قاعدة البيانات نفسها ترفض أي
+   `UPDATE` أو `DELETE`. أي تطوّر يُسجَّل كحدث منفصل مرتبط بها.
+3. **لا تُختلق قيمة لمصدر غير متاح.** المصدر الغائب يُعلَن «غير متاح»، وتنخفض
+   الثقة بنسبة معلومة ومكتوبة على الصفحة.
+4. **النتائج السيّئة تُعرض كالجيّدة.** صفحة التحليلات المرفوضة وقائمة
+   «ما لا تغطّيه هذه النتيجة» في كل اختبار خلفي.
+5. **كل مؤشّر مُختبَر مقابل مرجع مستقل.** `tests/reference/naive.ts` لا يستورد
+   شيئاً من `src/`، والملف الذهبي هو الحكم.
+
+---
+
+## التشغيل
 
 ```bash
 npm install
-cp .env.example .env.local   # optional — see below
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local      # كل شيء فيه اختياري
+npm run doctor                  # يُثبت أي مصدر يعمل فعلاً من جهازك
 ```
 
-Open `http://localhost:3000` → it redirects straight into the dashboard.
-
-### Optional keys (`.env.local`)
-
-All optional — the app works without them.
-
-- **`GROQ_API_KEY`** — free LLM for the AI features ([console.groq.com/keys](https://console.groq.com/keys)). Without it, a local analysis engine is used.
-- **`TELEGRAM_BOT_TOKEN`** — push the best picks + trade alerts to your Telegram. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`), press **Start** on it once; the chat id is auto-detected.
-- **`CRON_SECRET`** — protects the 24/7 scan endpoint (see Deployment).
-
----
-
-## Telegram alerts
-
-Once `TELEGRAM_BOT_TOKEN` is set and you've pressed **Start** on your bot, you
-get pro signal-channel cards on every event:
-
-```
-#BTC/USDT - طويل🟢
-
-نقطة الدخول: 64,143
-وقف الخسارة: 62,500
-
-الهدف 1: 66,580
-الهدف 2: 68,210
-الهدف 3: 70,650
-```
-
-…and result cards on exits (target hit / stop / breakeven / time exit) with the
-realized % and duration. The autonomous trader also moves the stop to breakeven
-after Target 1 and trails it after Target 2.
-
----
-
-## Deployment (Vercel) — 24/7
-
-The browser-driven trader runs only while the site is open. For **24/7** pushes
-(site closed), deploy and schedule the server-side scan.
-
-1. Push this repo to GitHub.
-2. Import it at [vercel.com/new](https://vercel.com/new) (framework auto-detected: Next.js).
-3. Add the env vars in **Project → Settings → Environment Variables**:
-   `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `CRON_SECRET` (any long random string).
-4. Deploy.
-
-### Scheduling the scan
-
-`vercel.json` already declares a daily cron hitting `/api/cron/scan` (the most
-frequent Vercel Cron allows on the free Hobby plan). Vercel sends the auth
-header automatically. While the site is open in a browser the in-app trader also
-scans moment-by-moment (~every 15s) for much faster entries.
-
-> **Free (Hobby) plan note:** Vercel Cron on Hobby runs **once per day**. For
-> more frequent pushes for free, use an external scheduler instead — e.g.
-> [cron-job.org](https://cron-job.org): create a job that GETs
-> `https://YOUR-APP.vercel.app/api/cron/scan?key=YOUR_CRON_SECRET` every few hours.
-
-You can trigger it manually anytime:
+### 1. تحميل التاريخ
 
 ```bash
-curl "https://YOUR-APP.vercel.app/api/cron/scan?key=YOUR_CRON_SECRET"
+npm run backfill -- --symbols BTCUSDT,ETHUSDT,SOLUSDT --years 3
 ```
 
----
+البيتكوين **إلزامية** حتى لو لم تكن تتاجرها: المرحلة الثانية تقرأ السياق الكلي
+منها، وبدونها يتوقّف كل تحليل عند المرحلة الثانية.
 
-## Architecture
-
-- **Next.js 15** (App Router) · **React 19** · **TypeScript** · **Tailwind v3** · **Framer Motion** · **TanStack Query**.
-- **Route handlers** (`src/app/api/*`) proxy/compute server-side: markets, klines, signals, validation, fear&greed, news, AI, telegram, whales, structure, backtest, cron.
-- **Signal engine** (`src/lib/signal-engine.ts`) — deterministic, auditable confluence scoring (trend, momentum, structure, volume, volatility) with HTF gating.
-- **Autonomous trader** (`src/lib/trader-engine.ts` + `JournalWatcher`) — strict strategy, max 3 positions, market-regime guard, staged take-profit, adaptive confidence, self-review lessons.
-- **Indicators** (`src/lib/indicators.ts`) — pure TA primitives (EMA/RSI/MACD/BB/ATR/VWAP/swings/FVG).
-- Client state via `useSyncExternalStore` + localStorage (journal, tracker, lessons).
-- API keys are **server-side only** — never shipped to the browser.
-
-### Scripts
+### 2. الاختبار الخلفي
 
 ```bash
-npm run dev     # dev server
-npm run build   # production build
-npm start       # run the production build
-npm run lint    # lint
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2
 ```
 
-> **Windows + OneDrive:** the dev server can intermittently throw `EBUSY` on
-> `.next` because OneDrive locks the folder during sync. The production build is
-> unaffected. For a smooth dev experience, keep the project **outside** a synced
-> OneDrive folder.
+يشغّل **نفس** دالة القرار التي يشغّلها البوت المباشر، شمعة بشمعة، لا نسخة
+مبسّطة منها. تدريب 6 أشهر واختبار شهر بالتدحرج، وآخر 20% من المدّة محجوزة.
+
+الاستخدام النهائي للمجموعة المحجوزة — **مرة واحدة**، بعد أن تتّخذ كل قراراتك:
+
+```bash
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --holdout
+```
+
+كل استخدام يُسجَّل في `.holdout-log.json`، ومحاولة ثانية على نفس النافذة
+تُرفض. الرفض متعمَّد: مجموعة محجوزة تُفحص مراراً تتحوّل إلى بيانات تدريب.
+
+### 3. البوت
+
+```bash
+npm run bot                      # دورة عند إغلاق كل شمعة ساعة
+npm run bot -- --timeframe 4h    # إطار آخر
+npm run bot -- --once --dry-run  # دورة واحدة دون تخزين أي توصية
+```
+
+### 4. الموقع
+
+```bash
+npm run dev                      # http://localhost:3000
+```
+
+الموقع يقرأ قاعدة البيانات مباشرةً للقراءة فقط. لرؤية الصفحات قبل تشغيل البوت:
+
+```bash
+npm run seed && npm run dev:demo
+```
 
 ---
 
-## Disclaimer
+## أين يعمل هذا
 
-This software is for **education and research only**. It is **not financial
-advice**, not a solicitation, and makes no guarantee of profit. Crypto trading
-carries substantial risk of loss. You are solely responsible for your decisions.
+**البوت يحتاج خادماً يعمل دائماً.** Vercel وأمثالها لا تصلح: لا عملية طويلة
+الأمد ولا قرص دائم، وقاعدة SQLite تُمحى مع كل نشر.
 
-<!-- deploy trigger -->
+الحد الأدنى العملي: خادم صغير (1 vCPU، 1GB ذاكرة) مع `systemd` أو Docker:
+
+```ini
+# /etc/systemd/system/alslmany-bot.service
+[Service]
+WorkingDirectory=/opt/alslmany-crypto
+ExecStart=/usr/bin/npm run bot
+Restart=always
+RestartSec=30
+EnvironmentFile=/opt/alslmany-crypto/.env.local
+```
+
+الموقع يمكن نشره منفصلاً، لكنه يحتاج الوصول إلى نفس ملف قاعدة البيانات —
+أبسط ترتيب هو تشغيل الاثنين على نفس الخادم.
+
+إعادة التشغيل آمنة: الأوامر المعلّقة وسجلّ الإشعارات ونبض العامل كلها على
+القرص قبل أن تنتهي الدورة.
+
+---
+
+## الإشعارات
+
+```bash
+TELEGRAM_BOT_TOKEN=...      # من @BotFather
+TELEGRAM_CHAT_ID=...
+TELEGRAM_QUIET_HOURS=23:00-07:00   # بتوقيت UTC
+TELEGRAM_MAX_PER_HOUR=6
+```
+
+القاعدة الحاكمة: **الحرج يمرّ دائماً.** قاطع الحماية وضرب الوقف يصلان الثالثة
+فجراً ولا يحسبان ضمن السقف. البقية تُسقَط داخل ساعات الصمت ولا تُؤجَّل — تنبيه
+عن سعر الثانية فجراً يصل السابعة صباحاً هو ضجيج يبدو إشارة.
+
+---
+
+## التداول الحقيقي
+
+مقفل بثلاث بوّابات مستقلّة، وكلها يجب أن تكون مفتوحة:
+
+1. `LIVE_TRADING_ENABLED=true`
+2. مفتاح API فعلي **بلا صلاحية سحب**
+3. إقرار صريح بأن صلاحية السحب مُلغاة
+
+قبل ذلك `placeEntry` يرمي استثناءً دائماً. لا تفتح هذا قبل أن ترى نتيجة ورقية
+حقيقية على تاريخك أنت.
+
+---
+
+## حدود معروفة
+
+- **دفاتر الأوامر التاريخية غير موجودة مجاناً.** الاختبار الخلفي يتخطّى شرطَي
+  الفارق والعمق ويقولها في تقريره، ولا يختلق دفتراً. النتيجة متفائلة بمقدارهما.
+- **الأخبار وبيانات السلسلة لا أرشيف لهما.** تمرّان في الاختبار الخلفي
+  كـ«غير متاح» بخصم ثقة معلن — كما تفعلان مباشرةً عند غياب المزوّد. أثر ذلك أن
+  النتيجة النهائية في الاختبار الخلفي **أقل** منها مباشرةً بشكل منهجي.
+- **لا مصدر مجاني لتقويم الأحداث الاقتصادية.** ملف التقويم يُغذّى يدوياً،
+  و«لم أفحص» تُعرض على أنها ليست «فحصتُ ولم أجد شيئاً».
+- **الهيمنة التاريخية** ليست في الخطة المجانية لـ CoinGecko.
+
+---
+
+## البنية
+
+```
+src/shared/      الوقت، الإتاحة، الإعدادات، السجلّ
+src/data/        المنصّات، الأرشيف، الكلّي، الأخبار
+src/core/
+  indicators/    المؤشرات — مُختبَرة مقابل مرجع مستقل
+  analysis/      الطبقات الأربع والأطر الستة
+  structure/     الهيكل والمستويات والأنماط
+  flows/         التدفّقات والمشتقّات
+  sentiment/     التصنيف وتقويم المخاطر
+  pipeline/      المراحل الثماني — نقطة القرار الوحيدة
+  execution/     المراقب، الوسيط الورقي، حماية المحفظة
+  backtest/      المحرّك والتدحرج الأمامي والمقاييس
+src/notify/      السياسة والقوالب وتيليجرام
+src/storage/     SQLite، المحارس، المستودعات
+src/worker/      backfill · backtest · bot · doctor · tv-compare
+src/app/         الموقع — عشر صفحات
+```
+
+`src/core/pipeline/run.ts` هي المكان الوحيد الذي يُتّخذ فيه القرار. البوت
+المباشر والاختبار الخلفي يستدعيانها كلاهما؛ لا توجد نسخة ثانية من أي قاعدة
+لتُنسى عند التعديل.
+
+---
+
+## الاختبارات
+
+```bash
+npm test          # 534 اختباراً
+npm run typecheck
+npm run tv        # مقارنة المؤشرات بـ TradingView — يحتاج شبكة
+```
