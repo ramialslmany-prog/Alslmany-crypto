@@ -26,6 +26,18 @@ export interface Target {
   readonly rMultiple: number;
   /** Which discovered level this target sits on. */
   readonly basis: string;
+  /**
+   * Where the price came from.
+   *
+   * "level" is a discovered zone price has actually traded at. "projection"
+   * is a measured move — this market's own swing size, projected from entry —
+   * used ONLY where no level exists in the trade's direction, which is the
+   * normal state of affairs at a new high. Both are read off real structure;
+   * neither is a fixed percentage or an ATR multiple. The distinction is
+   * carried all the way to the report so a reader can tell a target somebody
+   * has defended from one nobody has tested yet.
+   */
+  readonly source: "level" | "projection";
 }
 
 /**

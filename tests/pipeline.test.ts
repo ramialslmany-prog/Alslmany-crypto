@@ -618,11 +618,25 @@ describe("trade plan — levels, never percentages", () => {
     }
   });
 
-  it("REFUSES only when NOT ONE level exists in the trade's direction", () => {
-    // The old rule demanded three and threw the trade away when the third was
-    // missing — measured, on two years of real BTC/ETH/SOL, as the single
-    // biggest killer of otherwise valid setups. Two real levels is a shorter
-    // ladder; zero is the genuine refusal.
+  it("fills the empty rungs with MEASURED MOVES, not with refusal", () => {
+    // At a new high there is no resistance overhead — nobody has traded
+    // there. Measured on two years of real BTC/ETH/SOL, that one fact
+    // rejected 341 of 350 plans: precisely the trend-continuation trades the
+    // strategy exists to find. A projection is this market's own swing size,
+    // not an invented multiple, and it is labelled as such.
+    const structure = analyzeStructureStage(real, "1h");
+    const noneAhead = { ...structure, resistanceLadder: [], supportLadder: [] };
+    const r = buildPlan(planBase({ structure: noneAhead }));
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.targets.length).toBeGreaterThanOrEqual(1);
+      expect(r.targets.every((t) => t.source === "projection")).toBe(true);
+      for (const t of r.targets) expect(t.basis).toContain("حركة مُسقَطة");
+    }
+  });
+
+  it("prefers a REAL level and projects only beyond it", () => {
     const structure = analyzeStructureStage(real, "1h");
     const oneLevel = {
       ...structure,
@@ -630,15 +644,24 @@ describe("trade plan — levels, never percentages", () => {
       supportLadder: structure.supportLadder.slice(0, 1),
     };
     const r = buildPlan(planBase({ structure: oneLevel }));
-    if (r.ok) {
-      expect(r.targets).toHaveLength(1);
-      expect(r.targets[0].closeFraction).toBeCloseTo(1, 9);
+    if (r.ok && r.targets.length > 1) {
+      // The discovered level comes first; projections never displace it.
+      expect(r.targets[0].source).toBe("level");
+      expect(r.targets.slice(1).every((t) => t.source === "projection")).toBe(true);
     }
+  });
 
-    const none = { ...structure, resistanceLadder: [], supportLadder: [] };
-    const empty = buildPlan(planBase({ structure: none }));
-    expect(empty.ok).toBe(false);
-    if (!empty.ok) expect(empty.reason).toBe("no_valid_target");
+  it("REFUSES when there is neither a level ahead nor a measurable swing", () => {
+    // The genuine refusal: nothing to trade toward and nothing to measure.
+    const flat = analyzeStructureStage(real.slice(0, 25), "1h");
+    const nothing = {
+      ...flat,
+      resistanceLadder: [],
+      supportLadder: [],
+      structure: { ...flat.structure, swings: [] },
+    };
+    const r = buildPlan(planBase({ structure: nothing, price: flat.price, atr: flat.atr }));
+    expect(r.ok).toBe(false);
   });
 
   it("splits a two-level ladder 60/40, so the whole position still exits", () => {
@@ -722,9 +745,9 @@ describe("recommendations are immutable — enforced by SQLite, not by politenes
       entry: { low: 50_000, high: 50_200, mid: 50_100 },
       stop: 49_000, stopBasis: "خلف آخر قاع هيكلي",
       targets: [
-        { index: 1 as const, price: 52_000, closeFraction: 0.5, rMultiple: 1.7, basis: "مقاومة" },
-        { index: 2 as const, price: 54_000, closeFraction: 0.3, rMultiple: 3.5, basis: "مقاومة" },
-        { index: 3 as const, price: 56_000, closeFraction: 0.2, rMultiple: 5.4, basis: "مقاومة" },
+        { index: 1 as const, price: 52_000, closeFraction: 0.5, rMultiple: 1.7, basis: "مقاومة", source: "level" as const },
+        { index: 2 as const, price: 54_000, closeFraction: 0.3, rMultiple: 3.5, basis: "مقاومة", source: "level" as const },
+        { index: 3 as const, price: 56_000, closeFraction: 0.2, rMultiple: 5.4, basis: "مقاومة", source: "level" as const },
       ] as const,
       riskReward: 2.6, positionSize: 0.09, positionNotional: 4509, riskAmount: 100,
       riskPercent: 1, confidence: 72, confidenceComponents: [], finalScore: 68,

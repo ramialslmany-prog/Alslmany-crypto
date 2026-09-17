@@ -155,9 +155,9 @@ const rec = {
   regime: "trending_up" as const, timeframe: "1h" as const, generatedAt: NOON, asOfCandle: NOON,
   exchange: "binance", entry: { low: 100, high: 102, mid: 101 }, stop: 98, stopBasis: "خلف القاع",
   targets: [
-    { index: 1 as const, price: 105, closeFraction: 0.5, basis: "مقاومة", rewardR: 2 },
-    { index: 2 as const, price: 110, closeFraction: 0.3, basis: "مقاومة", rewardR: 3 },
-    { index: 3 as const, price: 115, closeFraction: 0.2, basis: "مقاومة", rewardR: 4 },
+    { index: 1 as const, price: 105, closeFraction: 0.5, basis: "مقاومة", source: "level" as const, rewardR: 2 },
+    { index: 2 as const, price: 110, closeFraction: 0.3, basis: "مقاومة", source: "level" as const, rewardR: 3 },
+    { index: 3 as const, price: 115, closeFraction: 0.2, basis: "مقاومة", source: "level" as const, rewardR: 4 },
   ] as never,
   riskReward: 2.4, positionSize: 3, positionNotional: 303, riskAmount: 100, riskPercent: 1,
   confidence: 72, confidenceComponents: [], finalScore: 68, invalidation: [], expiresAt: NOON + HOUR,
