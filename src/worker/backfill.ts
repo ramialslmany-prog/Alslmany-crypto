@@ -15,6 +15,7 @@ import { Ingestor } from "@/data/ingest";
 import { openDb, closeDb, maintain } from "@/storage/db";
 import { CandleRepo } from "@/storage/repositories/candles";
 import { ArchiveRepo } from "@/storage/repositories/archive";
+import { SymbolRepo } from "@/storage/repositories/symbols";
 import { createLogger } from "@/shared/logger";
 import { TIMEFRAMES, type Timeframe, isTimeframe } from "@/shared/time";
 
@@ -70,9 +71,17 @@ async function main(): Promise<void> {
   // ── resolve the symbol universe ──────────────────────────────────────────
   let symbols = args.symbols ?? cfg.WATCHLIST;
 
+  // ALWAYS refresh the symbol table, even for an explicit --symbols list.
+  //
+  // It used to be skipped whenever --symbols was given, which stored the
+  // candles and nothing else: the backtester and the bot both look a symbol
+  // up in this table first, so a perfectly good backfill produced a database
+  // they then refused to read, with a message telling the user to run the
+  // backfill they had just run.
+  console.log(`${DIM}تحديث قائمة العملات من المنصّة…${RESET}`);
+  await ingest.refreshUniverse(0);
+
   if (symbols.length === 0 || args.top) {
-    console.log(`${DIM}تحديث قائمة العملات من المنصّة…${RESET}`);
-    await ingest.refreshUniverse(0);
     const ticker = await source.ticker24h();
     if (!ticker.available) {
       console.error(`تعذّر جلب قائمة الأحجام: ${ticker.detail ?? ticker.reason}`);
@@ -130,6 +139,29 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── listing dates, now that the candles exist ────────────────────────────
+  //
+  // This has to happen AFTER the backfill, not before: the listing date is
+  // read from the first stored daily bar, and before the backfill there are
+  // none. Getting the order wrong left every symbol with an unknown listing
+  // date — and stage 1 rejects an unknown date by design, so the bot would
+  // have refused every coin it had just spent an hour downloading.
+  const symbolRepo = new SymbolRepo(db);
+  const candleRepoForDates = new CandleRepo(db);
+  let dated = 0;
+  for (const symbol of symbols) {
+    const info = symbolRepo.get(cfg.MARKET_EXCHANGE, "spot", symbol);
+    if (!info || info.listedAt) continue;
+    // Daily first, then any timeframe that has history.
+    const coverage =
+      candleRepoForDates.coverage(symbol, "1d") ??
+      args.timeframes.map((tf) => candleRepoForDates.coverage(symbol, tf)).find((c) => c != null);
+    if (coverage) {
+      symbolRepo.setListedAt(cfg.MARKET_EXCHANGE, "spot", symbol, coverage.first);
+      dated++;
+    }
+  }
+
   // ── summary: report the bad as plainly as the good ───────────────────────
   const archiveRepo = new ArchiveRepo(db);
   const candleRepo = new CandleRepo(db);
@@ -138,6 +170,7 @@ async function main(): Promise<void> {
   console.log(`\n${BOLD}الخلاصة${RESET}`);
   console.log(`  ${fmt(candleRepo.count())} شمعة في قاعدة البيانات (${fmt(totalBars)} عبر هذه الجولة)`);
   console.log(`  المدة ${elapsedMin.toFixed(1)} دقيقة`);
+  console.log(`  ${fmt(symbols.length)} عملة في جدول العملات · ${fmt(dated)} حُدّد تاريخ إدراجها من أول شمعة مخزّنة`);
 
   console.log(`\n${BOLD}ملفات الأرشيف${RESET}`);
   for (const row of archiveRepo.summary()) {

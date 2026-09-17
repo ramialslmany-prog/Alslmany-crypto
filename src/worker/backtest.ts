@@ -79,7 +79,12 @@ function loadSymbol(
 ): BacktestSymbol | null {
   const info = symbolRepo.get(exchange, "spot", symbol);
   if (!info) {
-    console.log(`${YELLOW}تخطّي ${symbol}: غير موجودة في جدول العملات. شغّل npm run backfill أولاً.${RESET}`);
+    console.log(
+      `${YELLOW}تخطّي ${symbol}: غير موجودة في جدول العملات.${RESET}\n` +
+      `  ${DIM}شغّل: npm run backfill -- --symbols ${symbol} --years 3${RESET}\n` +
+      `  ${DIM}إن كنت قد شغّلته فعلاً، فالأرجح أنه سبق إصلاحاً في هذا الملف — أعِد تشغيله، ` +
+      `فهو يستأنف ولا يُعيد التحميل.${RESET}`,
+    );
     return null;
   }
 
