@@ -60,6 +60,7 @@ const VETO_HINT: Record<string, string> = {
   risk_reward_too_low: "real targets do not justify the stop distance — try a lower MIN_RISK_REWARD",
   no_valid_stop: "no real invalidation level to hide a stop behind",
   no_valid_target: "nothing ahead and no measurable swing to project from",
+  entry_extended: "price already ran past the entry zone — this is chasing, wait for a pullback",
   direction_not_allowed: "the macro context forbids this direction",
   stale_data: "data older than maxDataAgeBars allows",
   correlated_exposure: "correlated positions already open",

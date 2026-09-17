@@ -88,6 +88,15 @@ export interface RunOutput {
  * because on-chain flows carry real information a technical read cannot
  * substitute for.
  */
+/**
+ * How far past the entry zone still counts as entering rather than chasing.
+ *
+ * Half an ATR: enough that a candle closing slightly beyond the zone does not
+ * cancel a good idea, tight enough that a move which has already run is not
+ * sold to the reader as an entry.
+ */
+const CHASE_LIMIT_ATR = 0.5;
+
 const UNAVAILABLE_PENALTY: Record<string, number> = {
   flows: 0.20,
   onchain: 0.15,
@@ -378,6 +387,42 @@ export function runPipeline(input: RunInput): RunOutput {
       run: {
         ...baseRun, failedAt: "council", vetoes,
         arabic: `${summarize(input.symbol, stages, council.stage)} ${plan.arabic}`,
+      },
+      recommendation: null,
+    };
+  }
+
+  // ── never chase ─────────────────────────────────────────────────────────
+  //
+  // The idea is right and the price is gone. Entering here buys the same
+  // thesis at a worse fill, behind a stop that must still sit under the same
+  // invalidation level — so the stop is wider, the position smaller for the
+  // same 1% risk, and every target further away in R. It is not the same
+  // trade with slightly less edge; it is a different and worse one.
+  //
+  // Measured in ATR, not percent: "far" means far relative to how much THIS
+  // market moves, and a fixed percentage calls the same distance extended on
+  // one coin and normal on another.
+  const long = council.direction === "long";
+  const past = long ? structure.price - plan.entry.high : plan.entry.low - structure.price;
+  const pastAtr = structure.atr > 0 ? past / structure.atr : 0;
+
+  if (pastAtr > CHASE_LIMIT_ATR) {
+    const veto = {
+      id: "entry_extended" as const,
+      arabic:
+        `السعر تجاوز منطقة الدخول بمقدار ${pastAtr.toFixed(2)} ATR (الحد ${CHASE_LIMIT_ATR}). ` +
+        "الفكرة صحيحة والسعر فات. الدخول الآن يعني وقفاً أوسع خلف نفس مستوى الإبطال، " +
+        "ومركزاً أصغر لنفس المخاطرة، وأهدافاً أبعد بوحدات R — أي صفقة أخرى أسوأ، لا نفس الصفقة بحافة أقل. " +
+        "انتظر ارتداداً إلى المنطقة.",
+      actual: `${pastAtr.toFixed(2)} ATR`,
+      threshold: `${CHASE_LIMIT_ATR} ATR`,
+    };
+    failedAt = "council";
+    return {
+      run: {
+        ...baseRun, failedAt: "council", vetoes: [...council.vetoes, veto],
+        arabic: `${summarize(input.symbol, stages, council.stage)} ${veto.arabic}`,
       },
       recommendation: null,
     };

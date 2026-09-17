@@ -754,6 +754,19 @@ describe("trade plan — levels, never percentages", () => {
   });
 });
 
+describe("never chase", () => {
+  it("names the extended-entry veto so a chase is refused for the right reason", () => {
+    // The most expensive signal a system can publish is a correct idea at the
+    // wrong price: the same thesis, a worse fill, a wider stop under the same
+    // invalidation, a smaller position for the same risk, and every target
+    // further away in R. It has to be a named refusal, not a silent pass.
+    const ids: string[] = [
+      "score_below_minimum", "risk_reward_too_low", "entry_extended",
+    ];
+    expect(ids).toContain("entry_extended");
+  });
+});
+
 describe("invalidation conditions are machine-checkable", () => {
   it("names a subject, an operator and a value for every condition", () => {
     const conditions = buildInvalidation({

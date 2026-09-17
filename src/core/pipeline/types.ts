@@ -241,7 +241,17 @@ export type VetoId =
   | "no_setup_match"
   | "no_valid_stop"
   | "no_valid_target"
-  | "circuit_breaker";
+  | "circuit_breaker"
+  /**
+   * Price has already run past the entry zone in the trade's favour.
+   *
+   * The most expensive signal a system can publish is a correct idea at the
+   * wrong price. The setup is real, the direction is right, and the entry is
+   * gone — taking it means a worse fill, a wider stop for the same
+   * invalidation, and a smaller position for the same risk. Every one of
+   * those makes the same idea a different, worse trade.
+   */
+  | "entry_extended";
 
 export interface Veto {
   readonly id: VetoId;
