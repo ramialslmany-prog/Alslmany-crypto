@@ -33,8 +33,9 @@ import {
   type BacktestOutcome, type BacktestSettings, type BacktestSymbol,
 } from "@/core/backtest/engine";
 import {
-  countFolds, runHoldout, runWalkForward, type WalkForwardResult,
+  countFolds, holdoutBoundary, runHoldout, runWalkForward, type WalkForwardResult,
 } from "@/core/backtest/walkforward";
+import { SETUP_KINDS } from "@/core/pipeline/types";
 import { buyAndHold, bySetup, computeMetrics, funnelVerdict, type Metrics } from "@/core/backtest/metrics";
 import { TIMEFRAMES, isTimeframe, type Timeframe } from "@/shared/time";
 import type { Candle } from "@/core/types";
@@ -69,6 +70,8 @@ const DAY = 86_400_000;
 
 interface Args {
   symbols: string[];
+  /** Run each setup family ALONE and rank them. */
+  compareSetups: boolean;
   timeframe: Timeframe;
   years: number;
   equity: number;
@@ -92,6 +95,7 @@ function parseArgs(argv: string[]): Args {
     years: Number(get("--years") ?? 2),
     equity: get("--equity") ? Number(get("--equity")) : 0,
     minScore: get("--min-score") ? Number(get("--min-score")) : null,
+    compareSetups: argv.includes("--compare-setups"),
     holdout: argv.includes("--holdout"),
     again: argv.includes("--again"),
     json: get("--json") ?? null,
@@ -358,6 +362,76 @@ async function main(): Promise<void> {
       `${BOLD}BACKTEST — ${symbols.map((s) => s.symbol).join(", ")} · ` +
       `${args.timeframe} · ${iso(from)} to ${iso(to)}${RESET}\n`,
     );
+
+    // ── the setup study ───────────────────────────────────────────────────
+    //
+    // "Which strategy is best" is not a question anyone can answer for you in
+    // the abstract: the answer depends on your symbols, your timeframe and
+    // the regime your data happens to cover. It IS answerable by measurement,
+    // and this runs the measurement — each setup family alone, over the same
+    // window, on the same prices, and ranked by expectancy per trade.
+    //
+    // Deliberately reported with the trade count beside every row. A setup
+    // with four trades and a 3R expectancy has told you nothing, and ranking
+    // it first without that column would be the most flattering lie the
+    // report could tell.
+    if (args.compareSetups) {
+      const boundary = holdoutBoundary(from, to);
+      console.log(
+        `${BOLD}SETUP STUDY${RESET} ${DIM}— each family alone, ${iso(from)} to ${iso(boundary)}, ` +
+        `holdout untouched${RESET}\n`,
+      );
+
+      const rows: { setup: string; m: Metrics }[] = [];
+      for (const setup of SETUP_KINDS) {
+        process.stdout.write(`  ${DIM}running ${setup}…${RESET}\r`);
+        const out = runBacktest(
+          symbols,
+          { ...settings, allowedSetups: [setup], seedSetupStats: new Map() },
+          from, boundary,
+        );
+        rows.push({ setup, m: computeMetrics(out.trades, out.equityCurve, equity) });
+      }
+
+      // Ranked by expectancy, but a family with too few trades to judge is
+      // pushed below everything judgeable rather than crowned by noise.
+      const JUDGEABLE = 10;
+      rows.sort((a, b) => {
+        const aJudgeable = a.m.trades >= JUDGEABLE ? 1 : 0;
+        const bJudgeable = b.m.trades >= JUDGEABLE ? 1 : 0;
+        if (aJudgeable !== bJudgeable) return bJudgeable - aJudgeable;
+        return b.m.expectancyR - a.m.expectancyR;
+      });
+
+      console.log(
+        `  ${"setup".padEnd(22)}${"trades".padStart(7)}${"expectancy".padStart(12)}` +
+        `${"win%".padStart(8)}${"profit factor".padStart(15)}${"max DD".padStart(9)}`,
+      );
+      for (const { setup, m } of rows) {
+        const flag = m.trades === 0
+          ? ` ${DIM}never fired${RESET}`
+          : m.trades < JUDGEABLE
+            ? ` ${YELLOW}too few to judge${RESET}`
+            : "";
+        console.log(
+          `  ${setup.padEnd(22)}${String(m.trades).padStart(7)}` +
+          `${`${n2(m.expectancyR, 3)}R`.padStart(12)}` +
+          `${`${n2(m.winRate * 100, 0)}%`.padStart(8)}` +
+          `${(m.profitFactor === null ? "—" : n2(m.profitFactor)).padStart(15)}` +
+          `${`${n2(m.maxDrawdownPct, 1)}%`.padStart(9)}${flag}`,
+        );
+      }
+
+      const judgeable = rows.filter((r) => r.m.trades >= JUDGEABLE);
+      console.log(
+        judgeable.length === 0
+          ? `\n  ${YELLOW}Not one family produced ${JUDGEABLE} trades. Nothing here is judgeable — ` +
+            `widen the period or the symbol list before drawing any conclusion.${RESET}\n`
+          : `\n  ${DIM}${judgeable.length} of ${rows.length} families reached ${JUDGEABLE} trades. ` +
+            `Only those rows mean anything; the rest are sample size, not skill.${RESET}\n`,
+      );
+      return;
+    }
 
     const totalFolds = countFolds(from, to);
     const startedAt = Date.now();

@@ -151,6 +151,22 @@ export type SetupKind =
   | "divergence_reversal"
   | "liquidity_sweep";
 
+/**
+ * Every setup, as a list.
+ *
+ * Exported so a study can iterate them: "which strategy is best" is only
+ * answerable by running each one alone over the same prices, and that needs
+ * the set to exist somewhere other than in a type.
+ */
+export const SETUP_KINDS: readonly SetupKind[] = [
+  "trend_continuation",
+  "breakout_retest",
+  "range_reversal",
+  "momentum_ignition",
+  "divergence_reversal",
+  "liquidity_sweep",
+];
+
 export const SETUP_AR: Record<SetupKind, string> = {
   trend_continuation: "استمرار اتجاه بعد ارتداد",
   breakout_retest: "اختراق وإعادة اختبار",

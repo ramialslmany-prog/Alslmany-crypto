@@ -22,7 +22,7 @@ import { runPipeline } from "@/core/pipeline/run";
 import { buildPlan, buildInvalidation, computeIntegrityHash, recommendationId } from "@/core/recommendation/builder";
 import { analyzeStructureStage } from "@/core/analysis/structure-stage";
 import { analyzeTechnical } from "@/core/analysis/technical";
-import { REGIME_ALLOWED_SETUPS, stagePass, stageUnavailable } from "@/core/pipeline/types";
+import { REGIME_ALLOWED_SETUPS, SETUP_KINDS, stagePass, stageUnavailable } from "@/core/pipeline/types";
 import { available, unavailable } from "@/shared/availability";
 import { tfMillis, type Timeframe } from "@/shared/time";
 import type { Candle, OrderBook, SymbolInfo, Ticker24h } from "@/core/types";
@@ -357,6 +357,16 @@ describe("regime nullification — the spec's rule made structural", () => {
   it("weights on-chain near zero for scalps and heavily for long timeframes", () => {
     expect(weightsFor("trending_up", "5m").onchain).toBeLessThan(0.05);
     expect(weightsFor("trending_up", "1d").onchain).toBeGreaterThan(0.12);
+  });
+});
+
+describe("the setup roster", () => {
+  it("lists every setup the regimes can allow, with nothing missing", () => {
+    // A study runs each family alone; a family absent from this list would be
+    // silently excluded from its own comparison and look like it never fired.
+    const fromRegimes = new Set(Object.values(REGIME_ALLOWED_SETUPS).flat());
+    for (const kind of fromRegimes) expect(SETUP_KINDS).toContain(kind);
+    expect(new Set(SETUP_KINDS).size).toBe(SETUP_KINDS.length);
   });
 });
 
