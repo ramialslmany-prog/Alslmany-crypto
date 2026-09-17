@@ -331,6 +331,7 @@ async function main(): Promise<void> {
       startingEquity: equity,
       riskPercent: cfg.RISK_PER_TRADE_PCT,
       correlationCeiling: cfg.MAX_BTC_CORRELATION_FOR_INDEPENDENCE,
+      spotOnly: cfg.SPOT_ONLY,
       limits: {
         riskPerTradePct: cfg.RISK_PER_TRADE_PCT,
         maxOpenPositions: cfg.MAX_OPEN_POSITIONS,

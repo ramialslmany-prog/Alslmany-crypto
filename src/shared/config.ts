@@ -101,6 +101,17 @@ const Schema = z.object({
   PAPER_STARTING_EQUITY: num(10_000, 100),
 
   // ── decision thresholds (Stage 8 veto filters) ──────────────────────────
+  /**
+   * Spot only: BUY or nothing, never a short.
+   *
+   * Not a filter applied at the end — it narrows what the macro stage is
+   * allowed to permit, so a bearish market produces NO TRADE rather than a
+   * short that something downstream then has to catch. A spot account cannot
+   * sell what it does not hold, and a system that reasons about shorts it can
+   * never take is reasoning about a different account than yours.
+   */
+  SPOT_ONLY: bool(true),
+
   MIN_FINAL_SCORE: num(60, 0, 100),
   MIN_RISK_REWARD: num(1.8, 0.5, 10),
   MAX_BTC_CORRELATION_FOR_INDEPENDENCE: num(0.85, 0.5, 1),

@@ -91,6 +91,13 @@ export interface BacktestSettings {
    * live bot never has.
    */
   readonly lookbackBars: number;
+  /**
+   * Spot only — long or nothing.
+   *
+   * Must match the live setting, or the backtest validates a strategy that
+   * takes trades the account cannot.
+   */
+  readonly spotOnly: boolean;
   /** Historical Fear & Greed, oldest first. Empty when not fetched. */
   readonly fearGreedHistory: readonly FearGreed[];
   /**
@@ -693,6 +700,7 @@ function buildRunInput(
       fearGreed: fearGreedAt(settings.fearGreedHistory, now),
     },
     correlationCeiling: settings.correlationCeiling,
+    spotOnly: settings.spotOnly,
     // Stage 5 runs on what history genuinely holds: the taker-buy split gives
     // a real CVD. Books, funding and open interest are not archived, so they
     // arrive null and the stage reports which parts it could not read.

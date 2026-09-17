@@ -42,6 +42,16 @@ export interface RunInput {
   readonly macro: Omit<MacroInput, "symbol" | "assetDaily" | "now" | "correlationCeiling">;
   readonly correlationCeiling: number;
   /**
+   * Spot only — long or nothing.
+   *
+   * Applied HERE, right after the macro stage, rather than at the end. A
+   * bearish market must produce a clean NO TRADE with "spot cannot short" as
+   * the reason; letting a short proposal travel through five more stages and
+   * die at the last one wastes the work and, worse, files the rejection under
+   * the wrong cause on the rejected-analyses page.
+   */
+  readonly spotOnly?: boolean;
+  /**
    * Stage 5 inputs. When present the pipeline runs the flows stage itself;
    * `flows` may still be passed directly (the backtester supplies a
    * pre-computed result rather than re-reading books it does not have).
@@ -151,7 +161,18 @@ export function runPipeline(input: RunInput): RunOutput {
       }),
     );
   }
-  const allowedDirection: "long" | "short" | "both" = macro.allowedDirection;
+  let allowedDirection: "long" | "short" | "both" = macro.allowedDirection;
+
+  if (input.spotOnly) {
+    if (allowedDirection === "short") {
+      failedAt = "macro";
+      return finish(
+        `${input.symbol}: السياق الكلي يسمح بالبيع فقط، والحساب فوري (سبوت) لا يبيع. ` +
+        "لا صفقة — وهذا رفض صحيح لا فرصة ضائعة: بيع لا تستطيع تنفيذه ليس فرصة.",
+      );
+    }
+    allowedDirection = "long";
+  }
 
   // ── Stage 3: technical ───────────────────────────────────────────────────
   const tradingCandles = input.candles[input.tradingTimeframe] ?? [];

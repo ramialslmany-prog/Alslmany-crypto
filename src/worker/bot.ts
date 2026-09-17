@@ -618,6 +618,7 @@ export class Bot {
         fearGreed: macro?.fearGreed ?? unavailable("alternative.me", "not_implemented", "لم تُقرأ بعد"),
       },
       correlationCeiling: this.cfg.MAX_BTC_CORRELATION_FOR_INDEPENDENCE,
+      spotOnly: this.cfg.SPOT_ONLY,
       flowsInput: {
         trades: value(derivatives?.[4]),
         bookSnapshots: book.available ? [book.value] : null,

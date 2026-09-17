@@ -117,6 +117,9 @@ function settings(over: Partial<BacktestSettings> = {}): BacktestSettings {
     },
     eligibility: { ...DEFAULT_ELIGIBILITY, requireLiveBook: false },
     costs: DEFAULT_COSTS,
+    // The fixture exercises both directions, so the spot restriction is off
+    // here; the live default is on. A dedicated test below pins that rule.
+    spotOnly: false,
     lookbackBars: 300,
     fearGreedHistory: [],
     allowedSetups: null,
@@ -167,6 +170,21 @@ describe("the engine", () => {
     );
     expect(out.funnel.recommendations).toBe(0);
     expect(out.finalEquity).toBe(10_000);
+  });
+
+  it("takes NO SHORTS when spot-only, on the same prices that produced them", () => {
+    // A spot account cannot sell what it does not hold. The restriction is
+    // applied right after the macro stage, so a bearish market produces a
+    // clean NO TRADE rather than a short that dies five stages later filed
+    // under the wrong cause.
+    const withShorts = runBacktest(
+      [sym], settings({ spotOnly: false }), candles[100].closeTime, candles[400].closeTime,
+    );
+    const spotOnly = runBacktest(
+      [sym], settings({ spotOnly: true }), candles[100].closeTime, candles[400].closeTime,
+    );
+    expect(spotOnly.trades.every((t) => t.direction === "long")).toBe(true);
+    expect(spotOnly.funnel.recommendations).toBeLessThanOrEqual(withShorts.funnel.recommendations);
   });
 
   it("states its caveats instead of presenting the result as complete", () => {
