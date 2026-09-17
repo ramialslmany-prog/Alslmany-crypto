@@ -688,14 +688,19 @@ describe("trade plan — levels, never percentages", () => {
     }
   });
 
-  it("risk/reward is weighted across the staged exits, not measured to target 3", () => {
+  it("reports the RATIO and the EXPECTANCY as two separate numbers", () => {
+    // Collapsing them was a units error that cost the strategy every trade:
+    // a weighted average was compared against a threshold meant for a
+    // final-target ratio, so plans with targets at 1R, 2R and 3R — a
+    // risk/reward of 3.0 by any normal reading — were rejected for being
+    // "below 1.8".
     const r = buildPlan(planBase());
     if (r.ok) {
       const weighted = r.targets.reduce((s, t) => s + t.rMultiple * t.closeFraction, 0);
-      expect(r.riskReward).toBeCloseTo(weighted, 9);
-      // And therefore no higher than the final target's own R — the honest
-      // number. Equal only when a single real level takes the whole position.
-      expect(r.riskReward).toBeLessThanOrEqual(r.targets[r.targets.length - 1].rMultiple);
+      expect(r.expectedR).toBeCloseTo(weighted, 9);
+      expect(r.riskReward).toBeCloseTo(r.targets[r.targets.length - 1].rMultiple, 9);
+      // The expectancy is never the flattering one.
+      expect(r.expectedR).toBeLessThanOrEqual(r.riskReward);
     }
   });
 });
@@ -749,7 +754,7 @@ describe("recommendations are immutable — enforced by SQLite, not by politenes
         { index: 2 as const, price: 54_000, closeFraction: 0.3, rMultiple: 3.5, basis: "مقاومة", source: "level" as const },
         { index: 3 as const, price: 56_000, closeFraction: 0.2, rMultiple: 5.4, basis: "مقاومة", source: "level" as const },
       ] as const,
-      riskReward: 2.6, positionSize: 0.09, positionNotional: 4509, riskAmount: 100,
+      riskReward: 5.4, expectedR: 2.6, positionSize: 0.09, positionNotional: 4509, riskAmount: 100,
       riskPercent: 1, confidence: 72, confidenceComponents: [], finalScore: 68,
       invalidation: [], expiresAt: NOW + 12 * tfMillis("1h"), report: "تقرير",
       ...over,

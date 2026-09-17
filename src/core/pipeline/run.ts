@@ -352,7 +352,8 @@ export function runPipeline(input: RunInput): RunOutput {
     const veto = {
       id: "risk_reward_too_low" as const,
       arabic:
-        `العائد للمخاطرة ${plan.riskReward.toFixed(2)} دون الحد الأدنى ${input.council.minRiskReward}. ` +
+        `العائد للمخاطرة ${plan.riskReward.toFixed(2)} دون الحد الأدنى ${input.council.minRiskReward} ` +
+        `(التوقّع المرجّح للخروج المرحلي ${plan.expectedR.toFixed(2)}R). ` +
         "الأهداف عند المستويات الفعلية لا تبرّر مسافة الوقف الحقيقية.",
       actual: plan.riskReward.toFixed(2),
       threshold: String(input.council.minRiskReward),
@@ -398,6 +399,7 @@ export function runPipeline(input: RunInput): RunOutput {
     stopBasis: plan.stopBasis,
     targets: plan.targets,
     riskReward: plan.riskReward,
+    expectedR: plan.expectedR,
     positionSize: plan.positionSize,
     positionNotional: plan.positionNotional,
     riskAmount: plan.riskAmount,
@@ -445,7 +447,7 @@ function buildReport(
   symbol: string,
   stages: readonly StageResult[],
   council: { regime: string; setup: { arabic: string } | null; finalScore: number; confidence: number; nullified: readonly string[] },
-  plan: { entry: { low: number; high: number; mid: number }; stop: number; stopBasis: string; targets: readonly { index: number; price: number; closeFraction: number; rMultiple: number; basis: string }[]; riskReward: number; positionSize: number; riskAmount: number },
+  plan: { entry: { low: number; high: number; mid: number }; stop: number; stopBasis: string; targets: readonly { index: number; price: number; closeFraction: number; rMultiple: number; basis: string }[]; riskReward: number; expectedR: number; positionSize: number; riskAmount: number },
 ): string {
   const lines: string[] = [];
 
@@ -472,7 +474,8 @@ function buildReport(
     );
   }
   lines.push(
-    `العائد للمخاطرة المرجّح ${plan.riskReward.toFixed(2)}، ` +
+    `العائد للمخاطرة ${plan.riskReward.toFixed(2)} إلى الهدف الأخير، ` +
+    `والتوقّع المرجّح للخروج المرحلي ${plan.expectedR.toFixed(2)}R، ` +
       `وحجم المركز ${plan.positionSize} محسوباً من مسافة الوقف ومخاطرة ${plan.riskAmount.toFixed(2)}.`,
   );
   lines.push("");

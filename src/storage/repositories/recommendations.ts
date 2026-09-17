@@ -25,7 +25,7 @@ interface Row {
   timeframe: string; exchange: string; generated_at: number; as_of_candle: number;
   entry_low: number; entry_high: number; entry_mid: number;
   stop: number; stop_basis: string; targets_json: string;
-  risk_reward: number; position_size: number; position_notional: number;
+  risk_reward: number; expected_r: number; position_size: number; position_notional: number;
   risk_amount: number; risk_percent: number;
   confidence: number; final_score: number;
   confidence_components_json: string; invalidation_json: string;
@@ -48,6 +48,7 @@ function toRecommendation(r: Row): Recommendation {
     stopBasis: r.stop_basis,
     targets: JSON.parse(r.targets_json) as readonly Target[],
     riskReward: r.risk_reward,
+    expectedR: r.expected_r ?? 0,
     positionSize: r.position_size,
     positionNotional: r.position_notional,
     riskAmount: r.risk_amount,
@@ -78,7 +79,7 @@ export interface RecommendationWithState extends Recommendation {
 
 const COLS = `id, symbol, direction, setup, regime, timeframe, exchange,
   generated_at, as_of_candle, entry_low, entry_high, entry_mid, stop, stop_basis,
-  targets_json, risk_reward, position_size, position_notional, risk_amount,
+  targets_json, risk_reward, expected_r, position_size, position_notional, risk_amount,
   risk_percent, confidence, final_score, confidence_components_json,
   invalidation_json, expires_at, report, integrity_hash, pipeline_json`;
 
@@ -104,7 +105,7 @@ export class RecommendationRepo {
           `INSERT INTO recommendations (${COLS}) VALUES (
             @id, @symbol, @direction, @setup, @regime, @timeframe, @exchange,
             @generated_at, @as_of_candle, @entry_low, @entry_high, @entry_mid,
-            @stop, @stop_basis, @targets_json, @risk_reward, @position_size,
+            @stop, @stop_basis, @targets_json, @risk_reward, @expected_r, @position_size,
             @position_notional, @risk_amount, @risk_percent, @confidence,
             @final_score, @confidence_components_json, @invalidation_json,
             @expires_at, @report, @integrity_hash, @pipeline_json)`,
@@ -116,7 +117,7 @@ export class RecommendationRepo {
           entry_low: rec.entry.low, entry_high: rec.entry.high, entry_mid: rec.entry.mid,
           stop: rec.stop, stop_basis: rec.stopBasis,
           targets_json: JSON.stringify(rec.targets),
-          risk_reward: rec.riskReward, position_size: rec.positionSize,
+          risk_reward: rec.riskReward, expected_r: rec.expectedR, position_size: rec.positionSize,
           position_notional: rec.positionNotional, risk_amount: rec.riskAmount,
           risk_percent: rec.riskPercent, confidence: rec.confidence,
           final_score: rec.finalScore,

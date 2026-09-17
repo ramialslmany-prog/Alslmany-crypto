@@ -376,4 +376,21 @@ CREATE TABLE IF NOT EXISTS worker_state (
 );
 `,
   },
+  {
+    id: 5,
+    name: "expected_r",
+    sql: `
+-- ── the staged exit's weighted result ───────────────────────────────────
+-- Stored beside risk_reward, never instead of it. The two answer different
+-- questions: the ratio is the case for the trade, the expectancy is what
+-- running the plan as written is actually worth. Collapsing them into one
+-- column was how a weighted average came to be compared against a threshold
+-- meant for a final-target ratio.
+--
+-- Defaulted rather than back-filled: rows written before this column existed
+-- genuinely do not have the number, and inventing one for them would be the
+-- same mistake in another form.
+ALTER TABLE recommendations ADD COLUMN expected_r REAL NOT NULL DEFAULT 0;
+`,
+  },
 ];

@@ -105,7 +105,17 @@ export interface Recommendation {
    */
   readonly targets: readonly Target[];
 
+  /**
+   * R to the final target — the conventional reading, and what the
+   * MIN_RISK_REWARD threshold gates on.
+   */
   readonly riskReward: number;
+  /**
+   * The staged exit's weighted result — always smaller, and the honest
+   * expectancy of running the plan as written rather than holding to the
+   * last target. Shown beside the ratio so neither number can flatter alone.
+   */
+  readonly expectedR: number;
   /** Units of the base asset. */
   readonly positionSize: number;
   readonly positionNotional: number;

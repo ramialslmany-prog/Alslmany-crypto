@@ -65,7 +65,10 @@ export type PlanResult =
       stop: number;
       stopBasis: string;
       targets: readonly Target[];
+      /** R to the final target — the conventional ratio a threshold gates on. */
       riskReward: number;
+      /** Weighted across the staged exits — the honest expectancy. */
+      expectedR: number;
       positionSize: number;
       positionNotional: number;
       riskAmount: number;
@@ -153,11 +156,21 @@ export function buildPlan(x: PlanInput): PlanResult {
     };
   }
 
-  // ── risk/reward, measured to the FINAL target ────────────────────────────
-  // Measuring to target 1 flatters every trade; the honest number is the one
-  // that accounts for where the position actually finishes.
-  const weightedReward = targets.reduce((s, t) => s + t.rMultiple * t.closeFraction, 0);
-  const riskReward = weightedReward;
+  // ── two different numbers, both reported ────────────────────────────────
+  //
+  // `riskReward` is R to the FINAL target — what "risk/reward" means to every
+  // trader and what a threshold like 1.8 is set against. `expectedR` is the
+  // weighted result of the staged exit, which is the honest expectancy of
+  // actually running this plan and is always the smaller of the two.
+  //
+  // Collapsing them into one was a units error, and an expensive one:
+  // measured on a year of real BTC/ETH/SOL, EVERY run that cleared the score
+  // threshold then failed the R:R gate — because a weighted average was being
+  // compared against a threshold meant for a final-target ratio. A plan with
+  // targets at 1R, 2R and 3R has a risk/reward of 3.0 by any normal reading,
+  // and a weighted 1.7 — so it was rejected for being below 1.8.
+  const riskReward = targets[targets.length - 1].rMultiple;
+  const expectedR = targets.reduce((s, t) => s + t.rMultiple * t.closeFraction, 0);
 
   // ── position size, from the STOP DISTANCE ────────────────────────────────
   // This is the only correct way to size: the account risks a fixed amount,
@@ -187,6 +200,7 @@ export function buildPlan(x: PlanInput): PlanResult {
       `مع هامش تقلّب ${STOP_BUFFER_ATR} من ATR (${buffer.toFixed(x.pricePrecision)})`,
     targets,
     riskReward,
+    expectedR,
     positionSize,
     positionNotional,
     riskAmount,

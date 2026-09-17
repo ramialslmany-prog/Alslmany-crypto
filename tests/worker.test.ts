@@ -70,7 +70,7 @@ function seedPosition(database: Db, id = "REC-TEST"): string {
     id, symbol: "BTCUSDT", direction: "long", setup: "trend_continuation",
     regime: "trending_up", timeframe: "1h", generatedAt: NOW, asOfCandle: NOW,
     exchange: "binance", entry: { low: 99, high: 101, mid: 100 }, stop: 90,
-    stopBasis: "خلف القاع", targets: targets as never, riskReward: 2,
+    stopBasis: "خلف القاع", targets: targets as never, riskReward: 3, expectedR: 2,
     positionSize: 1, positionNotional: 100, riskAmount: 10, riskPercent: 1,
     confidence: 60, confidenceComponents: [], finalScore: 60,
     invalidation: [], expiresAt: NOW + 12 * HOUR, report: "تقرير",
