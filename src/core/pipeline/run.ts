@@ -20,6 +20,7 @@ import { runMacro, type MacroInput } from "@/core/pipeline/stage2-macro";
 import { runCouncil, type CouncilThresholds, type PortfolioState, type SetupHistoryLookup } from "@/core/pipeline/stage8-council";
 import { runFlows, type FlowsInput } from "@/core/pipeline/stage5-flows";
 import { runSentiment, type SentimentInput } from "@/core/pipeline/stage7-sentiment";
+import { runOnchain, type OnchainInput } from "@/core/pipeline/stage6-onchain";
 import { analyzeTechnical } from "@/core/analysis/technical";
 import { analyzeStructureStage } from "@/core/analysis/structure-stage";
 import {
@@ -50,6 +51,8 @@ export interface RunInput {
   /** Stage 7 inputs. When present the pipeline runs the sentiment stage. */
   readonly sentimentInput?: Omit<SentimentInput, "asset" | "direction" | "now">;
   readonly sentiment?: StageResult;
+  /** Stage 6 inputs. When present the pipeline runs the on-chain stage. */
+  readonly onchainInput?: Omit<OnchainInput, "symbol" | "ticker" | "direction" | "now">;
   readonly onchain?: StageResult;
   readonly council: CouncilThresholds;
   readonly portfolio: PortfolioState;
@@ -248,12 +251,24 @@ export function runPipeline(input: RunInput): RunOutput {
       : stageUnavailable("flows", "لم تُمرَّر مُدخلات التدفّقات لهذه الدورة", UNAVAILABLE_PENALTY.flows));
 
   stages.push(flowsStage);
+  const ticker = input.symbol.replace(/USDT$|USD$|BUSD$/i, "").toUpperCase();
   stages.push(
     input.onchain ??
-      stageUnavailable("onchain", "لا مزوّد لبيانات السلسلة — ضع CRYPTOQUANT_API_KEY", UNAVAILABLE_PENALTY.onchain),
+      (input.onchainInput
+        ? runOnchain({
+            ...input.onchainInput,
+            symbol: input.symbol,
+            ticker,
+            direction: flowsDirection,
+            now: input.now,
+          })
+        : stageUnavailable(
+            "onchain",
+            "لا مزوّد لبيانات السلسلة — ضع CRYPTOQUANT_API_KEY، أو مرّر قراءة DefiLlama",
+            UNAVAILABLE_PENALTY.onchain,
+          )),
   );
   // ── Stage 7: sentiment, news and risk ────────────────────────────────────
-  const ticker = input.symbol.replace(/USDT$|USD$|BUSD$/i, "").toUpperCase();
   stages.push(
     input.sentiment ??
       (input.sentimentInput

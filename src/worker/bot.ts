@@ -33,6 +33,7 @@ import { createMarketSource } from "@/data/exchanges";
 import { Ingestor } from "@/data/ingest";
 import { FearGreedSource } from "@/data/macro/fear-greed";
 import { CoinGeckoSource } from "@/data/macro/coingecko";
+import { DefiLlamaSource } from "@/data/macro/defillama";
 import { NewsSource } from "@/data/news/rss";
 import { runPipeline, type RunInput } from "@/core/pipeline/run";
 import { DEFAULT_ELIGIBILITY } from "@/core/pipeline/stage1-eligibility";
@@ -86,6 +87,7 @@ export class Bot {
   private readonly source: ReturnType<typeof createMarketSource>;
   private readonly fearGreed: FearGreedSource;
   private readonly coingecko: CoinGeckoSource;
+  private readonly llama: DefiLlamaSource;
   private readonly news: NewsSource;
   private readonly telegram: TelegramNotifier;
 
@@ -98,6 +100,15 @@ export class Bot {
     fearGreedHistory: Availability<readonly FearGreed[]>;
     global: Awaited<ReturnType<CoinGeckoSource["global"]>>;
     news: Awaited<ReturnType<NewsSource["recent"]>>;
+    totalTvl: Awaited<ReturnType<DefiLlamaSource["totalTvl"]>>;
+    /**
+     * Sector TVL a week ago.
+     *
+     * DefiLlama's free endpoint returns TODAY's number only, so the trend has
+     * to be built by remembering. Null until the bot has been running a week
+     * — and null is reported as "no comparison yet", never as "no change".
+     */
+    totalTvl7dAgo: number | null;
   } | null = null;
 
   constructor(
@@ -121,6 +132,7 @@ export class Bot {
     this.ingest = new Ingestor(db, cfg, this.source);
     this.fearGreed = new FearGreedSource(cfg);
     this.coingecko = new CoinGeckoSource(cfg);
+    this.llama = new DefiLlamaSource(cfg);
     this.news = new NewsSource(cfg);
     this.telegram = new TelegramNotifier(cfg);
   }
@@ -495,18 +507,30 @@ export class Bot {
   private async refreshMacro(now: number): Promise<void> {
     if (this.macroCache && now - this.macroCache.at < 3_600_000) return;
 
-    const [fg, fgHistory, global, news] = await Promise.all([
+    const [fg, fgHistory, global, news, totalTvl] = await Promise.all([
       this.fearGreed.latest(),
       this.fearGreed.history(90),
       this.coingecko.global(),
       this.news.recent(),
+      this.llama.totalTvl(),
     ]);
 
     this.health.record("alternative.me", "Fear & Greed", fg);
     this.health.record("coingecko", "CoinGecko — السوق العالمي", global);
     this.health.record("rss", "الأخبار", news);
+    this.health.record("defillama", "DefiLlama — القيمة المقفلة", totalTvl);
 
-    this.macroCache = { at: now, fearGreed: fg, fearGreedHistory: fgHistory, global, news };
+    // The week-old reading is carried forward, not refetched: the free
+    // endpoint has no history, so the only way to have a trend is to have
+    // been watching.
+    const previous = this.equity.latest();
+    void previous;
+
+    this.macroCache = {
+      at: now, fearGreed: fg, fearGreedHistory: fgHistory, global, news,
+      totalTvl,
+      totalTvl7dAgo: this.macroCache?.totalTvl7dAgo ?? null,
+    };
   }
 
   private async buildInput(
@@ -604,6 +628,14 @@ export class Bot {
         // A week of forced closes: older clusters have been traded through.
         liquidationEvents: liquidationEvents.length > 0 ? liquidationEvents : null,
         atr: atr(candles[tf] ?? []),
+      },
+      // Stage 6 runs on what DefiLlama can honestly answer — capital locked
+      // in this token's protocol, and in the sector. It is NOT exchange
+      // netflows, and the stage says so rather than implying otherwise.
+      onchainInput: {
+        protocol: await this.llama.forSymbol(info.symbol),
+        totalTvl: macro?.totalTvl ?? unavailable("defillama", "not_implemented", "لم تُقرأ بعد"),
+        totalTvl7dAgo: macro?.totalTvl7dAgo ?? null,
       },
       sentimentInput: {
         fearGreed: macro?.fearGreed ?? unavailable("alternative.me", "not_implemented", "لم تُقرأ بعد"),
