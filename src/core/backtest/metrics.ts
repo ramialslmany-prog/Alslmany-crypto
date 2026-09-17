@@ -173,21 +173,21 @@ export function funnelVerdict(outcome: BacktestOutcome): {
   arabic: string;
 } {
   const { analyses, recommendations } = outcome.funnel;
-  if (analyses === 0) return { ratio: null, verdict: "no_data", arabic: "لا تحليلات في هذه النافذة." };
+  if (analyses === 0) return { ratio: null, verdict: "no_data", arabic: "No analyses in this window." };
   if (recommendations === 0) {
     return {
       ratio: null,
       verdict: "too_tight",
-      arabic: `${analyses} تحليلاً دون توصية واحدة. الفلاتر أضيق من أن تُنتج شيئاً في هذه النافذة.`,
+      arabic: `${analyses} analyses and not one recommendation. The filters are too tight to produce anything in this window.`,
     };
   }
   const ratio = analyses / recommendations;
   const verdict = ratio < 20 ? "too_loose" : ratio > 100 ? "too_tight" : "healthy";
   const arabic =
     verdict === "too_loose"
-      ? `توصية واحدة لكل ${ratio.toFixed(0)} تحليلاً — أقل من 20. الفلاتر ضعيفة والبوت يوافق أكثر مما ينبغي.`
+      ? `1 recommendation per ${ratio.toFixed(0)} analyses — under 20. The filters are weak; the bot agrees far too often.`
       : verdict === "too_tight"
-        ? `توصية واحدة لكل ${ratio.toFixed(0)} تحليلاً — أكثر من 100. الفلاتر ضيقة إلى حدّ قد يُفوّت فرصاً حقيقية.`
-        : `توصية واحدة لكل ${ratio.toFixed(0)} تحليلاً — ضمن النطاق المنطقي (20 إلى 100).`;
+        ? `1 recommendation per ${ratio.toFixed(0)} analyses — over 100. Tight enough that real opportunities are likely being missed.`
+        : `1 recommendation per ${ratio.toFixed(0)} analyses — inside the sane band (20 to 100).`;
   return { ratio, verdict, arabic };
 }

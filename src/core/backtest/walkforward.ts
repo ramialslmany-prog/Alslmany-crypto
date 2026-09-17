@@ -169,12 +169,12 @@ export function runWalkForward(
   const positiveFolds = folds.filter((f) => f.testMetrics.expectancyR > 0).length;
 
   const arabic = folds.length === 0
-    ? "المدّة أقصر من نافذة تدريب واحدة (6 أشهر) زائد شهر اختبار. لا نتيجة."
-    : `${folds.length} نافذة اختبار خارج العيّنة، ربحت ${positiveFolds} منها. ` +
-      `التوقّع الإجمالي ${outOfSampleMetrics.expectancyR.toFixed(3)}R على ${outOfSampleMetrics.trades} صفقة. ` +
+    ? "The period is shorter than one training window (6 months) plus a test month. No result."
+    : `${folds.length} out-of-sample test windows, ${positiveFolds} of them profitable. ` +
+      `Overall expectancy ${outOfSampleMetrics.expectancyR.toFixed(3)}R over ${outOfSampleMetrics.trades} trades. ` +
       (positiveFolds <= folds.length / 2
-        ? "أغلب النوافذ لم تربح — النتيجة الإجمالية، إن كانت موجبة، محمولة على نوافذ قليلة وليست سلوكاً ثابتاً."
-        : "أغلب النوافذ ربحت، وهو ما يعنيه الثبات هنا: النتيجة ليست محمولة على شهر واحد.");
+        ? "Most windows did not profit — any positive total rests on a few windows, not on consistent behaviour."
+        : "Most windows profited, which is what consistency means here: the result does not rest on one month.");
 
   return {
     folds,

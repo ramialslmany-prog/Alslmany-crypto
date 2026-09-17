@@ -171,8 +171,8 @@ describe("the engine", () => {
 
   it("states its caveats instead of presenting the result as complete", () => {
     const out = runBacktest([sym], settings(), candles[100].closeTime, candles[200].closeTime);
-    expect(out.caveats.join(" ")).toContain("دفاتر الأوامر");
-    expect(out.caveats.join(" ")).toContain("متفائلة");
+    expect(out.caveats.join(" ")).toContain("order books");
+    expect(out.caveats.join(" ")).toContain("optimistic");
   });
 });
 

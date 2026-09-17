@@ -1,6 +1,11 @@
 /**
  * `npm run backtest` — the walk-forward evaluation.
  *
+ * Output is ENGLISH, unlike the site and the recommendation reports. Not a
+ * style choice: Windows terminals mangle Arabic the moment output is piped or
+ * redirected to a file, and the first thing anyone does with a diagnostic
+ * this long is redirect it. A report nobody can read diagnoses nothing.
+ *
  * Usage:
  *   npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2
  *   npm run backtest -- --symbols BTCUSDT --holdout        # the single final run
@@ -48,16 +53,16 @@ const HOLDOUT_LOG = ".holdout-log.json";
  * bare tally.
  */
 const VETO_HINT: Record<string, string> = {
-  no_setup_match: "لم يُصنَّف أي نمط — لا علاقة للعتبة بهذا",
-  score_below_minimum: "النمط مطابق لكن النتيجة دون MIN_FINAL_SCORE — جرّب --min-score أقل",
-  risk_reward_too_low: "الأهداف الحقيقية لا تبرّر مسافة الوقف — جرّب MIN_RISK_REWARD أقل",
-  no_valid_stop: "لا مستوى إبطال حقيقي لوضع الوقف خلفه",
-  no_valid_target: "لا مقاومات مكتشفة كافية لثلاثة أهداف",
-  direction_not_allowed: "السياق الكلي يمنع هذا الاتجاه",
-  stale_data: "بيانات أقدم مما يسمح maxDataAgeBars",
-  correlated_exposure: "مراكز مترابطة مفتوحة بالفعل",
-  exposure_limit: "بلغ سقف المراكز",
-  circuit_breaker: "قاطع حماية كان مفعّلاً",
+  no_setup_match: "no setup was classified at all — the threshold is not involved",
+  score_below_minimum: "setup matched but scored under MIN_FINAL_SCORE — try a lower --min-score",
+  risk_reward_too_low: "real targets do not justify the stop distance — try a lower MIN_RISK_REWARD",
+  no_valid_stop: "no real invalidation level to hide a stop behind",
+  no_valid_target: "nothing ahead and no measurable swing to project from",
+  direction_not_allowed: "the macro context forbids this direction",
+  stale_data: "data older than maxDataAgeBars allows",
+  correlated_exposure: "correlated positions already open",
+  exposure_limit: "position cap reached",
+  circuit_breaker: "a circuit breaker was active",
 };
 const DAY = 86_400_000;
 
@@ -78,7 +83,7 @@ function parseArgs(argv: string[]): Args {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   const tf = get("--timeframe") ?? "1h";
-  if (!isTimeframe(tf)) throw new Error(`إطار زمني غير معروف: ${tf}. المسموح: ${TIMEFRAMES.join(", ")}`);
+  if (!isTimeframe(tf)) throw new Error(`Unknown timeframe: ${tf}. Allowed: ${TIMEFRAMES.join(", ")}`);
 
   return {
     symbols: (get("--symbols") ?? "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
@@ -102,10 +107,10 @@ function loadSymbol(
   const info = symbolRepo.get(exchange, "spot", symbol);
   if (!info) {
     console.log(
-      `${YELLOW}تخطّي ${symbol}: غير موجودة في جدول العملات.${RESET}\n` +
-      `  ${DIM}شغّل: npm run backfill -- --symbols ${symbol} --years 3${RESET}\n` +
-      `  ${DIM}إن كنت قد شغّلته فعلاً، فالأرجح أنه سبق إصلاحاً في هذا الملف — أعِد تشغيله، ` +
-      `فهو يستأنف ولا يُعيد التحميل.${RESET}`,
+      `${YELLOW}Skipping ${symbol}: not in the symbol table.${RESET}\n` +
+      `  ${DIM}Run: npm run backfill -- --symbols ${symbol} --years 3${RESET}\n` +
+      `  ${DIM}If you already did, it likely predates a fix to that command — run it again; ` +
+      `it resumes rather than re-downloading.${RESET}`,
     );
     return null;
   }
@@ -122,7 +127,7 @@ function loadSymbol(
   }
 
   if (Object.keys(candles).length === 0) {
-    console.log(`${YELLOW}تخطّي ${symbol}: لا شموع مخزّنة.${RESET}`);
+    console.log(`${YELLOW}Skipping ${symbol}: no stored candles.${RESET}`);
     return null;
   }
 
@@ -131,15 +136,15 @@ function loadSymbol(
 
 function printMetrics(label: string, m: Metrics): void {
   console.log(`${BOLD}${label}${RESET}`);
-  console.log(`  صفقات ${m.trades} · رابحة ${m.wins} · خاسرة ${m.losses} · نسبة النجاح ${n2(m.winRate * 100, 1)}%`);
-  console.log(`  التوقّع ${n2(m.expectancyR, 3)}R لكل صفقة · إجمالي ${n2(m.totalR, 2)}R`);
-  console.log(`  متوسط الرابحة ${n2(m.averageWinR, 2)}R · متوسط الخاسرة ${n2(m.averageLossR, 2)}R`);
+  console.log(`  trades ${m.trades} · won ${m.wins} · lost ${m.losses} · win rate ${n2(m.winRate * 100, 1)}%`);
+  console.log(`  expectancy ${n2(m.expectancyR, 3)}R per trade · total ${n2(m.totalR, 2)}R`);
+  console.log(`  avg win ${n2(m.averageWinR, 2)}R · avg loss ${n2(m.averageLossR, 2)}R`);
   console.log(
-    `  معامل الربح ${m.profitFactor === null ? "— (لا خسائر بعد)" : n2(m.profitFactor)} · ` +
-    `العائد ${pct(m.returnPct)} · أقصى تراجع ${n2(m.maxDrawdownPct)}%`,
+    `  profit factor ${m.profitFactor === null ? "— (no losses yet)" : n2(m.profitFactor)} · ` +
+    `return ${pct(m.returnPct)} · max drawdown ${n2(m.maxDrawdownPct)}%`,
   );
-  console.log(`  أطول سلسلة خسائر ${m.longestLosingStreak} · متوسط المدّة ${n2(m.averageBarsHeld, 1)} شمعة`);
-  if (m.trades > 0) console.log(`  ${DIM}متوسط الضغط على الصفقات الرابحة ${n2(m.averageHeatR, 2)}R${RESET}`);
+  console.log(`  longest losing streak ${m.longestLosingStreak} · avg hold ${n2(m.averageBarsHeld, 1)} bars`);
+  if (m.trades > 0) console.log(`  ${DIM}avg heat taken by winners ${n2(m.averageHeatR, 2)}R${RESET}`);
 }
 
 function printOutcome(
@@ -147,24 +152,24 @@ function printOutcome(
   tf: Timeframe, minScoreUsed: number,
 ): void {
   const funnel = funnelVerdict(out);
-  console.log(`${BOLD}القمع${RESET}`);
+  console.log(`${BOLD}FUNNEL${RESET}`);
   console.log(
-    `  ${out.funnel.analyses} تحليلاً · ${out.funnel.recommendations} توصية · ` +
-    `${out.funnel.riskBlocked} منعتها حماية المحفظة · ${out.funnel.setupDisallowed} منعها التدريب`,
+    `  ${out.funnel.analyses} analyses · ${out.funnel.recommendations} recommendations · ` +
+    `${out.funnel.riskBlocked} blocked by portfolio risk · ${out.funnel.setupDisallowed} blocked by training`,
   );
   console.log(`  ${funnel.arabic}`);
   const died = Object.entries(out.funnel.failedAt).sort((a, b) => b[1] - a[1]);
   if (died.length) {
-    console.log(`  ${DIM}أين سقطت: ${died.map(([k, v]) => `${k} ${v}`).join(" · ")}${RESET}`);
+    console.log(`  ${DIM}where they died: ${died.map(([k, v]) => `${k} ${v}`).join(" · ")}${RESET}`);
   }
 
   // "Died at the council" is not a diagnosis — the council has ten ways to
   // say no, and they call for opposite fixes.
   const vetoes = Object.entries(out.funnel.vetoes).sort((a, b) => b[1] - a[1]);
   if (vetoes.length) {
-    console.log(`  ${BOLD}أي فلتر نقض أطلق${RESET}`);
+    console.log(`  ${BOLD}WHICH VETO FIRED${RESET}`);
     for (const [id, count] of vetoes) {
-      console.log(`    ${id.padEnd(24)} ${String(count).padStart(6)} مرة   ${DIM}${VETO_HINT[id] ?? ""}${RESET}`);
+      console.log(`    ${id.padEnd(24)} ${String(count).padStart(6)}×   ${DIM}${VETO_HINT[id] ?? ""}${RESET}`);
     }
   }
 
@@ -175,56 +180,57 @@ function printOutcome(
     const at = (q: number) => scores[Math.min(scores.length - 1, Math.floor(scores.length * q))];
     const threshold = out.funnel.recommendations >= 0 ? minScoreUsed : minScoreUsed;
     const passing = scores.filter((v) => v >= threshold).length;
-    console.log(`${BOLD}توزيع النتيجة النهائية${RESET} ${DIM}(الجولات التي سمّت نمطاً: ${scores.length})${RESET}`);
+    console.log(`${BOLD}FINAL-SCORE DISTRIBUTION${RESET} ${DIM}(runs that named a setup: ${scores.length})${RESET}`);
     console.log(
-      `  الوسيط ${n2(at(0.5), 1)} · مئيني‑90 ${n2(at(0.9), 1)} · مئيني‑99 ${n2(at(0.99), 1)} · ` +
-      `الأقصى ${n2(scores[scores.length - 1], 1)}`,
+      `  median ${n2(at(0.5), 1)} · p90 ${n2(at(0.9), 1)} · p99 ${n2(at(0.99), 1)} · ` +
+      `max ${n2(scores[scores.length - 1], 1)}`,
     );
     console.log(
-      `  العتبة الحالية ${threshold} تمرّر ${n2((passing / scores.length) * 100, 1)}% منها ` +
-      `(${passing} جولة)`,
+      `  the current threshold ${threshold} passes ${n2((passing / scores.length) * 100, 1)}% of them ` +
+      `(${passing} runs)`,
     );
     if (passing === 0) {
       console.log(
-        `  ${YELLOW}لا جولة واحدة تبلغ العتبة. أعلى نتيجة سجّلها هذا النظام على هذه البيانات هي ` +
-        `${n2(scores[scores.length - 1], 1)} — فالعتبة فوق سقف ما يستطيع إنتاجه، لا أعلى منه قليلاً.${RESET}`,
+        `  ${YELLOW}Not one run reaches the threshold. The highest score this system produced on ` +
+        `this data is ${n2(scores[scores.length - 1], 1)} — the threshold is above its ceiling, ` +
+        `not merely a little above its typical.${RESET}`,
       );
     } else if (out.funnel.recommendations === 0) {
       console.log(
-        `  ${YELLOW}جولات اجتازت العتبة ومع ذلك لا توصية — فالمانع بعد النتيجة، ` +
-        `انظر جدول فلاتر النقض أعلاه.${RESET}`,
+        `  ${YELLOW}Runs cleared the threshold and still produced nothing — so the blocker is ` +
+        `AFTER the score. See the veto table above.${RESET}`,
       );
     }
   }
 
-  printMetrics("النتيجة", computeMetrics(out.trades, out.equityCurve, equity));
+  printMetrics("RESULT", computeMetrics(out.trades, out.equityCurve, equity));
 
   const setups = bySetup(out.trades, equity);
   if (setups.length) {
-    console.log(`${BOLD}حسب النمط${RESET}`);
+    console.log(`${BOLD}BY SETUP${RESET}`);
     for (const row of setups) {
-      const flag = row.metrics.trades < 20 ? ` ${YELLOW}(عيّنة صغيرة)${RESET}` : "";
+      const flag = row.metrics.trades < 20 ? ` ${YELLOW}(small sample)${RESET}` : "";
       console.log(
-        `  ${row.setup.padEnd(22)} ${String(row.metrics.trades).padStart(4)} صفقة · ` +
-        `توقّع ${n2(row.metrics.expectancyR, 3)}R · نجاح ${n2(row.metrics.winRate * 100, 0)}%${flag}`,
+        `  ${row.setup.padEnd(22)} ${String(row.metrics.trades).padStart(4)} trades · ` +
+        `expectancy ${n2(row.metrics.expectancyR, 3)}R · win ${n2(row.metrics.winRate * 100, 0)}%${flag}`,
       );
     }
   }
 
-  console.log(`${BOLD}مقارنة بالشراء والاحتفاظ${RESET}`);
+  console.log(`${BOLD}VS BUY AND HOLD${RESET}`);
   for (const sym of symbols) {
     const bh = buyAndHold(sym.symbol, sym.candles[tf] ?? [], out.from, out.to, DEFAULT_COSTS.takerFeeBps);
     if (bh) {
-      console.log(`  ${sym.symbol.padEnd(12)} ${pct(bh.returnPct).padStart(10)} · أقصى تراجع ${n2(bh.maxDrawdownPct)}%`);
+      console.log(`  ${sym.symbol.padEnd(12)} ${pct(bh.returnPct).padStart(10)} · max drawdown ${n2(bh.maxDrawdownPct)}%`);
     }
   }
 
   if (out.breakersTripped.length) {
-    console.log(`${BOLD}${YELLOW}قواطع الحماية${RESET}`);
+    console.log(`${BOLD}${YELLOW}CIRCUIT BREAKERS${RESET}`);
     for (const b of out.breakersTripped) console.log(`  ${iso(b.trippedAt)} — ${b.arabic.split(".")[0]}.`);
   }
 
-  console.log(`${BOLD}ما لا تغطّيه هذه النتيجة${RESET}`);
+  console.log(`${BOLD}WHAT THIS RESULT DOES NOT COVER${RESET}`);
   for (const c of out.caveats) console.log(`  ${DIM}• ${c}${RESET}`);
 }
 
@@ -254,7 +260,7 @@ function appendHoldoutLog(use: HoldoutUse): void {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.symbols.length === 0) {
-    console.error("لا عملات. مثال: npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2");
+    console.error("No symbols. Example: npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2");
     process.exitCode = 1;
     return;
   }
@@ -271,20 +277,20 @@ async function main(): Promise<void> {
       .filter((s): s is BacktestSymbol => s !== null);
 
     if (symbols.length === 0) {
-      console.error("لا بيانات صالحة. شغّل npm run backfill أولاً.");
+      console.error("No usable data. Run npm run backfill first.");
       process.exitCode = 1;
       return;
     }
     if (!symbols.some((s) => s.symbol.startsWith("BTC"))) {
       console.log(
-        `${YELLOW}تنبيه: البيتكوين غير مضمّنة. المرحلة الثانية تحتاج تاريخ البيتكوين، ` +
-        `وبدونه سيسقط كل تحليل عند السياق الكلي.${RESET}`,
+        `${YELLOW}Warning: Bitcoin is not included. Stage 2 needs BTC history, and without it ` +
+        `every analysis stops at the macro context.${RESET}`,
       );
     }
 
     const tfCandles = symbols.flatMap((s) => s.candles[args.timeframe] ?? []);
     if (tfCandles.length === 0) {
-      console.error(`لا شموع على إطار ${args.timeframe}.`);
+      console.error(`No candles on the ${args.timeframe} timeframe.`);
       process.exitCode = 1;
       return;
     }
@@ -327,42 +333,42 @@ async function main(): Promise<void> {
     };
 
     console.log(
-      `${BOLD}اختبار خلفي — ${symbols.map((s) => s.symbol).join("، ")} · ` +
-      `${args.timeframe} · ${iso(from)} إلى ${iso(to)}${RESET}\n`,
+      `${BOLD}BACKTEST — ${symbols.map((s) => s.symbol).join(", ")} · ` +
+      `${args.timeframe} · ${iso(from)} to ${iso(to)}${RESET}\n`,
     );
 
     const totalFolds = countFolds(from, to);
     const startedAt = Date.now();
     console.log(
-      `${DIM}${totalFolds} نافذة · كل نافذة تدريب 6 أشهر واختبار شهر. ` +
-      `العمل الحقيقي هنا هو مئات آلاف التحليلات الكاملة، فتوقّع دقائق طويلة.${RESET}\n`,
+      `${DIM}${totalFolds} folds · each is 6 months of training and 1 month of testing. ` +
+      `The real work is hundreds of thousands of full analyses, so expect this to take a while.${RESET}\n`,
     );
 
     const walk: WalkForwardResult = runWalkForward(symbols, settings, from, to, (p) => {
-      const label = p.phase === "train" ? "تدريب" : "اختبار";
+      const label = p.phase === "train" ? "train" : "test ";
       const head = `${DIM}[${String(p.fold + 1).padStart(2)}/${totalFolds}]${RESET} ${label} ${iso(p.from)}→${iso(p.to)}`;
       if (p.trades === null) {
         // Carriage return, no newline: the finished line overwrites this one.
         process.stdout.write(`\r${head} …   `);
       } else {
         const mins = (Date.now() - startedAt) / 60_000;
-        process.stdout.write(`\r${head} · ${p.trades} صفقة ${DIM}(${mins.toFixed(1)} دقيقة)${RESET}\n`);
+        process.stdout.write(`\r${head} · ${p.trades} trades ${DIM}(${mins.toFixed(1)} min)${RESET}\n`);
       }
     });
     console.log("");
 
-    console.log(`${BOLD}التدحرج الأمامي${RESET}`);
+    console.log(`${BOLD}WALK FORWARD${RESET}`);
     console.log(`  ${walk.arabic}`);
     for (const f of walk.folds) {
       console.log(
-        `  ${DIM}نافذة ${String(f.index + 1).padStart(2)} · تدريب ${iso(f.trainFrom)}→${iso(f.trainTo)} ` +
-        `(${f.trainMetrics.trades} صفقة، ${n2(f.trainMetrics.expectancyR, 2)}R) · ` +
-        `اختبار ${iso(f.testFrom)}→${iso(f.testTo)} ` +
-        `(${f.testMetrics.trades} صفقة، ${n2(f.testMetrics.expectancyR, 2)}R)${RESET}`,
+        `  ${DIM}fold ${String(f.index + 1).padStart(2)} · train ${iso(f.trainFrom)}→${iso(f.trainTo)} ` +
+        `(${f.trainMetrics.trades} trades, ${n2(f.trainMetrics.expectancyR, 2)}R) · ` +
+        `test ${iso(f.testFrom)}→${iso(f.testTo)} ` +
+        `(${f.testMetrics.trades} trades, ${n2(f.testMetrics.expectancyR, 2)}R)${RESET}`,
       );
     }
     console.log("");
-    printMetrics("خارج العيّنة (كل نوافذ الاختبار)", walk.outOfSampleMetrics);
+    printMetrics("OUT OF SAMPLE (all test folds)", walk.outOfSampleMetrics);
     console.log("");
 
     // A single-window run over the non-holdout period, for the funnel and the
@@ -371,8 +377,8 @@ async function main(): Promise<void> {
     printOutcome(whole, equity, symbols, args.timeframe, settings.council.minFinalScore);
 
     console.log(
-      `\n${DIM}المحجوز: ${iso(walk.holdoutFrom)} إلى ${iso(walk.holdoutTo)} — ` +
-      `لم يُلمس. شغّل --holdout مرة واحدة فقط بعد اتخاذ كل القرارات.${RESET}`,
+      `\n${DIM}Holdout: ${iso(walk.holdoutFrom)} to ${iso(walk.holdoutTo)} — untouched. ` +
+      `Run --holdout ONCE, after every decision is made.${RESET}`,
     );
 
     if (args.holdout) {
@@ -380,16 +386,16 @@ async function main(): Promise<void> {
         (u) => u.timeframe === args.timeframe && u.from === iso(walk.holdoutFrom),
       );
       if (previous.length > 0 && !args.again) {
-        console.log(`\n${YELLOW}${BOLD}المحجوز استُخدم من قبل على هذه النافذة:${RESET}`);
+        console.log(`\n${YELLOW}${BOLD}The holdout has already been used on this window:${RESET}`);
         for (const u of previous) {
-          console.log(`  ${u.at} — ${u.trades} صفقة، توقّع ${n2(u.expectancyR, 3)}R`);
+          console.log(`  ${u.at} — ${u.trades} trades, expectancy ${n2(u.expectancyR, 3)}R`);
         }
         console.log(
-          `${YELLOW}الرفض متعمَّد: مجموعة محجوزة تُفحص مراراً تتحوّل إلى بيانات تدريب. ` +
-          `لتجاوز ذلك عن قصد أضف --again.${RESET}`,
+          `${YELLOW}This refusal is deliberate: a holdout you keep peeking at is just more ` +
+          `training data. Pass --again to override on purpose.${RESET}`,
         );
       } else {
-        console.log(`\n${BOLD}الاستخدام النهائي للمجموعة المحجوزة${RESET}`);
+        console.log(`\n${BOLD}FINAL USE OF THE HOLDOUT${RESET}`);
         const holdout = runHoldout(symbols, settings, walk);
         printOutcome(holdout, equity, symbols, args.timeframe, settings.council.minFinalScore);
         const m = computeMetrics(holdout.trades, holdout.equityCurve, equity);
@@ -402,7 +408,7 @@ async function main(): Promise<void> {
           trades: m.trades,
           expectancyR: Number(m.expectancyR.toFixed(4)),
         });
-        console.log(`\n${DIM}سُجّل هذا الاستخدام في ${HOLDOUT_LOG}.${RESET}`);
+        console.log(`\n${DIM}This use was recorded in ${HOLDOUT_LOG}.${RESET}`);
       }
     }
 
@@ -419,7 +425,7 @@ async function main(): Promise<void> {
         funnel: whole.funnel,
         caveats: whole.caveats,
       }, null, 2)}\n`);
-      console.log(`${DIM}كُتبت النتائج إلى ${args.json}${RESET}`);
+      console.log(`${DIM}Results written to ${args.json}${RESET}`);
     }
   } finally {
     closeDb();

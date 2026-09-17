@@ -471,12 +471,12 @@ export function runBacktest(
   }
 
   const caveats = [
-    "لم تُفحص شروط الفارق وعمق السيولة: لا أرشيف مجاني لدفاتر الأوامر التاريخية. النتيجة متفائلة بمقدارها.",
-    "المرحلة السادسة (السلسلة) والأخبار غير متاحتين تاريخياً، فمرّتا كـ«غير متاح» بخصم ثقة معلن — كما تفعل مباشرةً عند غياب المزوّد.",
-    "الانزلاق مُقدَّر من نموذج سيولة الشمعة لا من دفتر حقيقي.",
+    "Spread and depth were NOT checked: no free archive stores historical order books. The result is optimistic by exactly those two gates.",
+    "On-chain (stage 6) and news are not available historically, so they passed as \"unavailable\" with a declared confidence penalty — exactly as they do live when the provider is missing.",
+    "Slippage is modelled from candle liquidity, not from a real book.",
     settings.fearGreedHistory.length === 0
-      ? "لم يُمرَّر تاريخ الخوف والطمع، فمرحلة المشاعر عملت دونه."
-      : `تاريخ الخوف والطمع مُمرَّر (${settings.fearGreedHistory.length} قراءة).`,
+      ? "No Fear & Greed history was supplied, so the sentiment stage ran without it."
+      : `Fear & Greed history supplied (${settings.fearGreedHistory.length} readings).`,
   ];
 
   return {
