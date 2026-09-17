@@ -234,8 +234,10 @@ button { font: inherit; }
 .conf-row { display: grid; grid-template-columns: 120px 1fr 54px; gap: var(--space-2); align-items: center; font-size: 11px; }
 .conf-row .nm { color: var(--text-2); }
 .conf-row.na .nm { color: var(--text-3); }
-.conf-row .bar { height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
-.conf-row .fill { height: 100%; background: var(--info); }
+.conf-row .bar { display: block; height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+/* display:block, because a span is inline by default and an inline element
+   IGNORES width and height — the bars rendered as empty tracks forever. */
+.conf-row .fill { display: block; height: 100%; background: var(--info); }
 .conf-row .fill.na { background: repeating-linear-gradient(90deg, var(--divider) 0 4px, transparent 4px 8px); }
 .conf-row .val { font-family: var(--font-mono); color: var(--text-3); text-align: end; direction: ltr; unicode-bidi: isolate; }
 
@@ -263,8 +265,8 @@ button { font: inherit; }
 .funnel-row .n { font-family: var(--font-mono); color: var(--text-3); direction: ltr; unicode-bidi: isolate; }
 .funnel-row .nm { color: var(--text-2); }
 .funnel-row .ct { font-family: var(--font-mono); color: var(--text); text-align: end; direction: ltr; unicode-bidi: isolate; }
-.funnel-row .bar { height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
-.funnel-row .fill { height: 100%; background: var(--loss); opacity: .55; }
+.funnel-row .bar { display: block; height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.funnel-row .fill { display: block; height: 100%; background: var(--loss); opacity: .55; }
 .funnel-row.survived .fill { background: var(--profit); opacity: .7; }
 
 /* ── verdict banner ─────────────────────────────────────────────────────── */

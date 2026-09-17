@@ -11,6 +11,11 @@
  *
  * Writes to data/demo.db unless DB_FILE says otherwise, so it cannot
  * overwrite a real run.
+ *
+ * Every seeded signal is a BUY. The demo used to include shorts, which showed
+ * the operator a kind of signal the live system — spot only — will never
+ * produce. A demonstration that demonstrates the wrong product is worse than
+ * none: it teaches the reader to expect something that cannot arrive.
  */
 import crypto from "node:crypto";
 import { openDb, closeDb } from "@/storage/db";
@@ -172,11 +177,11 @@ function main(): void {
   }[] = [
     { symbol: "SOLUSDT", tf: "4h", direction: "long", setup: "trend_continuation", confidence: 74, outcome: "win2", ageHours: 300 },
     { symbol: "ETHUSDT", tf: "1h", direction: "long", setup: "breakout_retest", confidence: 68, outcome: "win1", ageHours: 240 },
-    { symbol: "LINKUSDT", tf: "4h", direction: "short", setup: "range_reversal", confidence: 55, outcome: "loss", ageHours: 200 },
+    { symbol: "LINKUSDT", tf: "4h", direction: "long", setup: "range_reversal", confidence: 55, outcome: "loss", ageHours: 200 },
     { symbol: "AVAXUSDT", tf: "1h", direction: "long", setup: "momentum_ignition", confidence: 71, outcome: "win2", ageHours: 160 },
     { symbol: "ADAUSDT", tf: "1d", direction: "long", setup: "trend_continuation", confidence: 49, outcome: "loss", ageHours: 130 },
     { symbol: "BTCUSDT", tf: "4h", direction: "long", setup: "liquidity_sweep", confidence: 66, outcome: "win1", ageHours: 96 },
-    { symbol: "ETHUSDT", tf: "4h", direction: "short", setup: "divergence_reversal", confidence: 52, outcome: "loss", ageHours: 72 },
+    { symbol: "ETHUSDT", tf: "4h", direction: "long", setup: "divergence_reversal", confidence: 52, outcome: "loss", ageHours: 72 },
     { symbol: "SOLUSDT", tf: "1h", direction: "long", setup: "trend_continuation", confidence: 63, outcome: "open", ageHours: 18 },
     { symbol: "BTCUSDT", tf: "1h", direction: "long", setup: "breakout_retest", confidence: 58, outcome: "pending", ageHours: 3 },
   ];
