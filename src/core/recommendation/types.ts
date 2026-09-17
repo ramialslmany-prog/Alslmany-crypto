@@ -82,7 +82,16 @@ export interface Recommendation {
   /** Behind the nearest genuine invalidation level, plus a volatility buffer. */
   readonly stop: number;
   readonly stopBasis: string;
-  readonly targets: readonly [Target, Target, Target];
+  /**
+   * One to three targets, each read off a DISCOVERED level.
+   *
+   * Not a fixed triple. Demanding three real levels meant refusing the whole
+   * trade whenever only two existed — which measured out as the single
+   * biggest killer of otherwise valid setups. Exiting in two stages at two
+   * real levels honours the rule (never invent a target); throwing the trade
+   * away because a third level is missing does not.
+   */
+  readonly targets: readonly Target[];
 
   readonly riskReward: number;
   /** Units of the base asset. */

@@ -595,11 +595,13 @@ describe("trade plan — levels, never percentages", () => {
     if (short.ok) expect(short.stop).toBeGreaterThan(short.entry.high);
   });
 
-  it("gives three targets in increasing distance, each on a named level", () => {
+  it("gives up to three targets in increasing distance, each on a named level", () => {
     const r = buildPlan(planBase());
     if (!r.ok) return;
-    expect(r.targets).toHaveLength(3);
-    for (let i = 1; i < 3; i++) {
+    // One to three: a shorter ladder is a smaller plan, not a missing one.
+    expect(r.targets.length).toBeGreaterThanOrEqual(1);
+    expect(r.targets.length).toBeLessThanOrEqual(3);
+    for (let i = 1; i < r.targets.length; i++) {
       expect(Math.abs(r.targets[i].price - r.entry.mid))
         .toBeGreaterThan(Math.abs(r.targets[i - 1].price - r.entry.mid));
     }
@@ -612,6 +614,44 @@ describe("trade plan — levels, never percentages", () => {
   it("the staged exit fractions sum to the whole position", () => {
     const r = buildPlan(planBase());
     if (r.ok) {
+      expect(r.targets.reduce((s, t) => s + t.closeFraction, 0)).toBeCloseTo(1, 9);
+    }
+  });
+
+  it("REFUSES only when NOT ONE level exists in the trade's direction", () => {
+    // The old rule demanded three and threw the trade away when the third was
+    // missing — measured, on two years of real BTC/ETH/SOL, as the single
+    // biggest killer of otherwise valid setups. Two real levels is a shorter
+    // ladder; zero is the genuine refusal.
+    const structure = analyzeStructureStage(real, "1h");
+    const oneLevel = {
+      ...structure,
+      resistanceLadder: structure.resistanceLadder.slice(0, 1),
+      supportLadder: structure.supportLadder.slice(0, 1),
+    };
+    const r = buildPlan(planBase({ structure: oneLevel }));
+    if (r.ok) {
+      expect(r.targets).toHaveLength(1);
+      expect(r.targets[0].closeFraction).toBeCloseTo(1, 9);
+    }
+
+    const none = { ...structure, resistanceLadder: [], supportLadder: [] };
+    const empty = buildPlan(planBase({ structure: none }));
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.reason).toBe("no_valid_target");
+  });
+
+  it("splits a two-level ladder 60/40, so the whole position still exits", () => {
+    const structure = analyzeStructureStage(real, "1h");
+    const two = {
+      ...structure,
+      resistanceLadder: structure.resistanceLadder.slice(0, 2),
+      supportLadder: structure.supportLadder.slice(0, 2),
+    };
+    const r = buildPlan(planBase({ structure: two }));
+    if (r.ok && r.targets.length === 2) {
+      expect(r.targets[0].closeFraction).toBeCloseTo(0.6, 9);
+      expect(r.targets[1].closeFraction).toBeCloseTo(0.4, 9);
       expect(r.targets.reduce((s, t) => s + t.closeFraction, 0)).toBeCloseTo(1, 9);
     }
   });
@@ -630,8 +670,9 @@ describe("trade plan — levels, never percentages", () => {
     if (r.ok) {
       const weighted = r.targets.reduce((s, t) => s + t.rMultiple * t.closeFraction, 0);
       expect(r.riskReward).toBeCloseTo(weighted, 9);
-      // And therefore below the final target's own R — the honest number.
-      expect(r.riskReward).toBeLessThan(r.targets[2].rMultiple);
+      // And therefore no higher than the final target's own R — the honest
+      // number. Equal only when a single real level takes the whole position.
+      expect(r.riskReward).toBeLessThanOrEqual(r.targets[r.targets.length - 1].rMultiple);
     }
   });
 });

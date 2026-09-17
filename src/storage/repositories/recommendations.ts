@@ -46,7 +46,7 @@ function toRecommendation(r: Row): Recommendation {
     entry: { low: r.entry_low, high: r.entry_high, mid: r.entry_mid },
     stop: r.stop,
     stopBasis: r.stop_basis,
-    targets: JSON.parse(r.targets_json) as readonly [Target, Target, Target],
+    targets: JSON.parse(r.targets_json) as readonly Target[],
     riskReward: r.risk_reward,
     positionSize: r.position_size,
     positionNotional: r.position_notional,

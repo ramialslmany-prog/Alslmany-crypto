@@ -64,7 +64,7 @@ export type PlanResult =
       entry: PriceZone;
       stop: number;
       stopBasis: string;
-      targets: readonly [Target, Target, Target];
+      targets: readonly Target[];
       riskReward: number;
       positionSize: number;
       positionNotional: number;
@@ -143,7 +143,7 @@ export function buildPlan(x: PlanInput): PlanResult {
       ok: false,
       reason: "no_valid_target",
       arabic:
-        "لا توجد مستويات مقاومة مكتشفة كافية لوضع ثلاثة أهداف. " +
+        "لا يوجد ولو مستوى واحد مكتشف في اتجاه الصفقة على مسافة معقولة. " +
         "الأهداف تُقرأ من المستويات الفعلية، ولا تُخترع بمضاعفات ثابتة — فلا توصية.",
     };
   }
@@ -270,14 +270,25 @@ function chooseInvalidationLevel(
  * multiple of the first would be exactly the arbitrary-percentage behaviour
  * this module exists to prevent.
  */
+/**
+ * How a staged exit is split across one, two or three real levels.
+ *
+ * Each row sums to 1: the position is fully exited either way, and the
+ * weighted risk/reward stays comparable across ladders of different length.
+ */
+const FRACTIONS: Record<number, readonly number[]> = {
+  1: [1],
+  2: [0.6, 0.4],
+  3: [0.5, 0.3, 0.2],
+};
+
 function buildTargets(
   levels: readonly LevelZone[],
   entryMid: number,
   riskPerUnit: number,
   long: boolean,
   x: PlanInput,
-): readonly [Target, Target, Target] | null {
-  const fractions = [0.5, 0.3, 0.2] as const;
+): readonly Target[] | null {
   const chosen: LevelZone[] = [];
 
   for (const z of levels) {
@@ -290,7 +301,13 @@ function buildTargets(
     }
     chosen.push(z);
   }
-  if (chosen.length < 3) return null;
+  // Zero real levels is a genuine refusal: there is nothing to trade toward.
+  // One or two is a smaller ladder, not a missing plan.
+  if (chosen.length === 0) return null;
+
+  // The staged exit is redistributed over however many real levels exist, so
+  // the fractions always sum to 1 and the weighted R:R stays honest.
+  const fractions = FRACTIONS[chosen.length];
 
   const targets = chosen.map((z, idx): Target => {
     // The near edge of the zone, not its centre: exit where the wall starts.
@@ -310,7 +327,7 @@ function buildTargets(
   for (const t of targets) {
     if (long ? t.price <= entryMid : t.price >= entryMid) return null;
   }
-  return targets as unknown as readonly [Target, Target, Target];
+  return targets;
 }
 
 // ── invalidation conditions ──────────────────────────────────────────────────
