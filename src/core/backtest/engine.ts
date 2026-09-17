@@ -511,6 +511,8 @@ export function runBacktest(
     "Spread and depth were NOT checked: no free archive stores historical order books. The result is optimistic by exactly those two gates.",
     "On-chain (stage 6) and news are not available historically, so they passed as \"unavailable\" with a declared confidence penalty — exactly as they do live when the provider is missing.",
     "Slippage is modelled from candle liquidity, not from a real book.",
+    d_caveat(symbols),
+    "Stage 6 (on-chain) runs LIVE on DefiLlama but not here: the free endpoint serves today's TVL with no history. So the live bot votes on a stage this backtest cannot see, and the two are not measuring quite the same strategy.",
     settings.fearGreedHistory.length === 0
       ? "No Fear & Greed history was supplied, so the sentiment stage ran without it."
       : `Fear & Greed history supplied (${settings.fearGreedHistory.length} readings).`,
@@ -529,6 +531,24 @@ export function runBacktest(
     setupStats,
     setupScores,
   };
+}
+
+/**
+ * Whether stage 5 had real derivatives, said per symbol.
+ *
+ * The difference is large enough that a result is not comparable across it:
+ * with them the stage votes, without them it abstains and charges a declared
+ * penalty. A reader comparing two runs needs to know which they are holding.
+ */
+function d_caveat(symbols: readonly BacktestSymbol[]): string {
+  const withData = symbols.filter((s) => s.derivatives && s.derivatives.openInterest.length > 0);
+  if (withData.length === 0) {
+    return "No derivatives history was imported, so stage 5 ran on CVD alone and abstained with a declared penalty. Import it with npm run backfill.";
+  }
+  if (withData.length < symbols.length) {
+    return `Derivatives history covers ${withData.length} of ${symbols.length} symbols, so stage 5 votes on some and abstains on others — the symbols are not directly comparable.`;
+  }
+  return "Stage 5 voted on real open interest, long/short ratios and funding from the archive.";
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
