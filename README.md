@@ -41,6 +41,18 @@ cp .env.example .env.local      # كل شيء فيه اختياري
 npm run doctor                  # يُثبت أي مصدر يعمل فعلاً من جهازك
 ```
 
+### إن حذّرك npm من «install scripts»
+
+الإصدارات الحديثة من npm توقف سكربتات التثبيت افتراضياً. `better-sqlite3`
+يحتاج سكربته لتنزيل نسخته الجاهزة، وبدونه سيُثبَّت ناقصاً ويفشل عند أول تشغيل:
+
+```bash
+npm install-scripts approve better-sqlite3
+npm install-scripts approve esbuild
+npm install-scripts approve sharp
+npm install                     # أعد التثبيت لتُنفَّذ السكربتات
+```
+
 ### 1. تحميل التاريخ
 
 ```bash
