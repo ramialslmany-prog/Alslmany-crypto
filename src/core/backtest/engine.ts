@@ -44,6 +44,7 @@ import { available, unavailable, type Availability } from "@/shared/availability
 import type {
   Candle, FearGreed, FundingRate, LongShortRatio, OpenInterest, SymbolInfo, Ticker24h,
 } from "@/core/types";
+import type { LiquidationEvent } from "@/core/flows/derivatives";
 import { tfMillis, type Timeframe } from "@/shared/time";
 
 const DAY = 86_400_000;
@@ -67,6 +68,7 @@ export interface BacktestSymbol {
     readonly openInterest: readonly OpenInterest[];
     readonly longShort: readonly LongShortRatio[];
     readonly funding: readonly FundingRate[];
+    readonly liquidations?: readonly LiquidationEvent[];
   } | null;
 }
 
@@ -640,6 +642,12 @@ function buildRunInput(
   const fundingHistory = d ? upTo(d.funding, now, 100, (r) => r.fundingTime) : [];
   const fundingNow = fundingHistory.length > 0 ? fundingHistory[fundingHistory.length - 1] : null;
 
+  // Liquidations from the last week only: a cluster from two months ago has
+  // been traded through many times and is no longer where the leverage is.
+  const liquidationEvents = d?.liquidations
+    ? upTo(d.liquidations, now, 50_000, (r) => r.timestamp).filter((r) => r.timestamp >= now - 7 * DAY)
+    : null;
+
   return {
     symbol: sym.symbol,
     tradingTimeframe: settings.tradingTimeframe,
@@ -675,6 +683,8 @@ function buildRunInput(
       fundingHistory: fundingHistory.length > 0 ? fundingHistory : null,
       openInterest: openInterest.length > 0 ? openInterest : null,
       longShort: longShort.length > 0 ? longShort : null,
+      liquidationEvents: liquidationEvents && liquidationEvents.length > 0 ? liquidationEvents : null,
+      atr: atrOf(window),
     },
     sentimentInput: {
       fearGreed: fearGreedAt(settings.fearGreedHistory, now),

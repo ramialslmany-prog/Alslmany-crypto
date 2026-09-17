@@ -11,7 +11,7 @@
  * from the future.
  */
 import type { Db } from "@/storage/db";
-import type { MetricRow } from "@/data/archive/binance-vision";
+import type { LiquidationRow, MetricRow } from "@/data/archive/binance-vision";
 import type { FundingRate, LongShortRatio, OpenInterest } from "@/core/types";
 
 export class DerivativesRepo {
@@ -130,6 +130,52 @@ export class DerivativesRepo {
       fundingTime: r.funding_time,
       intervalHours: r.interval_hours,
     }));
+  }
+
+  upsertLiquidations(symbol: string, rows: readonly LiquidationRow[]): number {
+    if (rows.length === 0) return 0;
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO liquidations
+        (symbol, timestamp, position_side, price, quantity, notional)
+      VALUES (?,?,?,?,?,?)
+    `);
+    const insert = this.db.transaction((batch: readonly LiquidationRow[]) => {
+      let n = 0;
+      for (const r of batch) {
+        n += stmt.run(symbol, r.timestamp, r.positionSide, r.price, r.quantity, r.notional).changes;
+      }
+      return n;
+    });
+    return insert(rows);
+  }
+
+  /** Raw liquidations in a window, oldest first, point-in-time. */
+  liquidations(
+    symbol: string, from: number, asOf: number,
+  ): { timestamp: number; positionSide: "long" | "short"; price: number; notional: number }[] {
+    const rows = this.db.prepare<[string, number, number], {
+      timestamp: number; position_side: string; price: number; notional: number;
+    }>(`
+      SELECT timestamp, position_side, price, notional FROM liquidations
+      WHERE symbol = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+    `).all(symbol, from, asOf);
+
+    return rows.map((r) => ({
+      timestamp: r.timestamp,
+      positionSide: r.position_side === "long" ? "long" : "short",
+      price: r.price,
+      notional: r.notional,
+    }));
+  }
+
+  liquidationCoverage(symbol: string): { rows: number; first: number; last: number } | null {
+    const r = this.db.prepare<[string], { n: number; first: number | null; last: number | null }>(
+      "SELECT COUNT(*) AS n, MIN(timestamp) AS first, MAX(timestamp) AS last FROM liquidations WHERE symbol = ?",
+    ).get(symbol);
+    return r && r.n > 0 && r.first !== null && r.last !== null
+      ? { rows: r.n, first: r.first, last: r.last }
+      : null;
   }
 
   coverage(symbol: string): { rows: number; first: number; last: number } | null {

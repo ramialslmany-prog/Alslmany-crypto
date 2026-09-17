@@ -15,8 +15,8 @@ import { findLargeTrades, type LargeTradeResult } from "@/core/flows/large-trade
 import { analyzeImbalance, findWalls, trackWalls, type BookImbalance, type TrackedWall, type Wall } from "@/core/flows/orderbook";
 import {
   analyzeFunding, analyzeOpenInterest, analyzePositioning, compositeRead,
-  estimateLiquidationClusters,
-  type CompositeRead, type FundingRead, type LiquidationCluster,
+  estimateLiquidationClusters, measureLiquidationClusters,
+  type CompositeRead, type FundingRead, type LiquidationCluster, type LiquidationEvent,
   type OpenInterestRead, type PositioningRead,
 } from "@/core/flows/derivatives";
 import { stageFail, stagePass, stageUnavailable, type StageResult } from "@/core/pipeline/types";
@@ -35,6 +35,18 @@ export interface FlowsInput {
   readonly fundingHistory: readonly FundingRate[] | null;
   readonly openInterest: readonly OpenInterest[] | null;
   readonly longShort: readonly LongShortRatio[] | null;
+  /**
+   * The venue's own record of forced closes, when imported.
+   *
+   * Present, these REPLACE the modelled clusters: where leverage actually
+   * died is a measurement, where a leverage-tier model says it might die is a
+   * prior. Absent, the model still runs and says so — but the two are never
+   * silently interchanged, because a reader deciding whether to trust a level
+   * needs to know which one they are looking at.
+   */
+  readonly liquidationEvents: readonly LiquidationEvent[] | null;
+  /** ATR of the trading timeframe — sets the cluster bucket width. */
+  readonly atr: number | null;
   /** Direction under consideration, for the crowding veto. */
   readonly direction: "long" | "short";
   readonly now: number;
@@ -216,20 +228,43 @@ export function runFlows(input: FlowsInput): FlowsResult {
   }
 
   // ── liquidation clusters ─────────────────────────────────────────────────
+  //
+  // Measured where the venue's own record exists; modelled otherwise. The
+  // factor's label says which, because a level somebody's money actually died
+  // on is a different object from a level a leverage model points at.
   const oiNotional = input.openInterest?.[input.openInterest.length - 1]?.openInterestValue;
-  const liquidations = Number.isFinite(oiNotional) && Number.isFinite(price)
-    ? estimateLiquidationClusters(price, oiNotional as number)
-    : [];
+  const measured =
+    input.liquidationEvents && input.liquidationEvents.length > 0 && input.atr
+      ? measureLiquidationClusters(input.liquidationEvents, price, input.atr)
+      : [];
+
+  const liquidations = measured.length > 0
+    ? measured
+    : Number.isFinite(oiNotional) && Number.isFinite(price)
+      ? estimateLiquidationClusters(price, oiNotional as number)
+      : [];
+
   if (liquidations.length > 0) {
-    const nearest = liquidations[0];
+    const isMeasured = measured.length > 0;
+    // Nearest, not largest: proximity is what makes a cluster act as a magnet.
+    const nearest = [...liquidations].sort(
+      (a, b) => Math.abs(a.distancePct) - Math.abs(b.distancePct),
+    )[0];
+    const total = liquidations.reduce((sum, c) => sum + c.estimatedNotional, 0);
+
     factors.push({
-      id: "liquidations", label: "تجمّعات التصفيات (تقدير)", value: nearest.distancePct,
+      id: "liquidations",
+      label: isMeasured ? "تجمّعات التصفيات (مقيسة)" : "تجمّعات التصفيات (تقدير)",
+      value: nearest.distancePct,
       display: `أقربها ${fmt(nearest.distancePct, 2)}% (${nearest.side === "long" ? "شراء" : "بيع"})`,
       contribution: 0,
-      note:
-        "تقدير مبنيّ على توزيع العقود المفتوحة على شرائح الرافعة الشائعة — وليس قياساً. " +
-        "القياس الحقيقي يحتاج مزوّداً مجمّعاً عبر المنصّات (Coinglass). " +
-        "التجمّعات القريبة تعمل مغناطيساً: السعر يميل للوصول إليها قبل أن ينعكس.",
+      note: isMeasured
+        ? `مقيسة من سجلّ التصفيات الفعلي للمنصّة: ${liquidations.length} تجمّعاً ` +
+          `بإجمالي ${fmt(total / 1e6, 1)} مليون دولار صُفّيت في النافذة. ` +
+          "التجمّعات القريبة تعمل مغناطيساً: السعر يميل للوصول إليها قبل أن ينعكس."
+        : "تقدير مبنيّ على توزيع العقود المفتوحة على شرائح الرافعة الشائعة — وليس قياساً. " +
+          "استورد سجلّ التصفيات (npm run backfill) ليتحوّل هذا إلى قياس. " +
+          "التجمّعات القريبة تعمل مغناطيساً: السعر يميل للوصول إليها قبل أن ينعكس.",
     });
   }
 

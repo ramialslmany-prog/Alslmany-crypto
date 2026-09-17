@@ -431,4 +431,32 @@ CREATE TABLE IF NOT EXISTS funding_rates (
 );
 `,
   },
+  {
+    id: 7,
+    name: "liquidations",
+    sql: `
+-- ── where leverage actually died ────────────────────────────────────────
+-- Until now the liquidation clusters the flows stage reported were MODELLED
+-- from open interest: a reasonable prior, labelled as one, but a guess. This
+-- table holds the venue's own record of every forced close, which turns that
+-- guess into a measurement — and the resulting price clusters are real
+-- levels, not indicator output.
+--
+-- position_side is the side of the POSITION, not of the order the venue
+-- sent. The venue SELLS to close a long, so reading its column literally
+-- would label every dead long a seller and invert the whole signal.
+CREATE TABLE IF NOT EXISTS liquidations (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol         TEXT    NOT NULL,
+  timestamp      INTEGER NOT NULL,
+  position_side  TEXT    NOT NULL CHECK (position_side IN ('long','short')),
+  price          REAL    NOT NULL,
+  quantity       REAL    NOT NULL,
+  notional       REAL    NOT NULL,
+  UNIQUE (symbol, timestamp, price, quantity, position_side)
+);
+
+CREATE INDEX IF NOT EXISTS idx_liquidations_time ON liquidations (symbol, timestamp DESC);
+`,
+  },
 ];

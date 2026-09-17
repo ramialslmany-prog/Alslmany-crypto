@@ -141,6 +141,7 @@ function loadSymbol(
         openInterest: derivRepo.openInterest(symbol, Infinity, 1_000_000),
         longShort: derivRepo.longShort(symbol, Infinity, 1_000_000),
         funding: derivRepo.funding(symbol, Infinity, 100_000),
+        liquidations: derivRepo.liquidations(symbol, 0, Infinity),
       }
     : null;
 

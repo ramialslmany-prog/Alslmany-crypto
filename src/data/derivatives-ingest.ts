@@ -10,7 +10,7 @@
  * Funding comes from the REST endpoint instead: it settles every eight hours,
  * so the whole history is a few hundred rows and there is no archive to pull.
  */
-import { BinanceVisionArchive, parseMetrics } from "@/data/archive/binance-vision";
+import { BinanceVisionArchive, parseLiquidations, parseMetrics } from "@/data/archive/binance-vision";
 import { DerivativesRepo } from "@/storage/repositories/derivatives";
 import { HealthRepo } from "@/storage/repositories/health";
 import type { MarketDataSource } from "@/data/market-source";
@@ -28,6 +28,7 @@ export interface DerivativesReport {
   readonly missing: number;
   readonly failed: number;
   readonly fundingRows: number;
+  readonly liquidationRows: number;
   readonly first: number | null;
   readonly last: number | null;
   readonly errors: readonly string[];
@@ -87,6 +88,25 @@ export class DerivativesIngestor {
       imported += this.repo.upsertMetrics(symbol, parseMetrics(r.value.csv));
     }
 
+    // ── liquidations ──────────────────────────────────────────────────────
+    //
+    // A separate pass rather than a second data type in the loop above: the
+    // two archives have different start dates per symbol, and interleaving
+    // them would make one file's 404 look like the other's.
+    let liquidationRows = 0;
+    for (const [i, key] of days.entries()) {
+      onProgress?.(i + 1, days.length, `liq ${key}`);
+      const r = await this.archive.fetch({
+        symbol,
+        dataType: "liquidationSnapshot",
+        period: "daily",
+        periodKey: key,
+        market: "um",
+      });
+      if (!r.available) continue; // absent days are normal; nothing to report
+      liquidationRows += this.repo.upsertLiquidations(symbol, parseLiquidations(r.value.csv));
+    }
+
     // ── funding, from REST ─────────────────────────────────────────────────
     let fundingRows = 0;
     const funding = await this.source.fundingHistory(symbol, 1000);
@@ -98,7 +118,7 @@ export class DerivativesIngestor {
     }
 
     const coverage = this.repo.coverage(symbol);
-    log.info("derivatives backfilled", { symbol, imported, missing, failed, fundingRows });
+    log.info("derivatives backfilled", { symbol, imported, missing, failed, fundingRows, liquidationRows });
 
     return {
       symbol,
@@ -107,6 +127,7 @@ export class DerivativesIngestor {
       missing,
       failed,
       fundingRows,
+      liquidationRows,
       first: coverage?.first ?? null,
       last: coverage?.last ?? null,
       errors,

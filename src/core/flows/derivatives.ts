@@ -273,3 +273,66 @@ export function compositeRead(x: {
     arabic: "لا تنطبق أي قراءة مركّبة واضحة على التدفّقات والمشتقّات.",
   };
 }
+
+// ── liquidation clusters, MEASURED ───────────────────────────────────────────
+
+export interface LiquidationEvent {
+  readonly timestamp: number;
+  readonly positionSide: "long" | "short";
+  readonly price: number;
+  readonly notional: number;
+}
+
+/**
+ * Where leverage actually died, from the venue's own record.
+ *
+ * This REPLACES `estimateLiquidationClusters` wherever real data exists. The
+ * estimate maps open interest onto leverage tiers and is a reasonable prior;
+ * this is a measurement, and the two are not interchangeable — so the caller
+ * is told which it received rather than being handed a number that looks the
+ * same either way.
+ *
+ * Prices are bucketed by a fraction of ATR rather than by a fixed percentage:
+ * a cluster is "the same price" relative to how much this market moves, and a
+ * fixed 0.1% bucket merges everything on a quiet day and splits one event
+ * into ten on a violent one.
+ */
+export function measureLiquidationClusters(
+  events: readonly LiquidationEvent[],
+  price: number,
+  atrValue: number,
+  maxClusters = 6,
+): LiquidationCluster[] {
+  if (events.length === 0 || !(price > 0) || !(atrValue > 0)) return [];
+
+  const bucketSize = atrValue * 0.25;
+  const buckets = new Map<string, { sum: number; weighted: number; side: "long" | "short" }>();
+
+  for (const e of events) {
+    if (!(e.price > 0) || !(e.notional > 0)) continue;
+    const bucket = Math.round(e.price / bucketSize);
+    const key = `${e.positionSide}:${bucket}`;
+    const current = buckets.get(key) ?? { sum: 0, weighted: 0, side: e.positionSide };
+    current.sum += e.notional;
+    // Weighted by notional, so the cluster price is where the MONEY died,
+    // not the midpoint of an arbitrary bucket.
+    current.weighted += e.price * e.notional;
+    buckets.set(key, current);
+  }
+
+  const clusters: LiquidationCluster[] = [];
+  for (const { sum, weighted, side } of buckets.values()) {
+    if (sum <= 0) continue;
+    const clusterPrice = weighted / sum;
+    clusters.push({
+      price: clusterPrice,
+      side,
+      estimatedNotional: sum,
+      distancePct: ((clusterPrice - price) / price) * 100,
+    });
+  }
+
+  // Biggest first: a cluster matters by how much money is in it, and the
+  // caller sorts by distance itself when proximity is what it needs.
+  return clusters.sort((a, b) => b.estimatedNotional - a.estimatedNotional).slice(0, maxClusters);
+}

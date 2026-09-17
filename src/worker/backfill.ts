@@ -159,7 +159,8 @@ async function main(): Promise<void> {
       const note = report.missing > 0 ? ` ${DIM}${report.missing} يوم بلا ملف${RESET}` : "";
       process.stdout.write(
         `\r${DIM}[derivatives]${RESET} ${symbol.padEnd(14)} ` +
-        `${String(fmt(report.imported)).padStart(9)} قراءة · ${report.fundingRows} تمويل${note}\n`,
+        `${String(fmt(report.imported)).padStart(9)} قراءة · ${fmt(report.liquidationRows)} تصفية · ` +
+        `${report.fundingRows} تمويل${note}\n`,
       );
       if (report.failed > 0) failures.push(`${symbol} derivatives: ${report.errors[0] ?? "غير معروف"}`);
     }

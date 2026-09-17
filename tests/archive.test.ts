@@ -5,7 +5,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { zipSync, strToU8 } from "fflate";
-import { BinanceVisionArchive, archiveUrl, parseMetrics } from "@/data/archive/binance-vision";
+import {
+  BinanceVisionArchive, archiveUrl, parseLiquidations, parseMetrics,
+} from "@/data/archive/binance-vision";
 import { getConfig } from "@/shared/config";
 
 const cfg = getConfig({ DATA_DIR: "/tmp/alslmany-test" } as unknown as NodeJS.ProcessEnv);
@@ -197,5 +199,51 @@ describe("the derivatives metrics archive", () => {
     ].join("\n");
     const rows = parseMetrics(reversed);
     expect(rows[0].timestamp).toBeLessThan(rows[1].timestamp);
+  });
+});
+
+
+// ── liquidations ─────────────────────────────────────────────────────────────
+
+describe("the liquidation archive", () => {
+  // time,side,order_type,time_in_force,original_quantity,price,average_price,
+  // order_status,last_fill_quantity,accumulated_fill_quantity
+  const csv = [
+    "1717200000000,SELL,LIMIT,IOC,1.5,64000,63950,FILLED,1.5,1.5",
+    "1717200060000,BUY,LIMIT,IOC,2.0,66000,66100,FILLED,2.0,2.0",
+  ].join("\n");
+
+  it("reads the POSITION side, not the order side", () => {
+    // The venue SELLS to close a long. Taking the column literally labels
+    // every dead long a seller and inverts the entire signal — a pile of
+    // liquidated longs would read as sellers arriving rather than as longs
+    // being forced out.
+    const rows = parseLiquidations(csv);
+    expect(rows[0].orderSide).toBe("sell");
+    expect(rows[0].positionSide).toBe("long");
+    expect(rows[1].orderSide).toBe("buy");
+    expect(rows[1].positionSide).toBe("short");
+  });
+
+  it("prices the fill at the AVERAGE price, not the order's limit", () => {
+    // In a cascade the limit price and the fill diverge sharply, and the fill
+    // is where the money actually changed hands.
+    const [first] = parseLiquidations(csv);
+    expect(first.price).toBeCloseTo(63_950, 6);
+    expect(first.notional).toBeCloseTo(63_950 * 1.5, 6);
+  });
+
+  it("skips a header row and any malformed line", () => {
+    const messy = `time,side,order_type,time_in_force,original_quantity,price,average_price,order_status,last_fill_quantity,accumulated_fill_quantity\n${csv}\ngarbage\n`;
+    expect(parseLiquidations(messy)).toHaveLength(2);
+  });
+
+  it("builds the liquidation URL under the futures root", () => {
+    expect(archiveUrl({
+      symbol: "BTCUSDT", dataType: "liquidationSnapshot", period: "daily",
+      periodKey: "2024-06-01", market: "um",
+    })).toBe(
+      "https://data.binance.vision/data/futures/um/daily/liquidationSnapshot/BTCUSDT/BTCUSDT-liquidationSnapshot-2024-06-01.zip",
+    );
   });
 });

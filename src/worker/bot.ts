@@ -27,6 +27,7 @@ import { SymbolRepo } from "@/storage/repositories/symbols";
 import { HealthRepo } from "@/storage/repositories/health";
 import { RecommendationRepo, RejectedRepo } from "@/storage/repositories/recommendations";
 import { BreakerRepo, EquityRepo, PositionRepo } from "@/storage/repositories/positions";
+import { DerivativesRepo } from "@/storage/repositories/derivatives";
 import { NotificationRepo, PendingActionRepo, WorkerStateRepo } from "@/storage/repositories/worker";
 import { createMarketSource } from "@/data/exchanges";
 import { Ingestor } from "@/data/ingest";
@@ -77,6 +78,7 @@ export class Bot {
   private readonly positions: PositionRepo;
   private readonly equity: EquityRepo;
   private readonly breakers: BreakerRepo;
+  private readonly derivatives: DerivativesRepo;
   private readonly pending: PendingActionRepo;
   private readonly notifications: NotificationRepo;
   private readonly state: WorkerStateRepo;
@@ -111,6 +113,7 @@ export class Bot {
     this.positions = new PositionRepo(db);
     this.equity = new EquityRepo(db);
     this.breakers = new BreakerRepo(db);
+    this.derivatives = new DerivativesRepo(db);
     this.pending = new PendingActionRepo(db);
     this.notifications = new NotificationRepo(db);
     this.state = new WorkerStateRepo(db);
@@ -556,6 +559,7 @@ export class Bot {
 
     const macro = this.macroCache;
     const open = this.positions.open();
+    const liquidationEvents = this.derivatives.liquidations(info.symbol, now - 7 * DAY, now);
 
     return {
       symbol: info.symbol,
@@ -597,6 +601,9 @@ export class Bot {
         fundingHistory: value(derivatives?.[1]),
         openInterest: value(derivatives?.[2]),
         longShort: value(derivatives?.[3]),
+        // A week of forced closes: older clusters have been traded through.
+        liquidationEvents: liquidationEvents.length > 0 ? liquidationEvents : null,
+        atr: atr(candles[tf] ?? []),
       },
       sentimentInput: {
         fearGreed: macro?.fearGreed ?? unavailable("alternative.me", "not_implemented", "لم تُقرأ بعد"),

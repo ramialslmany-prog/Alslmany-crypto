@@ -48,13 +48,17 @@ const ARCHIVE_HOST = "https://data.binance.vision";
 
 export type ArchivePeriod = "monthly" | "daily";
 /**
+ * `liquidationSnapshot` is every forced close the venue executed — the only
+ * free record of where leverage actually died, as opposed to where a model
+ * says it might.
+ *
  * `metrics` is the derivatives history: open interest and the long/short
  * ratios, published daily for USD-M futures. It is the only free archive of
  * what stage 5 reads live, and without it the backtest and the live bot
  * disagree about which stages exist — which makes the backtest unable to
  * validate the thing it is supposed to validate.
  */
-export type ArchiveDataType = "klines" | "aggTrades" | "metrics";
+export type ArchiveDataType = "klines" | "aggTrades" | "metrics" | "liquidationSnapshot";
 export type ArchiveMarket = "spot" | "um"; // um = USD-M futures
 
 export interface ArchiveTarget {
@@ -364,4 +368,56 @@ function* iterateLines(text: string): Generator<string> {
 function isNumericStart(s: string): boolean {
   const c = s.trim().charCodeAt(0);
   return c >= 48 && c <= 57; // '0'..'9'
+}
+
+
+/** One forced liquidation, as the archive records it. */
+export interface LiquidationRow {
+  readonly timestamp: number;
+  /** Side of the ORDER the venue submitted, not of the dead position. */
+  readonly orderSide: "buy" | "sell";
+  /** Side of the POSITION that was liquidated — what a trader cares about. */
+  readonly positionSide: "long" | "short";
+  readonly price: number;
+  readonly quantity: number;
+  readonly notional: number;
+}
+
+/**
+ * Parse the liquidation snapshot CSV.
+ *
+ * The side needs care and is the one thing easy to get backwards: the venue
+ * publishes the side of the ORDER IT SENT, and to close a long it must SELL.
+ * Reading the column literally labels every long liquidation a "sell" and
+ * inverts the entire signal — a cluster of dead longs would be read as
+ * sellers arriving rather than as longs being forced out.
+ */
+export function parseLiquidations(csv: string): LiquidationRow[] {
+  const out: LiquidationRow[] = [];
+
+  for (const line of csv.split(/\r?\n/)) {
+    if (!line || line.startsWith("time,") || line.startsWith("time\t")) continue;
+    const c = line.split(",");
+    if (c.length < 6) continue;
+
+    const timestamp = Number(c[0]);
+    const side = c[1]?.trim().toUpperCase();
+    // `average_price` is what actually filled; `price` is the order's limit.
+    const price = Number(c[6] ?? c[5]);
+    const quantity = Number(c[8] ?? c[4]);
+
+    if (!Number.isFinite(timestamp) || !(price > 0) || !(quantity > 0)) continue;
+    if (side !== "BUY" && side !== "SELL") continue;
+
+    out.push({
+      timestamp,
+      orderSide: side === "BUY" ? "buy" : "sell",
+      positionSide: side === "SELL" ? "long" : "short",
+      price,
+      quantity,
+      notional: price * quantity,
+    });
+  }
+
+  return out.sort((a, b) => a.timestamp - b.timestamp);
 }

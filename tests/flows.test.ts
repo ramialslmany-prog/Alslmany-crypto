@@ -15,7 +15,8 @@ import { findLargeTrades } from "@/core/flows/large-trades";
 import { analyzeImbalance, findWalls, trackWalls } from "@/core/flows/orderbook";
 import {
   analyzeFunding, analyzeOpenInterest, analyzePositioning,
-  compositeRead, estimateLiquidationClusters,
+  compositeRead, estimateLiquidationClusters, measureLiquidationClusters,
+  type LiquidationEvent,
 } from "@/core/flows/derivatives";
 import { runFlows } from "@/core/pipeline/stage5-flows";
 import type { Candle, FundingRate, LongShortRatio, OpenInterest, OrderBook, Trade } from "@/core/types";
@@ -379,6 +380,8 @@ describe("stage 5", () => {
       symbol: "BTCUSDT", longAccountPct: 55, shortAccountPct: 45, ratio: 1.22, timestamp: NOW - i * HOUR,
     })),
     direction: "long" as const,
+    liquidationEvents: null,
+    atr: null,
     now: NOW,
     ...over,
   });
@@ -456,5 +459,64 @@ describe("stage 5", () => {
   it("is deterministic", () => {
     const input = fullInput();
     expect(runFlows(input).score).toBe(runFlows(input).score);
+  });
+});
+
+
+// ── measured liquidation clusters ────────────────────────────────────────────
+
+describe("liquidation clusters, measured", () => {
+  const events = (over: Partial<LiquidationEvent>[] = []) => over.map((o, i) => ({
+    timestamp: NOW - i * 60_000,
+    positionSide: "long" as const,
+    price: 100,
+    notional: 1_000,
+    ...o,
+  }));
+
+  it("places the cluster where the MONEY died, not at the bucket midpoint", () => {
+    // Two liquidations in one bucket, one ten times the size of the other:
+    // the cluster belongs next to the big one.
+    const clusters = measureLiquidationClusters(
+      events([{ price: 100, notional: 100 }, { price: 101, notional: 1_000 }]),
+      105, 10,
+    );
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].price).toBeGreaterThan(100.8);
+  });
+
+  it("separates longs from shorts even at the same price", () => {
+    const clusters = measureLiquidationClusters(
+      events([
+        { price: 100, positionSide: "long", notional: 5_000 },
+        { price: 100, positionSide: "short", notional: 5_000 },
+      ]),
+      100, 10,
+    );
+    expect(clusters).toHaveLength(2);
+    expect(new Set(clusters.map((c) => c.side))).toEqual(new Set(["long", "short"]));
+  });
+
+  it("buckets by ATR, so one event does not split into ten on a violent day", () => {
+    const spread = events([
+      { price: 100, notional: 1_000 },
+      { price: 100.5, notional: 1_000 },
+      { price: 101, notional: 1_000 },
+    ]);
+    // Wide ATR: one cluster. Tiny ATR: three.
+    expect(measureLiquidationClusters(spread, 105, 20)).toHaveLength(1);
+    expect(measureLiquidationClusters(spread, 105, 0.4).length).toBeGreaterThan(1);
+  });
+
+  it("returns nothing rather than a fabricated cluster with no events", () => {
+    expect(measureLiquidationClusters([], 100, 10)).toEqual([]);
+    expect(measureLiquidationClusters(events([{}]), 100, 0)).toEqual([]);
+  });
+
+  it("reports distance signed from the current price", () => {
+    const [below] = measureLiquidationClusters(events([{ price: 90, notional: 1_000 }]), 100, 5);
+    expect(below.distancePct).toBeLessThan(0);
+    const [above] = measureLiquidationClusters(events([{ price: 110, notional: 1_000 }]), 100, 5);
+    expect(above.distancePct).toBeGreaterThan(0);
   });
 });
