@@ -563,3 +563,40 @@ export function symbols(limit = 500): SymbolRow[] {
     [],
   );
 }
+
+export interface WorkerHeartbeat {
+  readonly startedAt: number;
+  readonly lastTickAt: number;
+  readonly lastTickMs: number;
+  readonly ticks: number;
+  readonly analyses: number;
+  readonly recommendations: number;
+  readonly lastError: string | null;
+}
+
+/**
+ * Is the worker actually alive?
+ *
+ * The rest of this page infers health from data timestamps, which cannot
+ * distinguish a dead worker from a dead venue — both leave the newest candle
+ * getting older. The worker says so itself, or says nothing, which is also an
+ * answer.
+ */
+export function workerHeartbeat(): WorkerHeartbeat | null {
+  return query(
+    (db) => {
+      const r = db.prepare<[], {
+        started_at: number; last_tick_at: number; last_tick_ms: number;
+        ticks: number; analyses: number; recommendations: number; last_error: string | null;
+      }>("SELECT * FROM worker_state WHERE id = 1").get();
+      return r
+        ? {
+            startedAt: r.started_at, lastTickAt: r.last_tick_at, lastTickMs: r.last_tick_ms,
+            ticks: r.ticks, analyses: r.analyses, recommendations: r.recommendations,
+            lastError: r.last_error,
+          }
+        : null;
+    },
+    null,
+  );
+}

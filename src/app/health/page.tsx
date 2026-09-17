@@ -8,6 +8,7 @@
 import { hasDatabase } from "@/web/db";
 import {
   archiveSummary, candleCoverage, openGaps, providerHealth, unverifiedArchiveCount,
+  workerHeartbeat,
 } from "@/web/queries";
 import { Topbar } from "@/web/components/Topbar";
 import { NoDatabase } from "@/web/components/NoDatabase";
@@ -34,6 +35,7 @@ export default function Health() {
   const coverage = candleCoverage(120);
   const archive = archiveSummary();
   const unverified = unverifiedArchiveCount();
+  const worker = workerHeartbeat();
 
   const failing = health.filter((h) => h.lastFailAt && (!h.lastOkAt || h.lastFailAt > h.lastOkAt));
   const totalBars = coverage.reduce((s, c) => s + c.bars, 0);
@@ -53,6 +55,56 @@ export default function Health() {
             detail="بصمة SHA-256 لم تُطابَق"
           />
         </div>
+
+        <Panel title="العامل" note="نبض البوت نفسه — لا يُستنتج من عمر الشموع">
+          <div className="panel-body">
+            {worker === null ? (
+              <div className="empty">
+                لم يعمل العامل بعد على هذه القاعدة. شغّل <code>npm run bot</code>.
+                شموع قديمة وحدها لا تفرّق بين عامل متوقّف ومنصّة متوقّفة — لذلك يسجّل العامل نبضه بنفسه.
+              </div>
+            ) : (
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <th>آخر دورة</th>
+                    <td>
+                      <Num>{timestamp(worker.lastTickAt)}</Num>
+                      <span className="muted"> · {ago(worker.lastTickAt, now)}</span>
+                      {now - worker.lastTickAt > 2 * 3_600_000 && (
+                        <span className="loss"> — متأخّر أكثر من ساعتين</span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>مدّة الدورة</th>
+                    <td><Num>{int(worker.lastTickMs)}</Num> مللي ثانية</td>
+                  </tr>
+                  <tr>
+                    <th>يعمل منذ</th>
+                    <td><Num>{timestamp(worker.startedAt)}</Num> · <Num>{int(worker.ticks)}</Num> دورة</td>
+                  </tr>
+                  <tr>
+                    <th>القمع منذ التشغيل</th>
+                    <td>
+                      <Num>{int(worker.analyses)}</Num> تحليلاً ·{" "}
+                      <Num>{int(worker.recommendations)}</Num> توصية
+                      {worker.recommendations > 0 && (
+                        <span className="muted">
+                          {" "}· واحدة لكل <Num>{int(Math.round(worker.analyses / worker.recommendations))}</Num>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>آخر خطأ</th>
+                    <td>{worker.lastError ? <span className="loss">{worker.lastError}</span> : <span className="muted">لا شيء</span>}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </Panel>
 
         <Panel title="المصادر" note="آخر استجابة وسببها">
           {health.length === 0 ? (
