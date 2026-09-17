@@ -330,4 +330,50 @@ CREATE TABLE IF NOT EXISTS circuit_breakers (
 CREATE INDEX IF NOT EXISTS idx_breakers_open ON circuit_breakers (kind, cleared_at);
 `,
   },
+  {
+    id: 4,
+    name: "worker_state",
+    sql: `
+-- ── actions decided on one candle, waiting for the next one's open ───────
+-- The monitor observes a CLOSED candle; the broker fills at the next
+-- candle's OPEN. Live, those two moments are an hour or a day apart and the
+-- process may restart in between, so the decision has to survive on disk.
+-- Without this table the worker would have to fill on the bar it just read,
+-- which is precisely the shortcut that makes a live bot behave better in
+-- backtest than in reality.
+CREATE TABLE IF NOT EXISTS pending_actions (
+  position_id  TEXT    PRIMARY KEY REFERENCES positions(id),
+  decided_at   INTEGER NOT NULL,
+  candle_time  INTEGER NOT NULL,
+  actions_json TEXT    NOT NULL
+);
+
+-- ── notification ledger ─────────────────────────────────────────────────
+-- Deduplication has to outlive the process too: a restart that forgets what
+-- it already sent re-sends every open trade's alerts.
+CREATE TABLE IF NOT EXISTS notifications (
+  dedupe_key TEXT    PRIMARY KEY,
+  kind       TEXT    NOT NULL,
+  sent_at    INTEGER NOT NULL,
+  critical   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_time ON notifications (sent_at DESC);
+
+-- ── worker heartbeat ────────────────────────────────────────────────────
+-- One row. The health page reads it to say whether the bot is actually
+-- alive, which a page built only from candle timestamps cannot tell:
+-- stale candles look identical whether the worker died or the venue did.
+CREATE TABLE IF NOT EXISTS worker_state (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  started_at     INTEGER NOT NULL,
+  last_tick_at   INTEGER NOT NULL,
+  last_tick_ms   INTEGER NOT NULL DEFAULT 0,
+  ticks          INTEGER NOT NULL DEFAULT 0,
+  analyses       INTEGER NOT NULL DEFAULT 0,
+  recommendations INTEGER NOT NULL DEFAULT 0,
+  last_error     TEXT
+);
+`,
+  },
 ];
