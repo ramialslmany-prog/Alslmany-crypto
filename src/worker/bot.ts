@@ -161,6 +161,11 @@ export class Bot {
     const started = Date.now();
     try {
       const result = await this.tick(started);
+      log.info("tick done", {
+        ms: Date.now() - started,
+        analyses: result.analyses,
+        recommendations: result.recommendations,
+      });
       this.state.tick({
         at: Date.now(), durationMs: Date.now() - started,
         analyses: result.analyses, recommendations: result.recommendations, error: null,
