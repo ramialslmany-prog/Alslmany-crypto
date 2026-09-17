@@ -30,6 +30,7 @@ import { BreakerRepo, EquityRepo, PositionRepo } from "@/storage/repositories/po
 import { DerivativesRepo } from "@/storage/repositories/derivatives";
 import { NotificationRepo, PendingActionRepo, WorkerStateRepo } from "@/storage/repositories/worker";
 import { createMarketSource } from "@/data/exchanges";
+import { isUntradablePair } from "@/core/universe";
 import { Ingestor } from "@/data/ingest";
 import { FearGreedSource } from "@/data/macro/fear-greed";
 import { CoinGeckoSource } from "@/data/macro/coingecko";
@@ -223,7 +224,13 @@ export class Bot {
         log.warn("watchlist symbols missing from the store — run backfill", { missing });
       }
     } else {
-      this.universe = stored.slice(0, this.cfg.UNIVERSE_MAX_SYMBOLS);
+      // Same exclusions as the backfill: a stablecoin pair has no trend to
+      // read and a leveraged token's chart is not its underlying's, so
+      // analysing either burns a slot on something that can never produce a
+      // signal.
+      this.universe = stored
+        .filter((s) => !isUntradablePair(s.symbol, this.cfg.QUOTE_ASSET))
+        .slice(0, this.cfg.UNIVERSE_MAX_SYMBOLS);
     }
 
     // Bitcoin is not optional: stage 2 cannot judge the macro context without

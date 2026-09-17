@@ -12,6 +12,7 @@
 import { getConfig } from "@/shared/config";
 import { createMarketSource } from "@/data/exchanges";
 import { Ingestor } from "@/data/ingest";
+import { selectUniverse } from "@/core/universe";
 import { DerivativesIngestor } from "@/data/derivatives-ingest";
 import { openDb, closeDb, maintain } from "@/storage/db";
 import { CandleRepo } from "@/storage/repositories/candles";
@@ -91,12 +92,19 @@ async function main(): Promise<void> {
       console.error(`تعذّر جلب قائمة الأحجام: ${ticker.detail ?? ticker.reason}`);
       process.exit(1);
     }
-    // Rank by real quote volume — the only ordering that reflects tradability.
-    symbols = ticker.value
-      .filter((t) => t.symbol.endsWith(cfg.QUOTE_ASSET) && Number.isFinite(t.quoteVolume))
-      .sort((a, b) => b.quoteVolume - a.quoteVolume)
-      .slice(0, args.top ?? cfg.UNIVERSE_MAX_SYMBOLS)
-      .map((t) => t.symbol);
+    // Ranked by real quote volume, with the pairs nothing can trade removed
+    // BEFORE the cut — otherwise "top 100" spends its first rows on
+    // stablecoin pairs. USDCUSDT was rank 1 the first time this ran.
+    const selection = selectUniverse(
+      ticker.value, cfg.QUOTE_ASSET, args.top ?? cfg.UNIVERSE_MAX_SYMBOLS,
+    );
+    symbols = selection.symbols;
+    if (selection.excluded.length > 0) {
+      console.log(
+        `${DIM}استُبعد ${selection.excluded.length} زوجاً لا يُحلَّل ` +
+        `(عملات مستقرّة ورموز برافعة): ${selection.excluded.slice(0, 6).join("، ")}…${RESET}`,
+      );
+    }
   }
 
   const from = Date.now() - args.years * 365 * 86_400_000;
