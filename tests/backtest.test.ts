@@ -13,7 +13,9 @@ import {
   type BacktestSettings, type BacktestSymbol, type BacktestTrade, type EquityPoint,
 } from "@/core/backtest/engine";
 import { buyAndHold, bySetup, computeMetrics, funnelVerdict } from "@/core/backtest/metrics";
-import { allowedFromTraining, holdoutBoundary, HOLDOUT_FRACTION } from "@/core/backtest/walkforward";
+import {
+  allowedFromTraining, countFolds, holdoutBoundary, HOLDOUT_FRACTION,
+} from "@/core/backtest/walkforward";
 import { DEFAULT_COSTS } from "@/core/execution/fills";
 import { DEFAULT_ELIGIBILITY } from "@/core/pipeline/stage1-eligibility";
 import { backtestSymbol } from "./fixtures/market";
@@ -285,6 +287,18 @@ describe("walk forward", () => {
     const to = START + 1_000 * DAY;
     expect(holdoutBoundary(from, to)).toBe(to - 200 * DAY);
     expect(HOLDOUT_FRACTION).toBe(0.2);
+  });
+
+  it("counts the folds a period will produce, for progress reporting", () => {
+    const from = START;
+    // Two years: the holdout takes the last ~146 days, leaving ~584 for the
+    // rolling loop. The first fold needs 182+30 days, then one per 30.
+    expect(countFolds(from, from + 730 * DAY)).toBe(13);
+  });
+
+  it("produces no folds when the period is shorter than one train window", () => {
+    // And says so rather than silently returning an empty result as success.
+    expect(countFolds(START, START + 100 * DAY)).toBe(0);
   });
 
   it("bans a setup that lost money on a judgeable sample", () => {

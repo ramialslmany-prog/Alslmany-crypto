@@ -81,11 +81,41 @@ export function allowedFromTraining(train: BacktestOutcome): SetupKind[] {
   return allowed;
 }
 
+/**
+ * Progress reporting.
+ *
+ * A walk-forward over two years of hourly bars is a quarter of a million
+ * full eight-stage runs — an hour or more of work. Without this the CLI
+ * printed nothing until it finished, which makes a correct run
+ * indistinguishable from a hung one, and users kill it.
+ */
+export interface WalkForwardProgress {
+  readonly fold: number;
+  readonly phase: "train" | "test";
+  readonly from: number;
+  readonly to: number;
+  /** Trades so far in this fold's completed phase, null while it runs. */
+  readonly trades: number | null;
+}
+
+/** How many folds a period will produce, so progress can show a total. */
+export function countFolds(from: number, to: number): number {
+  const boundary = holdoutBoundary(from, to);
+  let start = from;
+  let n = 0;
+  while (start + (TRAIN_DAYS + TEST_DAYS) * DAY <= boundary) {
+    n++;
+    start += TEST_DAYS * DAY;
+  }
+  return n;
+}
+
 export function runWalkForward(
   symbols: readonly BacktestSymbol[],
   settings: BacktestSettings,
   from: number,
   to: number,
+  onProgress?: (p: WalkForwardProgress) => void,
 ): WalkForwardResult {
   const boundary = holdoutBoundary(from, to);
   const folds: Fold[] = [];
@@ -97,20 +127,24 @@ export function runWalkForward(
     const trainTo = trainFrom + TRAIN_DAYS * DAY;
     const testTo = Math.min(trainTo + TEST_DAYS * DAY, boundary);
 
+    onProgress?.({ fold: index, phase: "train", from: trainFrom, to: trainTo, trades: null });
     const train = runBacktest(
       symbols,
       { ...settings, allowedSetups: null, seedSetupStats: new Map() },
       trainFrom,
       trainTo,
     );
+    onProgress?.({ fold: index, phase: "train", from: trainFrom, to: trainTo, trades: train.trades.length });
     const allowedSetups = allowedFromTraining(train);
 
+    onProgress?.({ fold: index, phase: "test", from: trainTo, to: testTo, trades: null });
     const test = runBacktest(
       symbols,
       { ...settings, allowedSetups, seedSetupStats: train.setupStats },
       trainTo,
       testTo,
     );
+    onProgress?.({ fold: index, phase: "test", from: trainTo, to: testTo, trades: test.trades.length });
 
     folds.push({
       index: index++,

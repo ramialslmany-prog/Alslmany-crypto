@@ -26,7 +26,9 @@ import {
   runBacktest, DEFAULT_LOOKBACK_BARS,
   type BacktestOutcome, type BacktestSettings, type BacktestSymbol,
 } from "@/core/backtest/engine";
-import { runHoldout, runWalkForward, type WalkForwardResult } from "@/core/backtest/walkforward";
+import {
+  countFolds, runHoldout, runWalkForward, type WalkForwardResult,
+} from "@/core/backtest/walkforward";
 import { buyAndHold, bySetup, computeMetrics, funnelVerdict, type Metrics } from "@/core/backtest/metrics";
 import { TIMEFRAMES, isTimeframe, type Timeframe } from "@/shared/time";
 import type { Candle } from "@/core/types";
@@ -267,7 +269,25 @@ async function main(): Promise<void> {
       `${args.timeframe} · ${iso(from)} إلى ${iso(to)}${RESET}\n`,
     );
 
-    const walk: WalkForwardResult = runWalkForward(symbols, settings, from, to);
+    const totalFolds = countFolds(from, to);
+    const startedAt = Date.now();
+    console.log(
+      `${DIM}${totalFolds} نافذة · كل نافذة تدريب 6 أشهر واختبار شهر. ` +
+      `العمل الحقيقي هنا هو مئات آلاف التحليلات الكاملة، فتوقّع دقائق طويلة.${RESET}\n`,
+    );
+
+    const walk: WalkForwardResult = runWalkForward(symbols, settings, from, to, (p) => {
+      const label = p.phase === "train" ? "تدريب" : "اختبار";
+      const head = `${DIM}[${String(p.fold + 1).padStart(2)}/${totalFolds}]${RESET} ${label} ${iso(p.from)}→${iso(p.to)}`;
+      if (p.trades === null) {
+        // Carriage return, no newline: the finished line overwrites this one.
+        process.stdout.write(`\r${head} …   `);
+      } else {
+        const mins = (Date.now() - startedAt) / 60_000;
+        process.stdout.write(`\r${head} · ${p.trades} صفقة ${DIM}(${mins.toFixed(1)} دقيقة)${RESET}\n`);
+      }
+    });
+    console.log("");
 
     console.log(`${BOLD}التدحرج الأمامي${RESET}`);
     console.log(`  ${walk.arabic}`);
