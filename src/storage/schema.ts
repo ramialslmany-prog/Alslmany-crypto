@@ -393,4 +393,42 @@ CREATE TABLE IF NOT EXISTS worker_state (
 ALTER TABLE recommendations ADD COLUMN expected_r REAL NOT NULL DEFAULT 0;
 `,
   },
+  {
+    id: 6,
+    name: "derivatives_history",
+    sql: `
+-- ── derivatives, stored so the BACKTEST sees what the live bot sees ──────
+-- Open interest and the long/short ratios are published live by the venue
+-- and daily by the archive. Without the archive half, stage 5 is real in
+-- production and absent in the backtest — so the backtest would be
+-- validating a different strategy from the one that trades.
+--
+-- Nullable on purpose: the venue leaves these blank for illiquid symbols,
+-- and a blank column is "not published", never zero.
+CREATE TABLE IF NOT EXISTS derivatives (
+  symbol                TEXT    NOT NULL,
+  timestamp             INTEGER NOT NULL,
+  open_interest         REAL    NOT NULL,
+  open_interest_value   REAL    NOT NULL,
+  top_account_ratio     REAL,
+  top_position_ratio    REAL,
+  account_ratio         REAL,
+  taker_volume_ratio    REAL,
+  PRIMARY KEY (symbol, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_derivatives_time ON derivatives (symbol, timestamp DESC);
+
+-- ── funding, on its own clock ───────────────────────────────────────────
+-- Funding settles every 8 hours, not on the metrics grid, so it gets its
+-- own table rather than nullable columns that are empty 95% of the time.
+CREATE TABLE IF NOT EXISTS funding_rates (
+  symbol          TEXT    NOT NULL,
+  funding_time    INTEGER NOT NULL,
+  rate            REAL    NOT NULL,
+  interval_hours  INTEGER NOT NULL DEFAULT 8,
+  PRIMARY KEY (symbol, funding_time)
+);
+`,
+  },
 ];

@@ -41,7 +41,9 @@ import type {
 } from "@/core/execution/types";
 import type { Recommendation } from "@/core/recommendation/types";
 import { available, unavailable, type Availability } from "@/shared/availability";
-import type { Candle, FearGreed, SymbolInfo, Ticker24h } from "@/core/types";
+import type {
+  Candle, FearGreed, FundingRate, LongShortRatio, OpenInterest, SymbolInfo, Ticker24h,
+} from "@/core/types";
 import { tfMillis, type Timeframe } from "@/shared/time";
 
 const DAY = 86_400_000;
@@ -53,6 +55,19 @@ export interface BacktestSymbol {
   /** First candle that exists anywhere in the archive — the listing proxy. */
   readonly listedAt: number | null;
   readonly candles: Partial<Record<Timeframe, readonly Candle[]>>;
+  /**
+   * Derivatives history, oldest first, or null when none was imported.
+   *
+   * Passing it makes stage 5 read the SAME inputs in the backtest that it
+   * reads live. Leaving it null is honest but costly: the stage then votes in
+   * production and is unavailable in every backtest, so the backtest stops
+   * being a test of the strategy that trades.
+   */
+  readonly derivatives?: {
+    readonly openInterest: readonly OpenInterest[];
+    readonly longShort: readonly LongShortRatio[];
+    readonly funding: readonly FundingRate[];
+  } | null;
 }
 
 export interface BacktestSettings {
@@ -190,6 +205,26 @@ export function sliceUpTo(
     else hi = mid;
   }
   return lo <= lookback ? candles.slice(0, lo) : candles.slice(lo - lookback, lo);
+}
+
+/**
+ * The derivative readings a decision at `now` is allowed to see.
+ *
+ * Same rule as the candles, and it matters more here: open interest is
+ * published every five minutes, so an off-by-one would hand the pipeline a
+ * reading from after the decision it is meant to inform.
+ */
+function upTo<T>(
+  rows: readonly T[], now: number, limit: number, at: (row: T) => number,
+): readonly T[] {
+  let lo = 0;
+  let hi = rows.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (at(rows[mid]) <= now) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo <= limit ? rows.slice(0, lo) : rows.slice(lo - limit, lo);
 }
 
 /**
@@ -597,6 +632,14 @@ function buildRunInput(
 ): RunInput {
   const window = candles[settings.tradingTimeframe] ?? [];
 
+  // Derivatives, sliced point-in-time exactly like the candles.
+  const d = sym.derivatives ?? null;
+  const openInterest = d ? upTo(d.openInterest, now, 48, (r) => r.timestamp) : [];
+  const longShort = d ? upTo(d.longShort, now, 48, (r) => r.timestamp) : [];
+  // Funding is timestamped by SETTLEMENT, not by publication.
+  const fundingHistory = d ? upTo(d.funding, now, 100, (r) => r.fundingTime) : [];
+  const fundingNow = fundingHistory.length > 0 ? fundingHistory[fundingHistory.length - 1] : null;
+
   return {
     symbol: sym.symbol,
     tradingTimeframe: settings.tradingTimeframe,
@@ -628,10 +671,10 @@ function buildRunInput(
     flowsInput: {
       trades: null,
       bookSnapshots: null,
-      funding: null,
-      fundingHistory: null,
-      openInterest: null,
-      longShort: null,
+      funding: fundingNow,
+      fundingHistory: fundingHistory.length > 0 ? fundingHistory : null,
+      openInterest: openInterest.length > 0 ? openInterest : null,
+      longShort: longShort.length > 0 ? longShort : null,
     },
     sentimentInput: {
       fearGreed: fearGreedAt(settings.fearGreedHistory, now),

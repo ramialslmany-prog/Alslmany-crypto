@@ -12,6 +12,7 @@
 import { getConfig } from "@/shared/config";
 import { createMarketSource } from "@/data/exchanges";
 import { Ingestor } from "@/data/ingest";
+import { DerivativesIngestor } from "@/data/derivatives-ingest";
 import { openDb, closeDb, maintain } from "@/storage/db";
 import { CandleRepo } from "@/storage/repositories/candles";
 import { ArchiveRepo } from "@/storage/repositories/archive";
@@ -31,6 +32,7 @@ interface Args {
   years: number;
   top?: number;
   noArchive: boolean;
+  noDerivatives: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -53,6 +55,7 @@ function parseArgs(argv: string[]): Args {
     years: Number(get("--years") ?? 2),
     top: get("--top") ? Number(get("--top")) : undefined,
     noArchive: argv.includes("--no-archive"),
+    noDerivatives: argv.includes("--no-derivatives"),
   };
 }
 
@@ -65,6 +68,7 @@ async function main(): Promise<void> {
   const db = openDb(cfg.dbPath);
   const source = createMarketSource(cfg);
   const ingest = new Ingestor(db, cfg, source);
+  const derivatives = new DerivativesIngestor(db, cfg, source);
 
   console.log(`\n${BOLD}بناء التاريخ — منصّة ${cfg.MARKET_EXCHANGE}${RESET}\n`);
 
@@ -136,6 +140,28 @@ async function main(): Promise<void> {
       if (report.errors.length) {
         failures.push(`${symbol} ${timeframe}: ${report.errors.slice(0, 2).join("; ")}`);
       }
+    }
+  }
+
+  // ── derivatives: open interest and the long/short ratios ────────────────
+  //
+  // Stage 5 reads these live. Without them here it is "unavailable" in every
+  // backtest, and the backtest stops testing the strategy that trades.
+  if (!args.noDerivatives) {
+    console.log(`\n${BOLD}المشتقّات — العقود المفتوحة ونسب الطويل/القصير${RESET}`);
+    for (const symbol of symbols) {
+      process.stdout.write(`${DIM}[derivatives]${RESET} ${symbol.padEnd(14)} `);
+      const report = await derivatives.backfill(symbol, from, Date.now(), (i, total, key) => {
+        if (i % 10 === 0 || i === total) {
+          process.stdout.write(`\r${DIM}[derivatives]${RESET} ${symbol.padEnd(14)} ${DIM}${key} (${i}/${total})${RESET}   `);
+        }
+      });
+      const note = report.missing > 0 ? ` ${DIM}${report.missing} يوم بلا ملف${RESET}` : "";
+      process.stdout.write(
+        `\r${DIM}[derivatives]${RESET} ${symbol.padEnd(14)} ` +
+        `${String(fmt(report.imported)).padStart(9)} قراءة · ${report.fundingRows} تمويل${note}\n`,
+      );
+      if (report.failed > 0) failures.push(`${symbol} derivatives: ${report.errors[0] ?? "غير معروف"}`);
     }
   }
 

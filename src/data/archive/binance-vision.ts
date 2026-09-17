@@ -47,7 +47,14 @@ const log = createLogger("archive");
 const ARCHIVE_HOST = "https://data.binance.vision";
 
 export type ArchivePeriod = "monthly" | "daily";
-export type ArchiveDataType = "klines" | "aggTrades";
+/**
+ * `metrics` is the derivatives history: open interest and the long/short
+ * ratios, published daily for USD-M futures. It is the only free archive of
+ * what stage 5 reads live, and without it the backtest and the live bot
+ * disagree about which stages exist — which makes the backtest unable to
+ * validate the thing it is supposed to validate.
+ */
+export type ArchiveDataType = "klines" | "aggTrades" | "metrics";
 export type ArchiveMarket = "spot" | "um"; // um = USD-M futures
 
 export interface ArchiveTarget {
@@ -85,14 +92,77 @@ export function archiveUrl(t: ArchiveTarget): string {
   const dir =
     t.dataType === "klines"
       ? `${root}/${t.period}/klines/${t.symbol}/${t.timeframe}`
-      : `${root}/${t.period}/aggTrades/${t.symbol}`;
+      : `${root}/${t.period}/${t.dataType}/${t.symbol}`;
   return `${ARCHIVE_HOST}/${dir}/${name}.zip`;
 }
 
 function fileBase(t: ArchiveTarget): string {
   return t.dataType === "klines"
     ? `${t.symbol}-${t.timeframe}-${t.periodKey}`
-    : `${t.symbol}-aggTrades-${t.periodKey}`;
+    : `${t.symbol}-${t.dataType}-${t.periodKey}`;
+}
+
+/** One row of the derivatives metrics archive. */
+export interface MetricRow {
+  readonly timestamp: number;
+  readonly openInterest: number;
+  readonly openInterestValue: number;
+  /** Ratio of long to short ACCOUNTS among top traders. */
+  readonly topTraderAccountRatio: number | null;
+  /** Ratio of long to short POSITION SIZE among top traders. */
+  readonly topTraderPositionRatio: number | null;
+  /** Ratio across all accounts. */
+  readonly accountRatio: number | null;
+  /** Taker buy volume over taker sell volume. */
+  readonly takerVolumeRatio: number | null;
+}
+
+const num = (v: string | undefined): number => {
+  // Same rule as the kline parser: an empty column is NOT zero. Binance
+  // leaves these blank for illiquid symbols, and a real zero open interest
+  // would be a very different claim from "not published".
+  if (v === undefined) return NaN;
+  const t = v.trim();
+  return t === "" ? NaN : Number(t);
+};
+
+/**
+ * Parse the metrics CSV.
+ *
+ * `create_time` is a formatted UTC string ("2024-06-01 00:05:00"), not an
+ * epoch — the one place in this archive where that is true, and the reason
+ * this parser exists rather than reusing the kline row normalizer.
+ */
+export function parseMetrics(csv: string): MetricRow[] {
+  const out: MetricRow[] = [];
+
+  for (const line of csv.split(/\r?\n/)) {
+    if (!line || line.startsWith("create_time")) continue;
+    const c = line.split(",");
+    if (c.length < 8) continue;
+
+    // Treat the naive timestamp as UTC; Binance publishes it that way.
+    const timestamp = Date.parse(`${c[0].trim().replace(" ", "T")}Z`);
+    const openInterest = num(c[2]);
+    if (!Number.isFinite(timestamp) || !Number.isFinite(openInterest)) continue;
+
+    const optional = (v: string | undefined): number | null => {
+      const n = num(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    out.push({
+      timestamp,
+      openInterest,
+      openInterestValue: Number.isFinite(num(c[3])) ? num(c[3]) : 0,
+      topTraderAccountRatio: optional(c[4]),
+      topTraderPositionRatio: optional(c[5]),
+      accountRatio: optional(c[6]),
+      takerVolumeRatio: optional(c[7]),
+    });
+  }
+
+  return out.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export class BinanceVisionArchive {

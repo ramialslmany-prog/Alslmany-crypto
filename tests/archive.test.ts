@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { zipSync, strToU8 } from "fflate";
-import { BinanceVisionArchive, archiveUrl } from "@/data/archive/binance-vision";
+import { BinanceVisionArchive, archiveUrl, parseMetrics } from "@/data/archive/binance-vision";
 import { getConfig } from "@/shared/config";
 
 const cfg = getConfig({ DATA_DIR: "/tmp/alslmany-test" } as unknown as NodeJS.ProcessEnv);
@@ -135,5 +135,67 @@ describe("zip round-trip", () => {
     const name = Object.keys(files).find((k) => k.endsWith(".csv"))!;
     const csv = new TextDecoder().decode(files[name]);
     expect(archive.parseKlineCsv(csv, "1h")).toHaveLength(2);
+  });
+});
+
+
+// ── derivatives metrics ──────────────────────────────────────────────────────
+
+describe("the derivatives metrics archive", () => {
+  const csv = [
+    "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio",
+    "2024-06-01 00:00:00,BTCUSDT,78000.5,5200000000,1.85,1.42,2.10,0.98",
+    "2024-06-01 00:05:00,BTCUSDT,78100.0,5210000000,1.80,1.40,2.05,1.02",
+  ].join("\n");
+
+  it("reads the formatted UTC timestamp, not an epoch", () => {
+    // This is the one file in the archive whose time column is a formatted
+    // string. Reading it as a number yields NaN and silently drops every row.
+    const rows = parseMetrics(csv);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].timestamp).toBe(Date.UTC(2024, 5, 1, 0, 0, 0));
+    expect(rows[1].timestamp).toBe(Date.UTC(2024, 5, 1, 0, 5, 0));
+  });
+
+  it("reads open interest and both ratios", () => {
+    const [first] = parseMetrics(csv);
+    expect(first.openInterest).toBeCloseTo(78_000.5, 6);
+    expect(first.openInterestValue).toBeCloseTo(5_200_000_000, 6);
+    expect(first.accountRatio).toBeCloseTo(2.1, 6);
+    expect(first.takerVolumeRatio).toBeCloseTo(0.98, 6);
+  });
+
+  it("treats a BLANK ratio as unknown, never as zero", () => {
+    // Binance leaves these empty for illiquid symbols. A zero ratio would be
+    // a claim that every account is short.
+    const blank = "2024-06-01 00:00:00,XUSDT,10,100,,,,";
+    const [row] = parseMetrics(blank);
+    expect(row.accountRatio).toBeNull();
+    expect(row.topTraderAccountRatio).toBeNull();
+    expect(row.takerVolumeRatio).toBeNull();
+  });
+
+  it("skips the header and any malformed row rather than failing the file", () => {
+    const messy = `${csv}\nnot,a,real,row\n`;
+    expect(parseMetrics(messy)).toHaveLength(2);
+  });
+
+  it("builds the metrics URL under the FUTURES root, not spot", () => {
+    // Metrics exist for USD-M futures only; a spot path is a guaranteed 404.
+    expect(archiveUrl({
+      symbol: "BTCUSDT", dataType: "metrics", period: "daily",
+      periodKey: "2024-06-01", market: "um",
+    })).toBe(
+      "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2024-06-01.zip",
+    );
+  });
+
+  it("returns rows oldest first, whatever order they arrived in", () => {
+    const reversed = [
+      "2024-06-01 00:05:00,BTCUSDT,78100.0,5210000000,1.80,1.40,2.05,1.02",
+      "2024-06-01 00:00:00,BTCUSDT,78000.5,5200000000,1.85,1.42,2.10,0.98",
+    ].join("\n");
+    const rows = parseMetrics(reversed);
+    expect(rows[0].timestamp).toBeLessThan(rows[1].timestamp);
   });
 });

@@ -25,6 +25,7 @@ import { getConfig } from "@/shared/config";
 import { openDb, closeDb } from "@/storage/db";
 import { CandleRepo } from "@/storage/repositories/candles";
 import { SymbolRepo } from "@/storage/repositories/symbols";
+import { DerivativesRepo } from "@/storage/repositories/derivatives";
 import { DEFAULT_COSTS } from "@/core/execution/fills";
 import { DEFAULT_ELIGIBILITY } from "@/core/pipeline/stage1-eligibility";
 import {
@@ -102,7 +103,8 @@ const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
 const pct = (x: number) => `${x >= 0 ? "+" : "−"}${n2(Math.abs(x))}%`;
 
 function loadSymbol(
-  candleRepo: CandleRepo, symbolRepo: SymbolRepo, exchange: string, symbol: string,
+  candleRepo: CandleRepo, symbolRepo: SymbolRepo, derivRepo: DerivativesRepo,
+  exchange: string, symbol: string,
 ): BacktestSymbol | null {
   const info = symbolRepo.get(exchange, "spot", symbol);
   if (!info) {
@@ -131,7 +133,25 @@ function loadSymbol(
     return null;
   }
 
-  return { symbol, info, listedAt: info.listedAt ?? earliest, candles };
+  // Derivatives, when the archive was imported. Absent is reported, never
+  // faked: the stage then degrades exactly as it does live without a provider.
+  const coverage = derivRepo.coverage(symbol);
+  const derivatives = coverage
+    ? {
+        openInterest: derivRepo.openInterest(symbol, Infinity, 1_000_000),
+        longShort: derivRepo.longShort(symbol, Infinity, 1_000_000),
+        funding: derivRepo.funding(symbol, Infinity, 100_000),
+      }
+    : null;
+
+  if (!coverage) {
+    console.log(
+      `  ${DIM}${symbol}: no derivatives history — stage 5 will run on CVD alone. ` +
+      `Import it with npm run backfill.${RESET}`,
+    );
+  }
+
+  return { symbol, info, listedAt: info.listedAt ?? earliest, candles, derivatives };
 }
 
 function printMetrics(label: string, m: Metrics): void {
@@ -270,10 +290,11 @@ async function main(): Promise<void> {
   const db = openDb(cfg.dbPath);
   const candleRepo = new CandleRepo(db);
   const symbolRepo = new SymbolRepo(db);
+  const derivRepo = new DerivativesRepo(db);
 
   try {
     const symbols = args.symbols
-      .map((s) => loadSymbol(candleRepo, symbolRepo, cfg.MARKET_EXCHANGE, s))
+      .map((s) => loadSymbol(candleRepo, symbolRepo, derivRepo, cfg.MARKET_EXCHANGE, s))
       .filter((s): s is BacktestSymbol => s !== null);
 
     if (symbols.length === 0) {

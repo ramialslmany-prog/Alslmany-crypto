@@ -522,6 +522,38 @@ export class Bot {
     const book = await this.source.orderBook(info.symbol, 100);
     this.health.record(`${this.source.id}:book`, `${this.source.label} — دفتر الأوامر`, book);
 
+    // ── derivatives ──────────────────────────────────────────────────────
+    //
+    // These four reads are the difference between a stage that votes and a
+    // stage that shrugs. They were left as nulls when the worker was first
+    // written, which silently reduced stage 5 to the CVD alone and cost a
+    // declared 0.20 confidence penalty on every single run — while the
+    // adapters that fetch them sat finished and tested.
+    //
+    // Fetched in parallel and each allowed to fail on its own: a venue that
+    // serves klines but not open interest should cost that one reading, not
+    // the whole stage.
+    const derivatives = this.source.capabilities.openInterest
+      ? await Promise.all([
+          this.source.fundingRate(info.symbol),
+          this.source.fundingHistory(info.symbol, 100),
+          this.source.openInterestHistory(info.symbol, oiPeriod(tf), 48),
+          this.source.longShortRatio(info.symbol, oiPeriod(tf), 48),
+          this.source.recentTrades(info.symbol, 1000),
+        ])
+      : null;
+
+    if (derivatives) {
+      const [funding, , oi, ls, trades] = derivatives;
+      this.health.record(`${this.source.id}:funding`, `${this.source.label} — التمويل`, funding);
+      this.health.record(`${this.source.id}:openInterest`, `${this.source.label} — العقود المفتوحة`, oi);
+      this.health.record(`${this.source.id}:longShort`, `${this.source.label} — نسبة الطويل/القصير`, ls);
+      this.health.record(`${this.source.id}:trades`, `${this.source.label} — الصفقات المنفّذة`, trades);
+    }
+
+    const value = <T>(a: Availability<T> | undefined): T | null =>
+      a && a.available ? a.value : null;
+
     const macro = this.macroCache;
     const open = this.positions.open();
 
@@ -559,12 +591,12 @@ export class Bot {
       },
       correlationCeiling: this.cfg.MAX_BTC_CORRELATION_FOR_INDEPENDENCE,
       flowsInput: {
-        trades: null,
+        trades: value(derivatives?.[4]),
         bookSnapshots: book.available ? [book.value] : null,
-        funding: null,
-        fundingHistory: null,
-        openInterest: null,
-        longShort: null,
+        funding: value(derivatives?.[0]),
+        fundingHistory: value(derivatives?.[1]),
+        openInterest: value(derivatives?.[2]),
+        longShort: value(derivatives?.[3]),
       },
       sentimentInput: {
         fearGreed: macro?.fearGreed ?? unavailable("alternative.me", "not_implemented", "لم تُقرأ بعد"),
@@ -640,6 +672,18 @@ export class Bot {
  */
 export function mayExecuteOn(decidedCandleTime: number, barOpenTime: number): boolean {
   return barOpenTime > decidedCandleTime;
+}
+
+/**
+ * Which sampling period to ask for derivatives on.
+ *
+ * Binance publishes open interest and the long/short ratio on a fixed set of
+ * periods, and the weekly bar is not among them. Asking for the trading
+ * timeframe where it exists keeps the derivative series aligned with the
+ * candles the decision is made on.
+ */
+function oiPeriod(tf: Timeframe): "5m" | "15m" | "1h" | "4h" | "1d" {
+  return tf === "1w" ? "1d" : tf;
 }
 
 /** Wilder ATR, matching what the backtest's monitor receives. */
