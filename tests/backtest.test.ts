@@ -257,7 +257,10 @@ describe("buy and hold", () => {
 
 describe("the funnel verdict", () => {
   const outcome = (analyses: number, recommendations: number) => ({
-    funnel: { analyses, recommendations, riskBlocked: 0, setupDisallowed: 0, failedAt: {} },
+    funnel: {
+      analyses, recommendations, riskBlocked: 0, setupDisallowed: 0,
+      failedAt: {}, vetoes: {},
+    },
   } as Parameters<typeof funnelVerdict>[0]);
 
   it("calls one-in-five too loose", () => {
@@ -347,6 +350,15 @@ describe("a complete trade, end to end", () => {
     expect(out.funnel.recommendations).toBe(1);
     expect(out.trades).toHaveLength(1);
     expect(out.openAtEnd).toBe(0);
+  });
+
+  it("records WHICH veto fired, not only that the council said no", () => {
+    // A bare "died at the council" cannot distinguish a threshold that is too
+    // high from a setup classifier that never matches anything — and the two
+    // call for opposite fixes.
+    const fired = Object.entries(out.funnel.vetoes);
+    expect(fired.length).toBeGreaterThan(0);
+    expect(fired.reduce((s, [, n]) => s + n, 0)).toBeGreaterThan(0);
   });
 
   it("moves equity by exactly the trade's net P&L", () => {

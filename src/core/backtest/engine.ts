@@ -130,6 +130,17 @@ export interface FunnelCounts {
   riskBlocked: number;
   /** Discarded because the training window disallowed that setup. */
   setupDisallowed: number;
+  /**
+   * How often each veto fired, across every run that produced nothing.
+   *
+   * "Died at the council" is not a diagnosis — the council has ten different
+   * ways to say no, and they call for opposite fixes. A run blocked by
+   * `no_setup_match` means the setup classifier never recognises anything; one
+   * blocked by `score_below_minimum` means the threshold is too high. Without
+   * this breakdown the two are indistinguishable, and a silent strategy
+   * cannot be told apart from a correctly strict one.
+   */
+  readonly vetoes: Record<string, number>;
   readonly failedAt: Record<string, number>;
 }
 
@@ -237,7 +248,8 @@ export function runBacktest(
   const trades: BacktestTrade[] = [];
   const equityCurve: EquityPoint[] = [];
   const funnel: FunnelCounts = {
-    analyses: 0, recommendations: 0, riskBlocked: 0, setupDisallowed: 0, failedAt: {},
+    analyses: 0, recommendations: 0, riskBlocked: 0, setupDisallowed: 0,
+    failedAt: {}, vetoes: {},
   };
   const breakersTripped: CircuitBreaker[] = [];
 
@@ -385,6 +397,9 @@ export function runBacktest(
       if (!recommendation) {
         const where = run.failedAt ?? "none";
         funnel.failedAt[where] = (funnel.failedAt[where] ?? 0) + 1;
+        for (const veto of run.vetoes) {
+          funnel.vetoes[veto.id] = (funnel.vetoes[veto.id] ?? 0) + 1;
+        }
         continue;
       }
 

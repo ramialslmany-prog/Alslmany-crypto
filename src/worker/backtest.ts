@@ -39,6 +39,26 @@ const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
 const HOLDOUT_LOG = ".holdout-log.json";
+
+/**
+ * What each veto means for the operator.
+ *
+ * A count alone tells you where the runs died; this tells you whether that is
+ * the system working or the system stuck, because the two look identical in a
+ * bare tally.
+ */
+const VETO_HINT: Record<string, string> = {
+  no_setup_match: "لم يُصنَّف أي نمط — لا علاقة للعتبة بهذا",
+  score_below_minimum: "النمط مطابق لكن النتيجة دون MIN_FINAL_SCORE — جرّب --min-score أقل",
+  risk_reward_too_low: "الأهداف الحقيقية لا تبرّر مسافة الوقف — جرّب MIN_RISK_REWARD أقل",
+  no_valid_stop: "لا مستوى إبطال حقيقي لوضع الوقف خلفه",
+  no_valid_target: "لا مقاومات مكتشفة كافية لثلاثة أهداف",
+  direction_not_allowed: "السياق الكلي يمنع هذا الاتجاه",
+  stale_data: "بيانات أقدم مما يسمح maxDataAgeBars",
+  correlated_exposure: "مراكز مترابطة مفتوحة بالفعل",
+  exposure_limit: "بلغ سقف المراكز",
+  circuit_breaker: "قاطع حماية كان مفعّلاً",
+};
 const DAY = 86_400_000;
 
 interface Args {
@@ -133,6 +153,16 @@ function printOutcome(out: BacktestOutcome, equity: number, symbols: readonly Ba
   const died = Object.entries(out.funnel.failedAt).sort((a, b) => b[1] - a[1]);
   if (died.length) {
     console.log(`  ${DIM}أين سقطت: ${died.map(([k, v]) => `${k} ${v}`).join(" · ")}${RESET}`);
+  }
+
+  // "Died at the council" is not a diagnosis — the council has ten ways to
+  // say no, and they call for opposite fixes.
+  const vetoes = Object.entries(out.funnel.vetoes).sort((a, b) => b[1] - a[1]);
+  if (vetoes.length) {
+    console.log(`  ${BOLD}أي فلتر نقض أطلق${RESET}`);
+    for (const [id, count] of vetoes) {
+      console.log(`    ${id.padEnd(24)} ${String(count).padStart(6)} مرة   ${DIM}${VETO_HINT[id] ?? ""}${RESET}`);
+    }
   }
 
   printMetrics("النتيجة", computeMetrics(out.trades, out.equityCurve, equity));
