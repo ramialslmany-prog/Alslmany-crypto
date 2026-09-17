@@ -158,6 +158,15 @@ export interface BacktestOutcome {
   readonly caveats: readonly string[];
   /** The setup records as they stood at the end — the next fold's seed. */
   readonly setupStats: ReadonlyMap<SetupKind, { trades: number; wins: number; sumR: number }>;
+  /**
+   * Final scores of every run that got far enough to name a setup.
+   *
+   * Without this, "score_below_minimum fired 4,000 times" cannot answer the
+   * only question that matters: is the threshold slightly too high, or is it
+   * above anything this strategy can ever produce? A distribution answers it
+   * in one line; a count never can.
+   */
+  readonly setupScores: readonly number[];
 }
 
 /**
@@ -252,6 +261,7 @@ export function runBacktest(
     failedAt: {}, vetoes: {},
   };
   const breakersTripped: CircuitBreaker[] = [];
+  const setupScores: number[] = [];
 
   const live = new Map<string, Live>();
   let breakers: CircuitBreaker[] = [];
@@ -397,6 +407,7 @@ export function runBacktest(
       if (!recommendation) {
         const where = run.failedAt ?? "none";
         funnel.failedAt[where] = (funnel.failedAt[where] ?? 0) + 1;
+        if (run.setup) setupScores.push(run.finalScore);
         for (const veto of run.vetoes) {
           funnel.vetoes[veto.id] = (funnel.vetoes[veto.id] ?? 0) + 1;
         }
@@ -479,6 +490,7 @@ export function runBacktest(
     openAtEnd: live.size,
     caveats,
     setupStats,
+    setupScores,
   };
 }
 

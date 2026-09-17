@@ -142,7 +142,10 @@ function printMetrics(label: string, m: Metrics): void {
   if (m.trades > 0) console.log(`  ${DIM}متوسط الضغط على الصفقات الرابحة ${n2(m.averageHeatR, 2)}R${RESET}`);
 }
 
-function printOutcome(out: BacktestOutcome, equity: number, symbols: readonly BacktestSymbol[], tf: Timeframe): void {
+function printOutcome(
+  out: BacktestOutcome, equity: number, symbols: readonly BacktestSymbol[],
+  tf: Timeframe, minScoreUsed: number,
+): void {
   const funnel = funnelVerdict(out);
   console.log(`${BOLD}القمع${RESET}`);
   console.log(
@@ -162,6 +165,35 @@ function printOutcome(out: BacktestOutcome, equity: number, symbols: readonly Ba
     console.log(`  ${BOLD}أي فلتر نقض أطلق${RESET}`);
     for (const [id, count] of vetoes) {
       console.log(`    ${id.padEnd(24)} ${String(count).padStart(6)} مرة   ${DIM}${VETO_HINT[id] ?? ""}${RESET}`);
+    }
+  }
+
+  // The score distribution turns "the threshold rejected everything" into an
+  // answerable question: by how much, and what would it take to pass?
+  const scores = [...out.setupScores].sort((a, b) => a - b);
+  if (scores.length > 0) {
+    const at = (q: number) => scores[Math.min(scores.length - 1, Math.floor(scores.length * q))];
+    const threshold = out.funnel.recommendations >= 0 ? minScoreUsed : minScoreUsed;
+    const passing = scores.filter((v) => v >= threshold).length;
+    console.log(`${BOLD}توزيع النتيجة النهائية${RESET} ${DIM}(الجولات التي سمّت نمطاً: ${scores.length})${RESET}`);
+    console.log(
+      `  الوسيط ${n2(at(0.5), 1)} · مئيني‑90 ${n2(at(0.9), 1)} · مئيني‑99 ${n2(at(0.99), 1)} · ` +
+      `الأقصى ${n2(scores[scores.length - 1], 1)}`,
+    );
+    console.log(
+      `  العتبة الحالية ${threshold} تمرّر ${n2((passing / scores.length) * 100, 1)}% منها ` +
+      `(${passing} جولة)`,
+    );
+    if (passing === 0) {
+      console.log(
+        `  ${YELLOW}لا جولة واحدة تبلغ العتبة. أعلى نتيجة سجّلها هذا النظام على هذه البيانات هي ` +
+        `${n2(scores[scores.length - 1], 1)} — فالعتبة فوق سقف ما يستطيع إنتاجه، لا أعلى منه قليلاً.${RESET}`,
+      );
+    } else if (out.funnel.recommendations === 0) {
+      console.log(
+        `  ${YELLOW}جولات اجتازت العتبة ومع ذلك لا توصية — فالمانع بعد النتيجة، ` +
+        `انظر جدول فلاتر النقض أعلاه.${RESET}`,
+      );
     }
   }
 
@@ -336,7 +368,7 @@ async function main(): Promise<void> {
     // A single-window run over the non-holdout period, for the funnel and the
     // caveats — the walk-forward's folds do not produce one combined funnel.
     const whole = runBacktest(symbols, settings, from, walk.holdoutFrom);
-    printOutcome(whole, equity, symbols, args.timeframe);
+    printOutcome(whole, equity, symbols, args.timeframe, settings.council.minFinalScore);
 
     console.log(
       `\n${DIM}المحجوز: ${iso(walk.holdoutFrom)} إلى ${iso(walk.holdoutTo)} — ` +
@@ -359,7 +391,7 @@ async function main(): Promise<void> {
       } else {
         console.log(`\n${BOLD}الاستخدام النهائي للمجموعة المحجوزة${RESET}`);
         const holdout = runHoldout(symbols, settings, walk);
-        printOutcome(holdout, equity, symbols, args.timeframe);
+        printOutcome(holdout, equity, symbols, args.timeframe, settings.council.minFinalScore);
         const m = computeMetrics(holdout.trades, holdout.equityCurve, equity);
         appendHoldoutLog({
           at: new Date().toISOString(),
