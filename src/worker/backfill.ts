@@ -157,12 +157,19 @@ async function main(): Promise<void> {
         }
       });
       const note = report.missing > 0 ? ` ${DIM}${report.missing} يوم بلا ملف${RESET}` : "";
+      const liqNote = report.liquidationAbandoned
+        ? ` ${YELLOW}(لا أرشيف تصفيات لهذه العملة — توقّف الفحص مبكراً)${RESET}`
+        : report.liquidationEmpty > 0
+          ? ` ${YELLOW}(${report.liquidationEmpty} ملف تصفيات وصل بلا صفوف مقروءة)${RESET}`
+          : "";
       process.stdout.write(
         `\r${DIM}[derivatives]${RESET} ${symbol.padEnd(14)} ` +
         `${String(fmt(report.imported)).padStart(9)} قراءة · ${fmt(report.liquidationRows)} تصفية · ` +
-        `${report.fundingRows} تمويل${note}\n`,
+        `${report.fundingRows} تمويل${note}${liqNote}\n`,
       );
-      if (report.failed > 0) failures.push(`${symbol} derivatives: ${report.errors[0] ?? "غير معروف"}`);
+      if (report.failed > 0 || report.liquidationEmpty > 0) {
+        for (const e of report.errors.slice(0, 3)) failures.push(`${symbol} derivatives: ${e}`);
+      }
     }
   }
 
