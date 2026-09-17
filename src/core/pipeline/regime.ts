@@ -19,6 +19,7 @@ import { atrPercentile, bollingerSqueeze } from "@/core/indicators/volatility";
 import { relativeVolume } from "@/core/indicators/volume";
 import { findDivergences, latestDivergence } from "@/core/indicators/divergence";
 import { rsi } from "@/core/indicators/momentum";
+import { ema } from "@/core/indicators/moving-averages";
 import {
   REGIME_ALLOWED_SETUPS, SETUP_AR, type MarketRegime, type SetupKind, type SetupMatch,
 } from "@/core/pipeline/types";
@@ -293,7 +294,189 @@ function evaluate(kind: SetupKind, direction: "long" | "short", x: SetupInput): 
       const strengthOk = add("المستوى المكنوس قوي", zone.strength >= 45, `قوّة ${zone.strength}`);
       return build(kind, direction, conditions, [sweepOk, reclaimOk, strengthOk], [0.45, 0.35, 0.2]);
     }
+
+    // ── order block ────────────────────────────────────────────────────────
+    //
+    // The last opposing candle before the impulsive move that broke
+    // structure. The idea is that whoever caused the move left unfilled
+    // orders there, and price returns to them.
+    //
+    // Two conditions do the real work and both are easy to omit: the move
+    // away must have been IMPULSIVE (otherwise every candle in a drift is an
+    // "order block"), and price must be RETURNING to it rather than sitting
+    // in it having already broken through.
+    case "order_block": {
+      const block = findOrderBlock(c, long, st.atr, i);
+      const foundOk = add(
+        "كتلة أوامر محدّدة",
+        block !== null,
+        block ? `شمعة ${i - block.index} قبل الحالية · ${block.low.toFixed(4)}–${block.high.toFixed(4)}` : "لا كتلة",
+      );
+      if (!block) return build(kind, direction, conditions, [foundOk], [1]);
+
+      const impulseOk = add(
+        "الحركة بعدها اندفاعية",
+        block.impulseAtr >= 2,
+        `${block.impulseAtr.toFixed(2)} ATR خلال ${block.impulseBars} شمعات`,
+      );
+      const distance = long ? (price - block.high) / st.atr : (block.low - price) / st.atr;
+      const returningOk = add(
+        "السعر عائد إليها ولم يخترقها",
+        distance > -0.2 && distance < 1.2,
+        `المسافة ${distance.toFixed(2)} ATR`,
+      );
+      const structureOk = add(
+        "الهيكل يوافق الاتجاه",
+        long ? st.structure.state === "uptrend" : st.structure.state === "downtrend",
+        st.structure.state,
+      );
+      return build(kind, direction, conditions, [foundOk, impulseOk, returningOk, structureOk], [0.2, 0.3, 0.3, 0.2]);
+    }
+
+    // ── fair value gap ─────────────────────────────────────────────────────
+    //
+    // A three-candle imbalance price skipped over. The trade is the return
+    // into it. Gaps already filled are excluded — a filled gap is history,
+    // not a level, and treating it as one is the commonest way this setup is
+    // misapplied.
+    case "fvg_fill": {
+      const wanted = long ? "bullish" : "bearish";
+      const open = st.gaps.filter((g) => !g.filled && g.direction === wanted && g.sizeAtr >= 0.3);
+      const nearest = open
+        .map((g) => ({ g, distance: long ? (price - g.top) / st.atr : (g.bottom - price) / st.atr }))
+        .filter((x2) => x2.distance > -0.5 && x2.distance < 1.5)
+        .sort((a, b) => Math.abs(a.distance) - Math.abs(b.distance))[0];
+
+      const gapOk = add(
+        "فجوة قيمة عادلة مفتوحة قريبة",
+        nearest !== undefined,
+        nearest ? `${nearest.g.bottom.toFixed(4)}–${nearest.g.top.toFixed(4)} · ${nearest.g.sizeAtr.toFixed(2)} ATR` : "لا فجوة",
+      );
+      const sizeOk = add(
+        "الفجوة ذات حجم معتبر",
+        nearest !== undefined && nearest.g.sizeAtr >= 0.5,
+        nearest ? `${nearest.g.sizeAtr.toFixed(2)} ATR` : "—",
+      );
+      const unfilledOk = add(
+        "لم تُملأ بعد",
+        nearest !== undefined && nearest.g.filledFraction < 0.5,
+        nearest ? `مملوءة ${Math.round(nearest.g.filledFraction * 100)}%` : "—",
+      );
+      const trendOk = add(
+        "الاتجاه يوافق",
+        long ? x.regime === "trending_up" : x.regime === "trending_down",
+        x.regime,
+      );
+      return build(kind, direction, conditions, [gapOk, sizeOk, unfilledOk, trendOk], [0.35, 0.2, 0.25, 0.2]);
+    }
+
+    // ── moving-average pullback ────────────────────────────────────────────
+    //
+    // The most posted setup there is. Its weakness is also the best known:
+    // in a range price crosses the average constantly, so this is allowed in
+    // trending regimes only — enforced by REGIME_ALLOWED_SETUPS, not here.
+    case "ema_pullback": {
+      const closes = c.map((k) => k.close);
+      const fast = ema(closes, 21);
+      const slow = ema(closes, 50);
+      const f = fast[i];
+      const sl = slow[i];
+
+      const stackedOk = add(
+        "ترتيب المتوسطات يوافق الاتجاه",
+        Number.isFinite(f) && Number.isFinite(sl) && (long ? f > sl : f < sl),
+        `EMA21 ${f?.toFixed(4) ?? "—"} مقابل EMA50 ${sl?.toFixed(4) ?? "—"}`,
+      );
+      const touch = Number.isFinite(f) ? Math.abs(price - f) / st.atr : Infinity;
+      const touchOk = add("السعر عند المتوسط السريع", touch < 0.6, `${touch.toFixed(2)} ATR من EMA21`);
+      const sideOk = add(
+        "لم يُغلق خلف المتوسط البطيء",
+        Number.isFinite(sl) && (long ? price > sl : price < sl),
+        long ? "فوق EMA50" : "تحت EMA50",
+      );
+      // The bounce has to have started; buying into a falling knife at the
+      // average is the way this setup loses.
+      const turned = (c[i].close - c[i].open) / st.atr;
+      const turnOk = add("شمعة الارتداد بدأت", long ? turned > 0.1 : turned < -0.1, `${turned.toFixed(2)} ATR`);
+      return build(kind, direction, conditions, [stackedOk, touchOk, sideOk, turnOk], [0.3, 0.3, 0.2, 0.2]);
+    }
+
+    // ── RSI reversal at a level ────────────────────────────────────────────
+    //
+    // Oversold alone is not a signal — in a downtrend RSI stays oversold for
+    // weeks and buying it is how accounts die. It is only a setup at a real
+    // level, and only once RSI has turned back OUT of the extreme.
+    case "rsi_reversal": {
+      const r = rsi(c.map((k) => k.close), 14);
+      const now = r[i];
+      const prev = r[i - 1];
+      const extreme = long ? 30 : 70;
+
+      const wasExtremeOk = add(
+        "بلغ التشبّع خلال 5 شمعات",
+        r.slice(Math.max(0, i - 5), i + 1).some((v) => (long ? v <= extreme : v >= extreme)),
+        `RSI الحالي ${Number.isFinite(now) ? now.toFixed(1) : "—"}`,
+      );
+      const turnedOk = add(
+        "خرج من التشبّع",
+        Number.isFinite(now) && Number.isFinite(prev) && (long ? now > extreme && now > prev : now < extreme && now < prev),
+        `${prev?.toFixed(1) ?? "—"} ← ${now?.toFixed(1) ?? "—"}`,
+      );
+      const zone = long ? st.nearestSupport : st.nearestResistance;
+      const atLevelOk = add(
+        "عند مستوى حقيقي",
+        zone ? zone.strength >= 45 && Math.abs(price - zone.price) / st.atr < 1.0 : false,
+        zone ? `قوّة ${zone.strength}` : "لا مستوى",
+      );
+      const notTrendingOk = add(
+        "ليس داخل اتجاه معاكس قوي",
+        long ? x.regime !== "trending_down" : x.regime !== "trending_up",
+        x.regime,
+      );
+      return build(kind, direction, conditions, [wasExtremeOk, turnedOk, atLevelOk, notTrendingOk], [0.2, 0.3, 0.3, 0.2]);
+    }
   }
+}
+
+/**
+ * The last opposing candle before an impulsive, structure-breaking move.
+ *
+ * Scanned backwards from a recent impulse rather than forwards from a candle:
+ * an "order block" is only one because of what happened AFTER it, so the move
+ * has to be found first and the candle second.
+ */
+function findOrderBlock(
+  candles: readonly Candle[],
+  long: boolean,
+  atrValue: number,
+  i: number,
+): { index: number; high: number; low: number; impulseAtr: number; impulseBars: number } | null {
+  if (!(atrValue > 0) || i < 12) return null;
+
+  // Look for an impulse inside the last 40 bars, newest first.
+  for (let end = i - 1; end >= Math.max(3, i - 40); end--) {
+    for (let bars = 2; bars <= 5 && end - bars >= 1; bars++) {
+      const start = end - bars;
+      const move = (candles[end].close - candles[start].open) / atrValue;
+      const impulsive = long ? move >= 2 : move <= -2;
+      if (!impulsive) continue;
+
+      // The block is the last candle against the move before it began.
+      for (let k = start; k >= Math.max(0, start - 5); k--) {
+        const bearish = candles[k].close < candles[k].open;
+        if (long ? bearish : !bearish) {
+          return {
+            index: k,
+            high: candles[k].high,
+            low: candles[k].low,
+            impulseAtr: Math.abs(move),
+            impulseBars: bars,
+          };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function build(

@@ -149,7 +149,18 @@ export type SetupKind =
   | "range_reversal"
   | "momentum_ignition"
   | "divergence_reversal"
-  | "liquidity_sweep";
+  | "liquidity_sweep"
+  // ── the families most crypto traders and signal channels actually post ──
+  //
+  // Added because the six above are a systematic trader's taxonomy, and the
+  // market talks in a different one. These are not endorsed by being here:
+  // popularity is not evidence, and `--compare-setups` ranks them against the
+  // others on real data precisely so the question can be settled by
+  // measurement rather than by how often a strategy is posted.
+  | "order_block"
+  | "fvg_fill"
+  | "ema_pullback"
+  | "rsi_reversal";
 
 /**
  * Every setup, as a list.
@@ -165,6 +176,10 @@ export const SETUP_KINDS: readonly SetupKind[] = [
   "momentum_ignition",
   "divergence_reversal",
   "liquidity_sweep",
+  "order_block",
+  "fvg_fill",
+  "ema_pullback",
+  "rsi_reversal",
 ];
 
 export const SETUP_AR: Record<SetupKind, string> = {
@@ -174,6 +189,10 @@ export const SETUP_AR: Record<SetupKind, string> = {
   momentum_ignition: "اشتعال زخم",
   divergence_reversal: "انعكاس بانحراف",
   liquidity_sweep: "كنس سيولة واسترداد",
+  order_block: "كتلة أوامر (Order Block)",
+  fvg_fill: "ملء فجوة قيمة عادلة (FVG)",
+  ema_pullback: "ارتداد إلى المتوسط المتحرّك",
+  rsi_reversal: "انعكاس تشبّع RSI عند مستوى",
 };
 
 /**
@@ -186,9 +205,17 @@ export const SETUP_AR: Record<SetupKind, string> = {
  * most reliably, and neither is a matter of degree.
  */
 export const REGIME_ALLOWED_SETUPS: Record<MarketRegime, readonly SetupKind[]> = {
-  trending_up: ["trend_continuation", "breakout_retest", "momentum_ignition", "liquidity_sweep"],
-  trending_down: ["trend_continuation", "breakout_retest", "momentum_ignition", "liquidity_sweep"],
-  ranging: ["range_reversal", "divergence_reversal", "liquidity_sweep"],
+  trending_up: [
+    "trend_continuation", "breakout_retest", "momentum_ignition", "liquidity_sweep",
+    "order_block", "fvg_fill", "ema_pullback",
+  ],
+  trending_down: [
+    "trend_continuation", "breakout_retest", "momentum_ignition", "liquidity_sweep",
+    "order_block", "fvg_fill", "ema_pullback",
+  ],
+  // Reversal families only. An order block or an FVG is a continuation idea:
+  // both assume an impulsive move worth returning to, and a range has none.
+  ranging: ["range_reversal", "divergence_reversal", "liquidity_sweep", "rsi_reversal"],
   high_volatility: ["liquidity_sweep", "trend_continuation"],
 };
 

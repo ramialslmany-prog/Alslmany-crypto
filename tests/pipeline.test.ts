@@ -22,7 +22,9 @@ import { runPipeline } from "@/core/pipeline/run";
 import { buildPlan, buildInvalidation, computeIntegrityHash, recommendationId } from "@/core/recommendation/builder";
 import { analyzeStructureStage } from "@/core/analysis/structure-stage";
 import { analyzeTechnical } from "@/core/analysis/technical";
-import { REGIME_ALLOWED_SETUPS, SETUP_KINDS, stagePass, stageUnavailable } from "@/core/pipeline/types";
+import {
+  REGIME_ALLOWED_SETUPS, SETUP_AR, SETUP_KINDS, stagePass, stageUnavailable,
+} from "@/core/pipeline/types";
 import { available, unavailable } from "@/shared/availability";
 import { tfMillis, type Timeframe } from "@/shared/time";
 import type { Candle, OrderBook, SymbolInfo, Ticker24h } from "@/core/types";
@@ -367,6 +369,43 @@ describe("the setup roster", () => {
     const fromRegimes = new Set(Object.values(REGIME_ALLOWED_SETUPS).flat());
     for (const kind of fromRegimes) expect(SETUP_KINDS).toContain(kind);
     expect(new Set(SETUP_KINDS).size).toBe(SETUP_KINDS.length);
+  });
+});
+
+describe("the popular families", () => {
+  // These four are what crypto traders and signal channels actually post.
+  // They are held to the same rules as the rest — being popular buys a setup
+  // nothing here.
+  it("bans order blocks and FVGs from a RANGE", () => {
+    // Both assume an impulsive move worth returning to. A range has none, and
+    // allowing them there is how the setup becomes a shape anyone can find
+    // anywhere after the fact.
+    expect(REGIME_ALLOWED_SETUPS.ranging).not.toContain("order_block");
+    expect(REGIME_ALLOWED_SETUPS.ranging).not.toContain("fvg_fill");
+    expect(REGIME_ALLOWED_SETUPS.ranging).not.toContain("ema_pullback");
+  });
+
+  it("bans the RSI reversal from a trend", () => {
+    // Oversold alone is not a signal: in a downtrend RSI stays oversold for
+    // weeks, and buying that is how accounts die.
+    expect(REGIME_ALLOWED_SETUPS.trending_up).not.toContain("rsi_reversal");
+    expect(REGIME_ALLOWED_SETUPS.trending_down).not.toContain("rsi_reversal");
+    expect(REGIME_ALLOWED_SETUPS.ranging).toContain("rsi_reversal");
+  });
+
+  it("allows the pullback families in trends only", () => {
+    for (const regime of ["trending_up", "trending_down"] as const) {
+      expect(REGIME_ALLOWED_SETUPS[regime]).toContain("order_block");
+      expect(REGIME_ALLOWED_SETUPS[regime]).toContain("fvg_fill");
+      expect(REGIME_ALLOWED_SETUPS[regime]).toContain("ema_pullback");
+    }
+  });
+
+  it("names every new family in Arabic, so the site never shows a raw id", () => {
+    for (const kind of SETUP_KINDS) {
+      expect(SETUP_AR[kind]).toBeTruthy();
+      expect(SETUP_AR[kind]).not.toBe(kind);
+    }
   });
 });
 
