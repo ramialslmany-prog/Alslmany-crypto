@@ -34,6 +34,18 @@ export interface EligibilityThresholds {
   readonly minListingAgeDays: number;
   readonly unlockWindowDays: number;
   readonly maxUnlockPercentOfSupply: number;
+  /**
+   * Whether the spread and depth gates require a live order book.
+   *
+   * True everywhere the bot actually trades. The ONLY caller that sets it
+   * false is the backtester, because no free archive stores historical order
+   * books — and rule #4 forbids inventing one. So instead of fabricating a
+   * book and pretending the gate ran, the backtest SKIPS these two checks and
+   * says so in a warning that follows the result all the way to the report.
+   * A backtest is therefore optimistic about liquidity by exactly this much,
+   * and the number of runs affected is counted rather than hidden.
+   */
+  readonly requireLiveBook: boolean;
 }
 
 export const DEFAULT_ELIGIBILITY: EligibilityThresholds = {
@@ -46,6 +58,7 @@ export const DEFAULT_ELIGIBILITY: EligibilityThresholds = {
   minListingAgeDays: 90,
   unlockWindowDays: 14,
   maxUnlockPercentOfSupply: 1,
+  requireLiveBook: true,
 };
 
 const fmt = (n: number, d = 2): string =>
@@ -124,7 +137,20 @@ export function runEligibility(
 
   // ── liquidity: spread ────────────────────────────────────────────────────
   const { bidPrice, askPrice, lastPrice } = input.ticker;
-  if (!(bidPrice > 0 && askPrice > 0 && lastPrice > 0)) {
+  if (!(lastPrice > 0)) {
+    return fail("لا يوجد سعر صالح — تعذّر قياس السيولة");
+  }
+
+  // ── the two gates that need a live book ──────────────────────────────────
+  if (!thresholds.requireLiveBook) {
+    warnings.push(
+      "لم يُفحص فارق العرض والطلب ولا عمق السيولة: لا يحفظ أي أرشيف مجاني دفاتر الأوامر التاريخية، " +
+        "ولا تُختلق قيمة لمصدر غير متاح. النتيجة متفائلة بمقدار هذين الشرطين",
+    );
+    return finishPass(input, thresholds, factors, warnings, volume, ageDays, null, null, started);
+  }
+
+  if (!(bidPrice > 0 && askPrice > 0)) {
     return fail("لا توجد أسعار عرض وطلب صالحة — تعذّر قياس الفارق");
   }
   const spreadBps = ((askPrice - bidPrice) / lastPrice) * 10_000;
@@ -197,10 +223,33 @@ export function runEligibility(
     warnings.push("لا تتوفّر بيانات فتح التوكنات — لم يُتحقّق من هذا الشرط");
   }
 
+  return finishPass(input, thresholds, factors, warnings, volume, ageDays, spreadBps, depth, started);
+}
+
+/**
+ * The single pass exit.
+ *
+ * Shared so the book-less path cannot drift from the full one: both produce
+ * the same shape, and the summary simply says "لم يُفحص" where a gate did not
+ * run rather than printing a number nobody measured.
+ */
+function finishPass(
+  input: EligibilityInput,
+  _thresholds: EligibilityThresholds,
+  factors: Factor[],
+  warnings: string[],
+  volume: number,
+  ageDays: number,
+  spreadBps: number | null,
+  depth: number | null,
+  started: number,
+): StageResult {
   const arabic =
     `${input.symbol} اجتازت فلتر الأهلية. ` +
-    `الحجم ${fmt(volume / 1e6, 1)} مليون، الفارق ${fmt(spreadBps, 1)} نقطة أساس، ` +
-    `عمق ${fmt(depth / 1000, 0)} ألف ضمن 1%، ومدرجة منذ ${fmt(ageDays, 0)} يوم.` +
+    `الحجم ${fmt(volume / 1e6, 1)} مليون، ` +
+    `الفارق ${spreadBps === null ? "لم يُفحص" : `${fmt(spreadBps, 1)} نقطة أساس`}، ` +
+    `عمق ${depth === null ? "لم يُفحص" : `${fmt(depth / 1000, 0)} ألف ضمن 1%`}، ` +
+    `ومدرجة منذ ${fmt(ageDays, 0)} يوم.` +
     (warnings.length ? ` ملاحظة: ${warnings.join("، ")}.` : "");
 
   return stagePass("eligibility", {

@@ -535,7 +535,7 @@ describe("confidence", () => {
   it("never rises on an unknown history", () => {
     const noHistory = runCouncil(councilInput({ setupHistory: null }));
     const thinHistory = runCouncil(councilInput({
-      setupHistory: { trades: 3, winRate: 0.99, expectancyR: 5 },
+      setupHistory: () => ({ trades: 3, winRate: 0.99, expectancyR: 5 }),
     }));
     expect(thinHistory.confidence).toBe(noHistory.confidence);
   });

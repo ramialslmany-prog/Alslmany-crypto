@@ -17,7 +17,7 @@ import {
 } from "@/core/pipeline/types";
 import { runEligibility, type EligibilityInput, type EligibilityThresholds } from "@/core/pipeline/stage1-eligibility";
 import { runMacro, type MacroInput } from "@/core/pipeline/stage2-macro";
-import { runCouncil, type CouncilThresholds, type PortfolioState, type SetupHistory } from "@/core/pipeline/stage8-council";
+import { runCouncil, type CouncilThresholds, type PortfolioState, type SetupHistoryLookup } from "@/core/pipeline/stage8-council";
 import { runFlows, type FlowsInput } from "@/core/pipeline/stage5-flows";
 import { runSentiment, type SentimentInput } from "@/core/pipeline/stage7-sentiment";
 import { analyzeTechnical } from "@/core/analysis/technical";
@@ -53,7 +53,7 @@ export interface RunInput {
   readonly onchain?: StageResult;
   readonly council: CouncilThresholds;
   readonly portfolio: PortfolioState;
-  readonly setupHistory: SetupHistory | null;
+  readonly setupHistory: SetupHistoryLookup | null;
   readonly equity: number;
   readonly riskPercent: number;
   readonly pricePrecision: number;
@@ -129,8 +129,26 @@ export function runPipeline(input: RunInput): RunOutput {
     return finish(summarize(input.symbol, stages, macro));
   }
 
-  const allowedDirection =
-    macro.allowedDirection === "none" ? "both" : (macro.allowedDirection as "long" | "short" | "both");
+  // "none" is emitted by ONE path only: a macro stage that could not read
+  // enough Bitcoin history to judge. No direction is permitted without the
+  // macro context, so the run STOPS HERE — at stage 2, naming stage 2.
+  //
+  // It used to fall through instead: stage 3 received the raw "none",
+  // rejected every direction, and the whole run was recorded as a TECHNICAL
+  // failure. The bot was equally dead either way, but the rejected-analyses
+  // page blamed the wrong stage, which is the harder failure to notice.
+  if (macro.allowedDirection === "none") {
+    failedAt = "macro";
+    return finish(
+      summarize(input.symbol, stages, {
+        ...macro,
+        arabic:
+          "السياق الكلي غير قابل للقراءة، ولا يُسمح باتجاه دون سياق كلي. " +
+          `${macro.arabic || macro.unavailableReason || ""}`.trim(),
+      }),
+    );
+  }
+  const allowedDirection: "long" | "short" | "both" = macro.allowedDirection;
 
   // ── Stage 3: technical ───────────────────────────────────────────────────
   const tradingCandles = input.candles[input.tradingTimeframe] ?? [];
@@ -140,7 +158,7 @@ export function runPipeline(input: RunInput): RunOutput {
     candles: input.candles,
     tradingTimeframe: input.tradingTimeframe,
     hasTakerBreakdown: input.hasTakerBreakdown,
-    macroAllowed: macro.allowedDirection,
+    macroAllowed: allowedDirection,
     now: input.now,
   });
 

@@ -70,6 +70,12 @@ export function applyActions(
           fills: [...next.fills, fill],
           openQuantity: action.quantity,
           averageEntry: fill.price,
+          // The ENTRY fee belongs in the position's own P&L, not only in the
+          // account's equity. It used to be charged to equity alone, which
+          // left every reported trade result — and therefore every backtest
+          // statistic built on it — better than the account actually was, by
+          // exactly one fee per trade.
+          realizedPnl: next.realizedPnl - fill.fee,
         };
         realizedDelta -= fill.fee;
 

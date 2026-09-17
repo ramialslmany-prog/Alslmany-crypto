@@ -16,7 +16,7 @@
  */
 import {
   REGIME_ALLOWED_SETUPS, SETUP_AR, REGIME_AR, stageFail, stagePass,
-  type MarketRegime, type SetupMatch, type StageId, type StageResult, type Veto,
+  type MarketRegime, type SetupKind, type SetupMatch, type StageId, type StageResult, type Veto,
 } from "@/core/pipeline/types";
 import { classifyRegime, classifySetup, nullifiedFactors, weightsFor, type StageWeights } from "@/core/pipeline/regime";
 import type { StructureAnalysis } from "@/core/analysis/structure-stage";
@@ -38,8 +38,8 @@ export interface CouncilInput {
   readonly thresholds: CouncilThresholds;
   /** Portfolio state, for the exposure vetoes. */
   readonly portfolio: PortfolioState;
-  /** Historical win rate of this setup in this regime, when known. */
-  readonly setupHistory: SetupHistory | null;
+  /** Lookup for a setup's record in this regime, when known. */
+  readonly setupHistory: SetupHistoryLookup | null;
 }
 
 export interface CouncilThresholds {
@@ -65,6 +65,16 @@ export interface SetupHistory {
   readonly winRate: number;
   readonly expectancyR: number;
 }
+
+/**
+ * How the caller supplies a setup's record.
+ *
+ * A LOOKUP rather than a value, because the setup is not known until this
+ * stage has picked one. A caller that had to pass the record up front could
+ * only guess which setup would win — and would then be feeding the confidence
+ * adjustment the history of a setup that was never chosen.
+ */
+export type SetupHistoryLookup = (setup: SetupKind) => SetupHistory | null;
 
 export interface CouncilResult {
   readonly stage: StageResult;
@@ -319,7 +329,7 @@ function computeConfidence(x: {
   finalScore: number;
   unavailableCount: number;
   setup: SetupMatch | null;
-  setupHistory: SetupHistory | null;
+  setupHistory: SetupHistoryLookup | null;
   now: number;
   timeframe: Timeframe;
   maxDataAgeBars: number;
@@ -385,8 +395,9 @@ function computeConfidence(x: {
   }
 
   // 4. This setup's record in this regime.
-  if (x.setup && x.setupHistory && x.setupHistory.trades >= 20) {
-    const h = x.setupHistory;
+  const history = x.setup && x.setupHistory ? x.setupHistory(x.setup.kind) : null;
+  if (x.setup && history && history.trades >= 20) {
+    const h = history;
     // Centred on a 50% win rate: a proven setup adds, a poor one subtracts.
     const multiplier = 0.7 + Math.min(0.6, Math.max(0, h.winRate) * 0.6);
     const before = confidence;
@@ -400,7 +411,7 @@ function computeConfidence(x: {
   } else if (x.setup) {
     x.factors.push({
       id: "confidence_history", label: "السجل التاريخي لهذا النمط", value: null,
-      display: x.setupHistory ? `${x.setupHistory.trades} صفقة فقط` : "لا سجل",
+      display: history ? `${history.trades} صفقة فقط` : "لا سجل",
       contribution: 0,
       note:
         "لا يوجد سجل كافٍ (20 صفقة على الأقل) لهذا النمط في هذا النظام. " +
