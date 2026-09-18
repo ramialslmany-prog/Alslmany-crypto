@@ -123,6 +123,33 @@ describe("CandleRepo", () => {
     expect(repo.findGaps("BTCUSDT", "1h")).toHaveLength(0);
   });
 
+  it("ranks by average traded value, not by total or by name", () => {
+    const repo = new CandleRepo(db);
+    repo.upsertMany("BTCUSDT", "1h", [0, 1, 2, 3].map((i) => candle(i, { quoteVolume: 500 })));
+    repo.upsertMany("ETHUSDT", "1h", [0, 1, 2, 3].map((i) => candle(i, { quoteVolume: 900 })));
+    repo.upsertMany("XRPUSDT", "1h", [0, 1, 2, 3].map((i) => candle(i, { quoteVolume: 100 })));
+    const ranked = repo.rankByLiquidity("1h", 0);
+    expect(ranked.map((r) => r.symbol)).toEqual(["ETHUSDT", "BTCUSDT", "XRPUSDT"]);
+    expect(ranked[0]).toMatchObject({ avgQuoteVolume: 900, bars: 4 });
+  });
+
+  it("the ranking does not mix timeframes or reach before the window", () => {
+    const repo = new CandleRepo(db);
+    repo.upsertMany("BTCUSDT", "1h", [0, 1].map((i) => candle(i, { quoteVolume: 500 })));
+    repo.upsertMany("ETHUSDT", "4h", [0, 1].map((i) => candle(i, { quoteVolume: 9000 })));
+    expect(repo.rankByLiquidity("1h", 0).map((r) => r.symbol)).toEqual(["BTCUSDT"]);
+    // Bar 0 closes at BASE + H, so a window opening after that keeps only bar 1.
+    expect(repo.rankByLiquidity("1h", BASE + H + 1)[0].bars).toBe(1);
+  });
+
+  it("minBars drops a symbol whose history is too short to rank", () => {
+    const repo = new CandleRepo(db);
+    repo.upsertMany("BTCUSDT", "1h", [0, 1, 2, 3].map((i) => candle(i)));
+    repo.upsertMany("NEWUSDT", "1h", [candle(3, { quoteVolume: 1e9 })]);
+    expect(repo.rankByLiquidity("1h", 0).map((r) => r.symbol)).toEqual(["NEWUSDT", "BTCUSDT"]);
+    expect(repo.rankByLiquidity("1h", 0, 2).map((r) => r.symbol)).toEqual(["BTCUSDT"]);
+  });
+
   it("latestAsOf never returns a bar from after the cutoff", () => {
     const repo = new CandleRepo(db);
     repo.upsertMany("BTCUSDT", "1h", [0, 1, 2, 3, 4].map((i) => candle(i)));

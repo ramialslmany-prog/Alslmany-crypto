@@ -8,6 +8,7 @@
  *
  * Usage:
  *   npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2
+ *   npm run backtest -- --top 30 --timeframe 1h --years 1   # the N most liquid stored
  *   npm run backtest -- --symbols BTCUSDT --holdout        # the single final run
  *
  * Reads candles from the local store only. It never fetches: a backtest that
@@ -38,6 +39,7 @@ import {
 import { SETUP_KINDS } from "@/core/pipeline/types";
 import { buyAndHold, bySetup, computeMetrics, funnelVerdict, type Metrics } from "@/core/backtest/metrics";
 import { TIMEFRAMES, isTimeframe, type Timeframe } from "@/shared/time";
+import { selectUniverse } from "@/core/universe";
 import type { Candle } from "@/core/types";
 
 const BOLD = "\x1b[1m";
@@ -71,6 +73,8 @@ const DAY = 86_400_000;
 
 interface Args {
   symbols: string[];
+  /** Take the N most liquid stored symbols instead of naming them. */
+  top: number | null;
   /** Run each setup family ALONE and rank them. */
   compareSetups: boolean;
   timeframe: Timeframe;
@@ -92,6 +96,7 @@ function parseArgs(argv: string[]): Args {
 
   return {
     symbols: (get("--symbols") ?? "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
+    top: get("--top") ? Number(get("--top")) : null,
     timeframe: tf,
     years: Number(get("--years") ?? 2),
     equity: get("--equity") ? Number(get("--equity")) : 0,
@@ -283,10 +288,69 @@ function appendHoldoutLog(use: HoldoutUse): void {
   fs.writeFileSync(path.join(process.cwd(), HOLDOUT_LOG), `${JSON.stringify(all, null, 2)}\n`);
 }
 
+/**
+ * The universe, taken from the database rather than named by hand.
+ *
+ * Breadth is the whole point of this flag. A funnel that yields roughly one
+ * recommendation per thousand analyses produces almost nothing from three
+ * symbols and several a day from a hundred — at the SAME strictness. Testing
+ * on three and concluding the system is silent measures the symbol count, not
+ * the system.
+ *
+ * Bitcoin is force-included whether or not it ranks: stage 2 reads the macro
+ * context from it, and without it every analysis on every symbol stops at the
+ * second stage. It does not consume one of the N slots, because a `--top 30`
+ * that silently tests 29 coins is the kind of quiet arithmetic error that
+ * makes two runs incomparable.
+ */
+function resolveTop(
+  candleRepo: CandleRepo, quote: string, timeframe: Timeframe, years: number, top: number,
+): string[] {
+  const ranked = candleRepo.rankByLiquidity(timeframe, Date.now() - years * 365 * DAY);
+  if (ranked.length === 0) return [];
+
+  // Half the window's bars. A coin listed recently shows a flattering average
+  // over its short life; requiring coverage keeps the ranking about liquidity.
+  const maxBars = Math.max(...ranked.map((r) => r.bars));
+  const eligible = ranked.filter((r) => r.bars >= maxBars / 2);
+
+  const { symbols, excluded } = selectUniverse(
+    eligible.map((r) => ({ symbol: r.symbol, quoteVolume: r.avgQuoteVolume })),
+    quote,
+    top,
+  );
+
+  const btc = `BTC${quote}`;
+  const hasBtc = symbols.includes(btc);
+  const picked = hasBtc ? symbols : [btc, ...symbols];
+
+  console.log(
+    `${DIM}Universe: top ${symbols.length} of ${eligible.length} stored ${timeframe} symbols ` +
+    `by average traded value${hasBtc ? "" : `, plus ${btc} for the macro stage`}` +
+    `${excluded.length > 0 ? ` · ${excluded.length} untradable pair(s) excluded` : ""}.${RESET}`,
+  );
+  if (ranked.length > eligible.length) {
+    console.log(
+      `${DIM}  ${ranked.length - eligible.length} symbol(s) held less than half the window ` +
+      `and were left out — short history inflates an average.${RESET}`,
+    );
+  }
+  return picked;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  if (args.symbols.length === 0) {
-    console.error("No symbols. Example: npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2");
+  if (args.symbols.length === 0 && args.top === null) {
+    console.error(
+      "No symbols. Either name them or take the most liquid ones:\n" +
+      "  npm run backtest -- --symbols BTCUSDT,ETHUSDT --timeframe 1h --years 2\n" +
+      "  npm run backtest -- --top 30 --timeframe 1h --years 1",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (args.top !== null && !(Number.isInteger(args.top) && args.top > 0)) {
+    console.error(`--top must be a positive whole number, got ${args.top}.`);
     process.exitCode = 1;
     return;
   }
@@ -299,7 +363,19 @@ async function main(): Promise<void> {
   const derivRepo = new DerivativesRepo(db);
 
   try {
-    const symbols = args.symbols
+    const wanted =
+      args.top === null
+        ? args.symbols
+        : resolveTop(candleRepo, cfg.QUOTE_ASSET, args.timeframe, args.years, args.top);
+    if (wanted.length === 0) {
+      console.error(
+        `Nothing stored on the ${args.timeframe} timeframe. Run npm run backfill first.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const symbols = wanted
       .map((s) => loadSymbol(candleRepo, symbolRepo, derivRepo, cfg.MARKET_EXCHANGE, s))
       .filter((s): s is BacktestSymbol => s !== null);
 

@@ -185,6 +185,36 @@ export class CandleRepo {
     return out;
   }
 
+  /**
+   * Symbols ranked by average traded value per bar, from the stored candles.
+   *
+   * The venue's own 24-hour ranking would be a live fetch, and a backtest that
+   * fetches is a backtest whose universe depends on the day you ran it. This
+   * reads the same history the run itself will read, so the universe is a
+   * property of the database rather than of the clock.
+   *
+   * `minBars` is the guard that matters: a coin listed last week shows a huge
+   * average over its four days and would outrank Ethereum on a one-year run.
+   * Coverage is a requirement, not a tiebreak.
+   */
+  rankByLiquidity(
+    timeframe: Timeframe,
+    since: number,
+    minBars = 1,
+  ): { symbol: string; avgQuoteVolume: number; bars: number }[] {
+    return this.db
+      .prepare<[string, number, number], { symbol: string; avg_qv: number; bars: number }>(
+        `SELECT symbol, AVG(quote_volume) AS avg_qv, COUNT(*) AS bars
+           FROM candles
+          WHERE timeframe = ? AND close_time >= ?
+       GROUP BY symbol
+         HAVING bars >= ?
+       ORDER BY avg_qv DESC`,
+      )
+      .all(timeframe, since, minBars)
+      .map((r) => ({ symbol: r.symbol, avgQuoteVolume: r.avg_qv, bars: r.bars }));
+  }
+
   /** Distinct (symbol, timeframe) pairs we hold any history for. */
   storedSeries(): { symbol: string; timeframe: Timeframe }[] {
     return this.db
